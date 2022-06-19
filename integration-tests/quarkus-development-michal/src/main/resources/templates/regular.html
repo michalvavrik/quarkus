@@ -1,0 +1,16 @@
+{@org.michalvavrik.qute.development.Item item}
+<html>
+{item.name}
+{#with item}
+  {name}
+{/with}
+<ul>
+  {#for item in item.derivedItems}
+  <li>
+    {item.name}
+    is derived from
+    {data:item.name}
+  </li>
+  {/for}
+</ul>
+</html>
