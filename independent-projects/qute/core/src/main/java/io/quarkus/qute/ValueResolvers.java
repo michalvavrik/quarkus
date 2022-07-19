@@ -100,8 +100,7 @@ public final class ValueResolvers {
                 if (context.getParams().size() != 1) {
                     return false;
                 }
-                String name = context.getName();
-                return name.equals(ELVIS) || name.equals(OR) || name.equals(COLON);
+                return isResolvedByOrResolver(context.getName());
             }
 
             @Override
@@ -114,6 +113,10 @@ public final class ValueResolvers {
             }
 
         };
+    }
+
+    public static boolean isResolvedByOrResolver(String operatorName) {
+        return ELVIS.equals(operatorName) || OR.equals(operatorName) || COLON.equals(operatorName);
     }
 
     /**

@@ -2,6 +2,7 @@ package io.quarkus.qute.deployment;
 
 import static io.quarkus.deployment.annotations.ExecutionTime.STATIC_INIT;
 import static io.quarkus.qute.Namespaces.isDataNamespace;
+import static io.quarkus.qute.ValueResolvers.isResolvedByOrResolver;
 import static io.quarkus.qute.runtime.EngineProducer.CDI_NAMESPACE;
 import static io.quarkus.qute.runtime.EngineProducer.INJECT_NAMESPACE;
 import static java.util.function.Predicate.not;
@@ -32,6 +33,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -97,6 +99,7 @@ import io.quarkus.qute.ErrorCode;
 import io.quarkus.qute.Expression;
 import io.quarkus.qute.Expression.VirtualMethodPart;
 import io.quarkus.qute.Expressions;
+import io.quarkus.qute.ImmutableList;
 import io.quarkus.qute.LoopSectionHelper;
 import io.quarkus.qute.ParameterDeclaration;
 import io.quarkus.qute.ParserHelper;
@@ -965,13 +968,42 @@ public class QuteProcessor {
         LOGGER.debugf("Validate %s from %s", expression, expression.getOrigin());
 
         // Validate the parameters of nested virtual methods
-        for (Expression.Part part : expression.getParts()) {
+        final List<Expression.Part> parts = expression.getParts();
+        for (int i = 0; i < parts.size(); i++) {
+            final Expression.Part part = parts.get(i);
             if (part.isVirtualMethod()) {
                 for (Expression param : part.asVirtualMethod().getParameters()) {
+
                     if (param.isLiteral() && param.getLiteral() == null) {
                         // "null" literal has no type info
                         continue;
                     }
+
+                    // Validate case when OR operator parameter is used as left side is not present
+                    if (isResolvedByOrResolver(part.asVirtualMethod().getName()) && i + 1 < parts.size()) {
+                        final var orParts = ImmutableList.<Expression.Part> builder();
+                        final StringBuilder originalStr = new StringBuilder().append(param.toOriginalString());
+                        // Add formal parameters of the OR operator
+                        orParts.addAll(param.getParts());
+                        // Add parts after OR only if it's possible to validate them
+                        boolean hasAdditionalParts = false;
+                        for (int i1 = i + 1; i1 < parts.size(); i1++) {
+                            final var orPart = parts.get(i1);
+                            // Can't validate parts without type info
+                            // f.e. 'propName' from 'missing.or(alsoMissing.or('stuff')).propName' can't be validated
+                            if (orPart.getTypeInfo() == null) {
+                                break;
+                            } else {
+                                orParts.add(orPart);
+                                originalStr.append(".").append(orPart);
+                                hasAdditionalParts = true;
+                            }
+                        }
+                        if (hasAdditionalParts) {
+                            param = createNewExpression(param, orParts.build(), originalStr.toString());
+                        }
+                    }
+
                     if (!results.containsKey(param.toOriginalString())) {
                         validateNestedExpressions(config, templateAnalysis, null, results, excludes,
                                 incorrectExpressions, param, index, implicitClassToMembersUsed, templateIdToPathFun,
@@ -998,8 +1030,8 @@ public class QuteProcessor {
                     // Bean not found
                     return putResult(match, results, expression);
                 }
-            } else if (isDataNamespace(namespace) && !expression.getParts().isEmpty()) {
-                Expression.Part firstPart = expression.getParts().get(0);
+            } else if (isDataNamespace(namespace) && !parts.isEmpty()) {
+                Expression.Part firstPart = parts.get(0);
                 String firstPartName = firstPart.getName();
 
                 for (ParameterDeclaration paramDeclaration : templateAnalysis.parameterDeclarations) {
@@ -1038,22 +1070,22 @@ public class QuteProcessor {
 
         if (checkedTemplate != null && checkedTemplate.requireTypeSafeExpressions && !expression.hasTypeInfo()
                 && dataNamespaceExpTypeInfo == null) {
-            if (!expression.hasNamespace() && expression.getParts().size() == 1
-                    && ITERATION_METADATA_KEYS.contains(expression.getParts().get(0).getName())) {
+            if (!expression.hasNamespace() && parts.size() == 1
+                    && ITERATION_METADATA_KEYS.contains(parts.get(0).getName())) {
                 String prefixInfo;
                 if (config.iterationMetadataPrefix
                         .equals(LoopSectionHelper.Factory.ITERATION_METADATA_PREFIX_ALIAS_UNDERSCORE)) {
                     prefixInfo = String.format(
                             "based on the iteration alias, i.e. the correct key should be something like {it_%1$s} or {element_%1$s}",
-                            expression.getParts().get(0).getName());
+                            parts.get(0).getName());
                 } else if (config.iterationMetadataPrefix
                         .equals(LoopSectionHelper.Factory.ITERATION_METADATA_PREFIX_ALIAS_QM)) {
                     prefixInfo = String.format(
                             "based on the iteration alias, i.e. the correct key should be something like {it?%1$s} or {element?%1$s}",
-                            expression.getParts().get(0).getName());
+                            parts.get(0).getName());
                 } else {
                     prefixInfo = ": " + config.iterationMetadataPrefix + ", i.e. the correct key should be: "
-                            + config.iterationMetadataPrefix + expression.getParts().get(0).getName();
+                            + config.iterationMetadataPrefix + parts.get(0).getName();
                 }
                 incorrectExpressions.produce(new IncorrectExpressionBuildItem(expression.toOriginalString(),
                         "An invalid iteration metadata key is probably used\n\t- The configured iteration metadata prefix is "
@@ -1079,8 +1111,8 @@ public class QuteProcessor {
             return putResult(match, results, expression);
         }
 
-        List<Info> parts = TypeInfos.create(expression, index, templateIdToPathFun);
-        Iterator<Info> iterator = parts.iterator();
+        List<Info> infoParts = TypeInfos.create(expression, index, templateIdToPathFun);
+        Iterator<Info> iterator = infoParts.iterator();
         Info root = iterator.next();
 
         if (extensionMethods != null) {
@@ -1098,7 +1130,7 @@ public class QuteProcessor {
                         if (processHints(templateAnalysis, root.asHintInfo().hints, match, index, expression,
                                 generatedIdsToMatches, incorrectExpressions)) {
                             // In some cases it's necessary to reset the iterator
-                            iterator = parts.iterator();
+                            iterator = infoParts.iterator();
                         }
                     }
                 } else {
@@ -1133,7 +1165,7 @@ public class QuteProcessor {
                     if (processHints(templateAnalysis, root.asHintInfo().hints, match, index, expression,
                             generatedIdsToMatches, incorrectExpressions)) {
                         // In some cases it's necessary to reset the iterator
-                        iterator = parts.iterator();
+                        iterator = infoParts.iterator();
                     }
                 } else {
                     // No type info available
@@ -1147,7 +1179,7 @@ public class QuteProcessor {
             } else if (templateData != null) {
                 // Set the root type and reset the iterator
                 match.setValues(rootClazz, Type.create(rootClazz.name(), org.jboss.jandex.Type.Kind.CLASS));
-                iterator = parts.iterator();
+                iterator = infoParts.iterator();
             } else {
                 return putResult(match, results, expression);
             }
@@ -1237,12 +1269,20 @@ public class QuteProcessor {
                             match.clazz(),
                             info.part.isVirtualMethod() ? info.part.asVirtualMethod().getParameters().size() : -1);
                     if (isExcluded(check, excludes)) {
-                        LOGGER.debugf(
-                                "Expression part [%s] excluded from validation of [%s] against type [%s]",
-                                info.value,
-                                expression.toOriginalString(), match.type());
-                        match.clearValues();
-                        break;
+
+                        if (check.clazz != null && info.isVirtualMethod()
+                                && isResolvedByOrResolver(info.asVirtualMethod().name)) {
+                            // Validate case when OR operator parameter is not used as left side is present
+                            continue;
+                        } else {
+                            // Inform and skip validation
+                            LOGGER.debugf(
+                                    "Expression part [%s] excluded from validation of [%s] against type [%s]",
+                                    info.value,
+                                    expression.toOriginalString(), match.type());
+                            match.clearValues();
+                            break;
+                        }
                     }
                 }
 
@@ -3016,6 +3056,63 @@ public class QuteProcessor {
         public TemplateNode.Origin getOrigin() {
             return null;
         }
+    }
+
+    /**
+     * Creates an expression with new {@link Expression#getParts()} and adjusts the expression accordingly:
+     * - original string is updated in order to keep error messages clear
+     * - the expression is never literal as this method should only be used when {@code newParts} size > 1 (with additional
+     * parts)
+     */
+    private static Expression createNewExpression(Expression originalExpression, List<Expression.Part> newParts,
+            String originalStr) {
+        return new Expression() {
+
+            @Override
+            public String getNamespace() {
+                return originalExpression.getNamespace();
+            }
+
+            @Override
+            public List<Part> getParts() {
+                return newParts;
+            }
+
+            @Override
+            public boolean isLiteral() {
+                return false;
+            }
+
+            @Override
+            public CompletableFuture<Object> getLiteralValue() {
+                return null;
+            }
+
+            @Override
+            public Object getLiteral() {
+                return null;
+            }
+
+            @Override
+            public CompletionStage<Object> asLiteral() {
+                throw new IllegalStateException("Expression is not a literal: " + this);
+            }
+
+            @Override
+            public TemplateNode.Origin getOrigin() {
+                return originalExpression.getOrigin();
+            }
+
+            @Override
+            public String toOriginalString() {
+                return originalStr;
+            }
+
+            @Override
+            public int getGeneratedId() {
+                return originalExpression.getGeneratedId();
+            }
+        };
     }
 
 }
