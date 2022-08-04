@@ -4,8 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: daily
-      time: "23:00"
-      timezone: Europe/Paris
+      time: "19:40"
+      timezone: Europe/Prague
     open-pull-requests-limit: 6
     labels:
       - area/dependencies
