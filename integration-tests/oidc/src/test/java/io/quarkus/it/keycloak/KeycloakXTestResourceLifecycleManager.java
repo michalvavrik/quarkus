@@ -31,8 +31,8 @@ public class KeycloakXTestResourceLifecycleManager implements QuarkusTestResourc
     private static final String KEYCLOAK_SERVICE_CLIENT = "quarkus-service-app";
     private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version");
 
-    private static String CLIENT_KEYSTORE = "client-keystore.jks";
-    private static String CLIENT_TRUSTSTORE = "client-truststore.jks";
+    public static String CLIENT_KEYSTORE = "client-keystore.jks";
+    public static String CLIENT_TRUSTSTORE = "client-truststore.jks";
 
     private static String SERVER_KEYSTORE = "server-keystore.jks";
     private static String SERVER_KEYSTORE_MOUNTED_PATH = "/etc/server-keystore.jks";
@@ -105,6 +105,11 @@ public class KeycloakXTestResourceLifecycleManager implements QuarkusTestResourc
         realm.getUsers().add(createUser("alice", List.of("user")));
         realm.getUsers().add(createUser("admin", List.of("user", "admin")));
         realm.getUsers().add(createUser("jdoe", List.of("user", "confidential")));
+
+        // 'ronald' is used for Keycloak admin client test
+        UserRepresentation userRonald = createUser("ronald", List.of("user", "admin"));
+        userRonald.setClientRoles(Map.of("realm-management", List.of("view-users")));
+        realm.getUsers().add(userRonald);
 
         return realm;
     }

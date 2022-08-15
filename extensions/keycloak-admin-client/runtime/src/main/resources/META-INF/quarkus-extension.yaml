@@ -10,3 +10,6 @@ metadata:
   categories:
     - "security"
   status: "stable"
+  capabilities:
+    provides:
+      - "io.quarkus.keycloak-admin-client"

@@ -22,6 +22,8 @@ import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.ExtensionSslNativeSupportBuildItem;
 import io.quarkus.deployment.builditem.RuntimeConfigSetupCompleteBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
+import io.quarkus.keycloak.admin.client.common.spi.deployment.DefaultKeycloakAdminClientAuthZProviderBuildItem;
+import io.quarkus.keycloak.admin.client.common.spi.runtime.KeycloakAdminClientAuthorizationProvider;
 import io.quarkus.oidc.SecurityEvent;
 import io.quarkus.oidc.TokenIntrospectionCache;
 import io.quarkus.oidc.UserInfoCache;
@@ -38,6 +40,7 @@ import io.quarkus.oidc.runtime.OidcRecorder;
 import io.quarkus.oidc.runtime.OidcSessionImpl;
 import io.quarkus.oidc.runtime.OidcTokenCredentialProducer;
 import io.quarkus.oidc.runtime.TenantConfigBean;
+import io.quarkus.oidc.runtime.providers.DefaultKeycloakAdminClientAuthorizationProvider;
 import io.quarkus.runtime.TlsConfig;
 import io.quarkus.vertx.core.deployment.CoreVertxBuildItem;
 import io.quarkus.vertx.http.deployment.SecurityInformationBuildItem;
@@ -132,6 +135,16 @@ public class OidcBuildStep {
         boolean isSecurityEventObserved = synthesisFinished.getObservers().stream()
                 .anyMatch(observer -> observer.asObserver().getObservedType().name().equals(DOTNAME_SECURITY_EVENT));
         recorder.setSecurityEventObserved(isSecurityEventObserved);
+    }
+
+    /**
+     * Provides default {@link KeycloakAdminClientAuthorizationProvider}
+     * iff Keycloak admin client injection is enabled.
+     */
+    @BuildStep
+    public DefaultKeycloakAdminClientAuthZProviderBuildItem registerDefaultKcAdminClientAuthZProvider() {
+        // supplies Keycloak admin client with the access token
+        return new DefaultKeycloakAdminClientAuthZProviderBuildItem(DefaultKeycloakAdminClientAuthorizationProvider.class);
     }
 
     public static class IsEnabled implements BooleanSupplier {

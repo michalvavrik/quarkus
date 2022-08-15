@@ -92,16 +92,31 @@ public class BearerTokenAuthorizationTest {
     @Test
     public void testAccessAdminResource() {
         RestAssured.given().auth().oauth2(getAccessToken("admin"))
-                .when().get("/api/admin")
+                .when().get("/api/admin/grant")
                 .then()
                 .statusCode(200)
                 .body(Matchers.containsString("granted:admin"));
     }
 
     @Test
+    public void testDefaultKeycloakAuthZProvider() {
+        // list all users of realm "quarkus"
+        // access token for the Keycloak admin client is taken from the request
+        RestAssured.given().auth().oauth2(getAccessToken("ronald"))
+                .when().get("/api/admin/realm-users")
+                .then()
+                .statusCode(200)
+                .body(Matchers.containsString("ronald"))
+                .body(Matchers.containsString("alice"))
+                .body(Matchers.containsString("jdoe"))
+                .body(Matchers.containsString("admin"))
+                .body("$.size()", Matchers.is(4));
+    }
+
+    @Test
     public void testAccessAdminResourceCustomHeaderNoBearerScheme() {
         RestAssured.given().header("X-Forwarded-Authorization", getAccessToken("admin"))
-                .when().get("/api/admin")
+                .when().get("/api/admin/grant")
                 .then()
                 .statusCode(401);
     }
@@ -109,7 +124,7 @@ public class BearerTokenAuthorizationTest {
     @Test
     public void testAccessAdminResourceCustomHeaderBearerScheme() {
         RestAssured.given().header("X-Forwarded-Authorization", getAccessToken("admin"))
-                .when().get("/api/admin")
+                .when().get("/api/admin/grant")
                 .then()
                 .statusCode(401);
     }
@@ -117,7 +132,7 @@ public class BearerTokenAuthorizationTest {
     @Test
     public void testAccessAdminResourceWithRefreshToken() {
         RestAssured.given().auth().oauth2(getRefreshToken("admin"))
-                .when().get("/api/admin")
+                .when().get("/api/admin/grant")
                 .then()
                 .statusCode(401);
     }
@@ -134,7 +149,7 @@ public class BearerTokenAuthorizationTest {
     @Test
     public void testDeniedAccessAdminResource() {
         RestAssured.given().auth().oauth2(getAccessToken("alice"))
-                .when().get("/api/admin")
+                .when().get("/api/admin/grant")
                 .then()
                 .statusCode(403);
     }

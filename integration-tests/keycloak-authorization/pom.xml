@@ -14,7 +14,7 @@
     <description>Module that contains Keycloak Policy Enforcer related tests</description>
 
     <properties>
-        <keycloak.url>http://localhost:8180/auth</keycloak.url>
+        <keycloak.url>http://localhost:8080/auth</keycloak.url>
     </properties>
 
     <dependencies>

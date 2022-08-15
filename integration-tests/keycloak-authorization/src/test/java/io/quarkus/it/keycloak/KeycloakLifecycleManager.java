@@ -1,5 +1,7 @@
 package io.quarkus.it.keycloak;
 
+import static org.keycloak.common.constants.ServiceAccountConstants.SERVICE_ACCOUNT_USER_PREFIX;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -64,7 +66,7 @@ public class KeycloakLifecycleManager implements QuarkusTestResourceLifecycleMan
         KEYCLOAK_SERVER_URL = "http://localhost:" + keycloak.getMappedPort(8080);
 
         RealmRepresentation realm = createRealm(KEYCLOAK_REALM);
-
+        createServiceAccountUser(realm);
         postRealm(realm);
 
         Map<String, String> properties = new HashMap<>();
@@ -152,6 +154,23 @@ public class KeycloakLifecycleManager implements QuarkusTestResourceLifecycleMan
         realm.getUsers().add(createUser("jdoe", "user", "confidential"));
 
         return realm;
+    }
+
+    private static void createServiceAccountUser(RealmRepresentation realm) {
+        ClientRepresentation serviceAccountClient = new ClientRepresentation();
+        serviceAccountClient.setClientId("quarkus-service-account");
+        serviceAccountClient.setSecret("hush-hush");
+        serviceAccountClient.setServiceAccountsEnabled(true);
+        serviceAccountClient.setEnabled(true);
+
+        realm.getClients().add(serviceAccountClient);
+
+        UserRepresentation serviceAccountUser = new UserRepresentation();
+        serviceAccountUser.setUsername(SERVICE_ACCOUNT_USER_PREFIX + serviceAccountClient.getClientId());
+        serviceAccountUser.setServiceAccountClientId(serviceAccountClient.getClientId());
+        serviceAccountUser.setClientRoles(Map.of("realm-management", List.of("realm-admin")));
+        serviceAccountUser.setEnabled(true);
+        realm.getUsers().add(serviceAccountUser);
     }
 
     private static String getAdminAccessToken() {
