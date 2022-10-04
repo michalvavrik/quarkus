@@ -1,6 +1,8 @@
 package io.quarkus.resteasy.reactive.server.runtime;
 
 import static io.quarkus.resteasy.reactive.server.runtime.NotFoundExceptionMapper.classMappers;
+import static io.quarkus.vertx.http.runtime.security.DefaultAuthFailureHandlerEndStrategy.DEFAULT_AUTH_FAILURE_HANDLER_END_STRATEGY;
+import static io.quarkus.vertx.http.runtime.security.DefaultAuthFailureHandlerEndStrategy.DO_NOTHING;
 
 import java.io.Closeable;
 import java.lang.reflect.Constructor;
@@ -184,7 +186,16 @@ public class ResteasyReactiveRecorder extends ResteasyReactiveCommonRecorder imp
     public Handler<RoutingContext> handler(RuntimeValue<Deployment> deploymentRuntimeValue) {
         Deployment deployment = deploymentRuntimeValue.getValue();
         RestInitialHandler initialHandler = new RestInitialHandler(deployment);
-        return new ResteasyReactiveVertxHandler(initialHandler);
+        final Consumer<RoutingContext> eventCustomizer = new Consumer<RoutingContext>() {
+            @Override
+            public void accept(RoutingContext routingContext) {
+                // add default auth failure strategy right before the initial handler begin processing
+                // so that we know it's safe to not end response in the default auth failure handler
+                // (as we catch AuthenticationFailedException and handle it with abort handlers)
+                routingContext.put(DEFAULT_AUTH_FAILURE_HANDLER_END_STRATEGY, DO_NOTHING);
+            }
+        };
+        return new ResteasyReactiveVertxHandler(eventCustomizer, initialHandler);
     }
 
     /**

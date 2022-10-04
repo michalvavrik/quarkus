@@ -1,5 +1,10 @@
 package io.quarkus.vertx.http.runtime.security;
 
+import static io.quarkus.vertx.http.runtime.security.DefaultAuthFailureHandlerEndStrategy.DEFAULT_AUTH_FAILURE_HANDLER_END_STRATEGY;
+import static io.quarkus.vertx.http.runtime.security.DefaultAuthFailureHandlerEndStrategy.END;
+import static io.quarkus.vertx.http.runtime.security.DefaultAuthFailureHandlerEndStrategy.NEXT_FAILURE_HANDLER;
+import static java.lang.Boolean.parseBoolean;
+
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Map;
@@ -73,17 +78,28 @@ public class HttpSecurityRecorder {
                 //if proactive auth is used this is the only one
                 //if using lazy auth this can be modified downstream, to control authentication behaviour
                 event.put(QuarkusHttpUser.AUTH_FAILURE_HANDLER, new BiConsumer<RoutingContext, Throwable>() {
+
+                    private final DefaultAuthFailureHandlerEndStrategyExec endStrategyExec = new DefaultAuthFailureHandlerEndStrategyExec(
+                            event);
+
                     @Override
                     public void accept(RoutingContext routingContext, Throwable throwable) {
+
+                        if (endStrategyExec.preventRepeating()) {
+                            // we have already handled event here
+                            // this might happen f.e. when we failed event here with the same throwable as we accepted
+                            // in order to pass the throwable to failure handlers
+                            return;
+                        }
+
                         throwable = extractRootCause(throwable);
                         //auth failed
                         if (throwable instanceof AuthenticationFailedException) {
+                            final AuthenticationFailedException authenticationFailedException = (AuthenticationFailedException) throwable;
                             authenticator.sendChallenge(event).subscribe().with(new Consumer<Boolean>() {
                                 @Override
                                 public void accept(Boolean aBoolean) {
-                                    if (!event.response().ended()) {
-                                        event.response().end();
-                                    }
+                                    endStrategyExec.proceed(authenticationFailedException);
                                 }
                             }, new Consumer<Throwable>() {
                                 @Override
@@ -106,6 +122,7 @@ public class HttpSecurityRecorder {
                             event.fail(throwable);
                         }
                     }
+
                 });
 
                 if (proactiveAuthentication) {
@@ -329,4 +346,75 @@ public class HttpSecurityRecorder {
             }
         };
     }
+
+    /**
+     * Determines what should happen once the default auth failure handler finished.
+     */
+    private static final class DefaultAuthFailureHandlerEndStrategyExec {
+
+        /**
+         * Signal {@link AuthenticationFailedException} has already been handled here.
+         */
+        private static final String AUTH_FAILED_EX_HANDLED = QuarkusHttpUser.AUTH_FAILURE_HANDLER
+                + ".handled.auth-failed-ex";
+
+        private final RoutingContext event;
+
+        private DefaultAuthFailureHandlerEndStrategyExec(RoutingContext event) {
+            this.event = event;
+        }
+
+        boolean iterateNext() {
+            if (event.failed()) {
+                // Continue to next failure handler
+                event.next();
+                return true;
+            }
+            return false;
+        }
+
+        void proceed(AuthenticationFailedException authenticationFailedException) {
+            if (!event.response().ended()) {
+                switch (getEndStrategy()) {
+                    case END:
+                        event.end();
+                        break;
+                    case NEXT_FAILURE_HANDLER:
+                        // if the event has failed, continue to next failure handler
+                        // if not, fail the event and ensure the default failure handle is skipped
+                        if (!iterateNext()) {
+                            // 'sendChallenge' of the custom auth mechanism may end response, but
+                            // if not, we want to keep it possibility for failure handlers down the stream
+                            // to handle the exception; if the ex. is not handled elsewhere, QuarkusErrorHandler
+                            // is supposed to return 401 with empty body and headers set by the 'sendChallenge'
+                            event.put(AUTH_FAILED_EX_HANDLED, true);
+                            event.fail(authenticationFailedException);
+                        }
+                        break;
+                }
+            }
+        }
+
+        boolean preventRepeating() {
+            if (event.response().ended()) {
+                return true;
+            } else if (getEndStrategy() == NEXT_FAILURE_HANDLER && event.failure() instanceof AuthenticationFailedException
+                    && parseBoolean(event.get(AUTH_FAILED_EX_HANDLED))) {
+                // We have already handled this exception and know other failure handlers may want to modify the response.
+                // This situation could happen if the default auth failure handler has been previously
+                // invoked without failing the event (via routingContext.get(AUTH_FAILURE_HANDLER) ...).
+
+                // Continue to next failure handler
+                event.next();
+                return true;
+            }
+
+            return false;
+        }
+
+        private DefaultAuthFailureHandlerEndStrategy getEndStrategy() {
+            return event.get(DEFAULT_AUTH_FAILURE_HANDLER_END_STRATEGY, END);
+        }
+    }
+
 }

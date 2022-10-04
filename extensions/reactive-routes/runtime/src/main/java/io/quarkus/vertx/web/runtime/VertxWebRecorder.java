@@ -1,5 +1,8 @@
 package io.quarkus.vertx.web.runtime;
 
+import static io.quarkus.vertx.http.runtime.security.DefaultAuthFailureHandlerEndStrategy.DEFAULT_AUTH_FAILURE_HANDLER_END_STRATEGY;
+import static io.quarkus.vertx.http.runtime.security.DefaultAuthFailureHandlerEndStrategy.NEXT_FAILURE_HANDLER;
+
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.Set;
@@ -132,4 +135,13 @@ public class VertxWebRecorder {
         };
     }
 
+    public Handler<RoutingContext> addDefaultAuthFailureStrategyHandler() {
+        return new Handler<RoutingContext>() {
+            @Override
+            public void handle(RoutingContext routingContext) {
+                routingContext.put(DEFAULT_AUTH_FAILURE_HANDLER_END_STRATEGY, NEXT_FAILURE_HANDLER);
+                routingContext.next();
+            }
+        };
+    }
 }

@@ -485,6 +485,14 @@ class ReactiveRoutesProcessor {
                     priorityValue != null ? priorityValue.asInt() : RouteFilter.DEFAULT_PRIORITY));
         }
 
+        if (!capabilities.isPresent(Capability.RESTEASY_REACTIVE)) {
+            // user should be able to handle AuthenticationFailedException with a failure handler
+            // this filter adds the strategy to the event before authentication filter is run so that event is not ended
+            // in the default auth failure handler and other failure handlers are invoked
+            filterProducer.produce(
+                    new FilterBuildItem(recorder.addDefaultAuthFailureStrategyHandler(), FilterBuildItem.AUTHENTICATION + 1));
+        }
+
         detectConflictingRoutes(matchers);
     }
 

@@ -239,7 +239,7 @@
                                             <http>
                                                 <url>http://localhost:8180</url>
                                             </http>
-                                            <time>100000</time>
+                                            <time>150000</time>
                                         </wait>
                                     </run>
                                 </image>
