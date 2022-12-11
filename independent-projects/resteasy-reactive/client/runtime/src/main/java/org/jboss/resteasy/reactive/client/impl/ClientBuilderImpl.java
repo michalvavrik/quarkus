@@ -68,6 +68,8 @@ public class ClientBuilderImpl extends ClientBuilder {
     private ClientLogger clientLogger = new DefaultClientLogger();
     private String userAgent = "Resteasy Reactive Client";
 
+    private String clientInvokerClass = null;
+
     public ClientBuilderImpl() {
         configuration = new ConfigurationImpl(RuntimeType.CLIENT);
     }
@@ -171,6 +173,11 @@ public class ClientBuilderImpl extends ClientBuilder {
         return this;
     }
 
+    public ClientBuilder clientInvokerClass(String clientInvokerClass) {
+        this.clientInvokerClass = clientInvokerClass;
+        return this;
+    }
+
     @Override
     public ClientImpl build() {
         Buffer keyStore = asBuffer(this.keyStore, keystorePassword);
@@ -258,7 +265,8 @@ public class ClientBuilderImpl extends ClientBuilder {
                 followRedirects,
                 multiQueryParamMode,
                 loggingScope,
-                clientLogger, userAgent);
+                clientLogger, userAgent,
+                clientInvokerClass);
 
     }
 

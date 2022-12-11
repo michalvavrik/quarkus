@@ -92,13 +92,14 @@ public class ClientImpl implements Client {
     final Vertx vertx;
     private final MultiQueryParamMode multiQueryParamMode;
     private final String userAgent;
+    private final String clientInvokerClass;
 
     public ClientImpl(HttpClientOptions options, ConfigurationImpl configuration, ClientContext clientContext,
             HostnameVerifier hostnameVerifier,
             SSLContext sslContext, boolean followRedirects,
             MultiQueryParamMode multiQueryParamMode,
             LoggingScope loggingScope,
-            ClientLogger clientLogger, String userAgent) {
+            ClientLogger clientLogger, String userAgent, String clientInvokerClass) {
         this.userAgent = userAgent;
         configuration = configuration != null ? configuration : new ConfigurationImpl(RuntimeType.CLIENT);
         this.configuration = configuration;
@@ -106,6 +107,7 @@ public class ClientImpl implements Client {
         this.hostnameVerifier = hostnameVerifier;
         this.sslContext = sslContext;
         this.multiQueryParamMode = multiQueryParamMode;
+        this.clientInvokerClass = clientInvokerClass;
         Supplier<Vertx> vertx = clientContext.getVertx();
         if (vertx != null) {
             this.vertx = vertx.get();
@@ -331,6 +333,10 @@ public class ClientImpl implements Client {
 
     Vertx getVertx() {
         return vertx;
+    }
+
+    public String getClientInvokerClass() {
+        return clientInvokerClass;
     }
 
     /**

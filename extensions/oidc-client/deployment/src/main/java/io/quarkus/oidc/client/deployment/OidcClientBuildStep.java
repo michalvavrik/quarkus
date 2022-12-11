@@ -1,6 +1,8 @@
 package io.quarkus.oidc.client.deployment;
 
 import java.lang.reflect.Modifier;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -10,6 +12,8 @@ import java.util.stream.Collectors;
 import javax.enterprise.context.RequestScoped;
 import javax.inject.Singleton;
 
+import org.jboss.jandex.AnnotationInstance;
+import org.jboss.jandex.AnnotationValue;
 import org.jboss.jandex.DotName;
 
 import io.quarkus.arc.BeanDestroyer;
@@ -37,6 +41,7 @@ import io.quarkus.oidc.client.NamedOidcClient;
 import io.quarkus.oidc.client.OidcClient;
 import io.quarkus.oidc.client.OidcClients;
 import io.quarkus.oidc.client.Tokens;
+import io.quarkus.oidc.client.filter.OidcClientFilter;
 import io.quarkus.oidc.client.runtime.AbstractTokensProducer;
 import io.quarkus.oidc.client.runtime.OidcClientBuildTimeConfig;
 import io.quarkus.oidc.client.runtime.OidcClientRecorder;
@@ -130,6 +135,25 @@ public class OidcClientBuildStep {
                 .setRuntimeInit()
                 .destroyer(BeanDestroyer.CloseableDestroyer.class)
                 .done();
+    }
+
+    @BuildStep
+    public void collectOidcClientFilterClientNames(ApplicationArchivesBuildItem beanArchiveIndex,
+            BuildProducer<OidcClientFilterClientNamesMapBuildItem> clientNamesProducer) {
+        final DotName oidcClientFilterName = DotName.createSimple(OidcClientFilter.class);
+        Map<String, String> clientInvokerClassToName = new HashMap<>();
+        for (ApplicationArchive appArchive : beanArchiveIndex.getAllApplicationArchives()) {
+            for (AnnotationInstance annotationInstance : appArchive.getIndex().getAnnotations(oidcClientFilterName)) {
+                final AnnotationValue annotationValue = annotationInstance.value();
+                if (annotationValue != null && !annotationValue.asString().isEmpty()) {
+                    clientInvokerClassToName.put(annotationInstance.target().asClass().name().toString(),
+                            annotationValue.asString());
+                }
+            }
+        }
+        if (!clientInvokerClassToName.isEmpty()) {
+            clientNamesProducer.produce(new OidcClientFilterClientNamesMapBuildItem(clientInvokerClassToName));
+        }
     }
 
     @BuildStep

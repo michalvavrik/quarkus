@@ -1,6 +1,5 @@
 package io.quarkus.oidc.client.reactive.filter;
 
-import java.util.Optional;
 import java.util.function.Consumer;
 
 import javax.annotation.Priority;
@@ -8,35 +7,25 @@ import javax.ws.rs.Priorities;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
 
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.reactive.client.spi.ResteasyReactiveClientRequestContext;
 import org.jboss.resteasy.reactive.client.spi.ResteasyReactiveClientRequestFilter;
 
 import io.quarkus.oidc.client.Tokens;
-import io.quarkus.oidc.client.runtime.AbstractTokensProducer;
+import io.quarkus.oidc.client.reactive.filter.runtime.TokensProducerRegistry;
 import io.quarkus.oidc.client.runtime.DisabledOidcClientException;
 import io.quarkus.oidc.common.runtime.OidcConstants;
 
 @Priority(Priorities.AUTHENTICATION)
-public class OidcClientRequestReactiveFilter extends AbstractTokensProducer implements ResteasyReactiveClientRequestFilter {
+public class OidcClientRequestReactiveFilter extends TokensProducerRegistry implements ResteasyReactiveClientRequestFilter {
     private static final Logger LOG = Logger.getLogger(OidcClientRequestReactiveFilter.class);
     private static final String BEARER_SCHEME_WITH_SPACE = OidcConstants.BEARER_SCHEME + " ";
-
-    @ConfigProperty(name = "quarkus.oidc-client-reactive-filter.client-name")
-    Optional<String> clientName;
-
-    protected void initTokens() {
-        if (earlyTokenAcquisition) {
-            LOG.debug("Token acquisition will be delayed until this filter is executed to avoid blocking an IO thread");
-        }
-    }
 
     @Override
     public void filter(ResteasyReactiveClientRequestContext requestContext) {
         requestContext.suspend();
 
-        super.getTokens().subscribe().with(new Consumer<>() {
+        getTokens(requestContext).subscribe().with(new Consumer<>() {
             @Override
             public void accept(Tokens tokens) {
                 requestContext.getHeaders().putSingle(HttpHeaders.AUTHORIZATION,
@@ -58,7 +47,4 @@ public class OidcClientRequestReactiveFilter extends AbstractTokensProducer impl
         });
     }
 
-    protected Optional<String> clientId() {
-        return clientName;
-    }
 }

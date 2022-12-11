@@ -419,6 +419,22 @@ public interface ProtectedResourceService {
 ----
 
 `OidcClientRequestReactiveFilter` uses a default `OidcClient` by default. A named `OidcClient` can be selected with a `quarkus.oidc-client-reactive-filter.client-name` configuration property.
+You can also select `OidcClient` by setting `value` attribute of the `@OidcClientFilter` annotation. The client name set through annotation has higher priority than the `quarkus.oidc-client-reactive-filter.client-name` configuration property.
+
+[source,java]
+----
+import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import io.quarkus.oidc.client.filter.OidcClientFilter;
+
+@RegisterRestClient
+@OidcClientFilter("my-client")
+@Path("/")
+public interface ProtectedResourceService {
+
+    @GET
+    String getUserName();
+}
+----
 
 
 [[oidc-client-filter]]
@@ -478,6 +494,22 @@ public interface ProtectedResourceService {
 Alternatively, `OidcClientRequestFilter` can be registered automatically with all MP Rest or JAX-RS clients if `quarkus.oidc-client-filter.register-filter=true` property is set.
 
 `OidcClientRequestFilter` uses a default `OidcClient` by default. A named `OidcClient` can be selected with a `quarkus.oidc-client-filter.client-name` configuration property.
+You can also select `OidcClient` by setting `value` attribute of the `@OidcClientFilter` annotation. The client name set through annotation has higher priority than the `quarkus.oidc-client-filter.client-name` configuration property.
+
+[source,java]
+----
+import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import io.quarkus.oidc.client.filter.OidcClientFilter;
+
+@RegisterRestClient
+@OidcClientFilter("my-client")
+@Path("/")
+public interface ProtectedResourceService {
+
+    @GET
+    String getUserName();
+}
+----
 
 === Use Custom RestClient ClientFilter
 

@@ -340,6 +340,7 @@ public class RestClientBuilderImpl implements RestClientBuilder {
             configureProxy(globalProxy.host, globalProxy.port, restClientsConfig.proxyUser.orElse(null),
                     restClientsConfig.proxyPassword.orElse(null), restClientsConfig.nonProxyHosts.orElse(null));
         }
+        clientBuilder.clientInvokerClass(aClass.getName());
         ClientImpl client = clientBuilder.build();
         WebTargetImpl target = (WebTargetImpl) client.target(uri);
         target.setParamConverterProviders(paramConverterProviders);
