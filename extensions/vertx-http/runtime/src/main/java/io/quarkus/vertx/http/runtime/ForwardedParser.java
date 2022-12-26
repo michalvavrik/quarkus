@@ -125,7 +125,7 @@ class ForwardedParser {
             if (matcher.find()) {
                 remoteAddress = parseFor(matcher.group(1).trim(), remoteAddress.port());
             }
-        } else if (forwardingProxyOptions.allowXForwarded) {
+        } else if (forwardingProxyOptions.allowXForwarded && trustProxy()) {
             String protocolHeader = delegate.getHeader(X_FORWARDED_PROTO);
             if (protocolHeader != null) {
                 scheme = getFirstElement(protocolHeader);
@@ -172,6 +172,29 @@ class ForwardedParser {
         delegate.headers().set(HttpHeaders.HOST, host);
         absoluteURI = scheme + "://" + host + uri;
         log.debug("Recalculated absoluteURI to " + absoluteURI);
+    }
+
+    /**
+     * User can configure trusted proxies for `X-Forwarded` or `X-Forwarded-*` headers.
+     * Headers from untrusted proxies must be ignored.
+     *
+     * @return true if `X-Forwarded` or `X-Forwarded-*` headers were sent by trusted {@link SocketAddress}
+     */
+    private boolean trustProxy() {
+        if (forwardingProxyOptions.trustedXForwardedProxy.isEmpty()) {
+            // user configured no proxy check
+            return true;
+        }
+
+        for (var proxyCheck : forwardingProxyOptions.trustedXForwardedProxy) {
+            if (proxyCheck.test(delegate.remoteAddress())) {
+                // proxy matches predicate
+                return true;
+            }
+        }
+
+        // no proxy check passed
+        return false;
     }
 
     private void setHostAndPort(String hostToParse, int defaultPort) {

@@ -1,9 +1,12 @@
 package io.quarkus.vertx.http.runtime;
 
+import java.util.List;
 import java.util.Optional;
 
 import io.quarkus.runtime.annotations.ConfigGroup;
 import io.quarkus.runtime.annotations.ConfigItem;
+import io.quarkus.runtime.annotations.ConvertWith;
+import io.quarkus.vertx.http.runtime.TrustedXForwardedProxyConverter.TrustedXForwardedProxyCheck;
 
 /**
  * Holds configuration related with proxy addressing forward.
@@ -33,7 +36,7 @@ public class ProxyConfig {
      * {@code Forwarded} header will be used.
      * In case the standard {@code Forwarded} header is enabled and detected on HTTP requests, the standard header has the
      * precedence.
-     * Activating this together with {@code quarkus.http.proxy.allow-x-forwarded} has security implications as clients can forge
+     * Activating this together with {@code quarkus.http.proxy.allow-forwarded} has security implications as clients can forge
      * requests with a forwarded header that is not overwritten by the proxy. Therefore, proxies should strip unexpected
      * `X-Forwarded` or `X-Forwarded-*` headers from the client.
      */
@@ -63,4 +66,28 @@ public class ProxyConfig {
      */
     @ConfigItem(defaultValue = "X-Forwarded-Prefix")
     public String forwardedPrefixHeader;
+
+    /**
+     * Configure the list of trusted proxy addresses.
+     * Received `X-Forwarded` or `X-Forwarded-*` headers from any other proxy address will be ignored.
+     * The trusted proxy address should be specified as the IP address (IPv4 or IPv6), hostname or Classless Inter-Domain
+     * Routing (CIDR) notation. Please note that hostnames are going to be resolved during the request.
+     *
+     * Examples of a socket address in the form of 'host' or `host:port`:
+     * - `localhost`
+     * - `localhost:8084`
+     * - `127.0.0.1:8084`
+     * - `0:0:0:0:0:0:0:1`
+     * - `[0:0:0:0:0:0:0:1]:8084`
+     * - `::`
+     *
+     * Examples of a CIDR notation:
+     * - `::/128`
+     * - `::/0`
+     * - `127.0.0.0/8`
+     */
+    @ConfigItem(defaultValueDocumentation = "All proxy addresses are trusted")
+    @ConvertWith(TrustedXForwardedProxyConverter.class)
+    public Optional<List<TrustedXForwardedProxyCheck>> trustedXForwardedProxies;
+
 }

@@ -1,15 +1,20 @@
 package io.quarkus.vertx.http.runtime;
 
+import java.util.List;
+import java.util.function.Predicate;
+
 import io.netty.util.AsciiString;
+import io.vertx.core.net.SocketAddress;
 
 public class ForwardingProxyOptions {
-    boolean proxyAddressForwarding;
-    boolean allowForwarded;
-    boolean allowXForwarded;
-    boolean enableForwardedHost;
-    boolean enableForwardedPrefix;
-    AsciiString forwardedHostHeader;
-    AsciiString forwardedPrefixHeader;
+    final boolean proxyAddressForwarding;
+    final boolean allowForwarded;
+    final boolean allowXForwarded;
+    final boolean enableForwardedHost;
+    final boolean enableForwardedPrefix;
+    final AsciiString forwardedHostHeader;
+    final AsciiString forwardedPrefixHeader;
+    final List<Predicate<SocketAddress>> trustedXForwardedProxy;
 
     public ForwardingProxyOptions(final boolean proxyAddressForwarding,
             final boolean allowForwarded,
@@ -17,7 +22,8 @@ public class ForwardingProxyOptions {
             final boolean enableForwardedHost,
             final AsciiString forwardedHostHeader,
             final boolean enableForwardedPrefix,
-            final AsciiString forwardedPrefixHeader) {
+            final AsciiString forwardedPrefixHeader,
+            List<Predicate<SocketAddress>> trustedXForwardedProxy) {
         this.proxyAddressForwarding = proxyAddressForwarding;
         this.allowForwarded = allowForwarded;
         this.allowXForwarded = allowXForwarded;
@@ -25,6 +31,7 @@ public class ForwardingProxyOptions {
         this.enableForwardedPrefix = enableForwardedPrefix;
         this.forwardedHostHeader = forwardedHostHeader;
         this.forwardedPrefixHeader = forwardedPrefixHeader;
+        this.trustedXForwardedProxy = trustedXForwardedProxy;
     }
 
     public static ForwardingProxyOptions from(HttpConfiguration httpConfiguration) {
@@ -37,7 +44,10 @@ public class ForwardingProxyOptions {
         final AsciiString forwardedPrefixHeader = AsciiString.cached(httpConfiguration.proxy.forwardedPrefixHeader);
         final AsciiString forwardedHostHeader = AsciiString.cached(httpConfiguration.proxy.forwardedHostHeader);
 
+        final List<Predicate<SocketAddress>> trustedXForwardedProxies = httpConfiguration.proxy.trustedXForwardedProxies
+                .isPresent() ? List.copyOf(httpConfiguration.proxy.trustedXForwardedProxies.get()) : List.of();
+
         return new ForwardingProxyOptions(proxyAddressForwarding, allowForwarded, allowXForwarded, enableForwardedHost,
-                forwardedHostHeader, enableForwardedPrefix, forwardedPrefixHeader);
+                forwardedHostHeader, enableForwardedPrefix, forwardedPrefixHeader, trustedXForwardedProxies);
     }
 }

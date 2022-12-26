@@ -534,14 +534,13 @@ public class VertxHttpRecorder {
             root = mainRouter;
         }
 
-        warnIfProxyAddressForwardingAllowedWithMultipleHeaders(httpConfiguration);
-        ForwardingProxyOptions forwardingProxyOptions = ForwardingProxyOptions.from(httpConfiguration);
-        if (forwardingProxyOptions.proxyAddressForwarding) {
+        if (httpConfiguration.proxy.proxyAddressForwarding) {
+            warnIfProxyAddressForwardingAllowedWithMultipleHeaders(httpConfiguration);
             Handler<HttpServerRequest> delegate = root;
             root = new Handler<HttpServerRequest>() {
                 @Override
                 public void handle(HttpServerRequest event) {
-                    delegate.handle(new ForwardedServerRequestWrapper(event, forwardingProxyOptions));
+                    delegate.handle(new ForwardedServerRequestWrapper(event, ForwardingProxyOptions.from(httpConfiguration)));
                 }
             };
         }
