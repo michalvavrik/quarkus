@@ -9,6 +9,7 @@ import javax.annotation.security.RolesAllowed;
 
 import io.quarkus.arc.processor.InterceptorBindingRegistrar;
 import io.quarkus.security.Authenticated;
+import io.quarkus.security.PermissionsAllowed;
 
 /**
  * @author Michal Szynkiewicz, michal.l.szynkiewicz@gmail.com
@@ -18,6 +19,7 @@ public class SecurityAnnotationsRegistrar implements InterceptorBindingRegistrar
     static final List<InterceptorBinding> SECURITY_BINDINGS = List.of(
             // keep the contents the same as in io.quarkus.resteasy.deployment.SecurityTransformerUtils
             InterceptorBinding.of(RolesAllowed.class, Collections.singleton("value")),
+            InterceptorBinding.of(PermissionsAllowed.class, Collections.singleton("value")),
             InterceptorBinding.of(Authenticated.class),
             InterceptorBinding.of(DenyAll.class),
             InterceptorBinding.of(PermitAll.class));

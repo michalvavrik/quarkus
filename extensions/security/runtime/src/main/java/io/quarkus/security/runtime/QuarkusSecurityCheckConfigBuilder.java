@@ -9,9 +9,9 @@ import org.eclipse.microprofile.config.spi.ConfigSource;
 import io.quarkus.runtime.configuration.ConfigBuilder;
 import io.smallrye.config.SmallRyeConfigBuilder;
 
-public final class QuarkusSecurityRolesAllowedConfigBuilder implements ConfigBuilder {
+public final class QuarkusSecurityCheckConfigBuilder implements ConfigBuilder {
 
-    private static final String ROLES_ALLOWED_CONFIG_SOURCE = "QuarkusSecurityRolesAllowedConfigSource";
+    private static final String SECURITY_CHECK_CONFIG_SOURCE = "QuarkusSecurityCheckConfigSource";
     private static final Map<String, String> properties = new HashMap<>();
     private final ConfigSource configSource = new ConfigSource() {
         @Override
@@ -26,7 +26,7 @@ public final class QuarkusSecurityRolesAllowedConfigBuilder implements ConfigBui
 
         @Override
         public String getName() {
-            return ROLES_ALLOWED_CONFIG_SOURCE;
+            return SECURITY_CHECK_CONFIG_SOURCE;
         }
     };
 
@@ -42,6 +42,6 @@ public final class QuarkusSecurityRolesAllowedConfigBuilder implements ConfigBui
     }
 
     static String transformToKey(int i) {
-        return ROLES_ALLOWED_CONFIG_SOURCE + ".property-" + i;
+        return SECURITY_CHECK_CONFIG_SOURCE + ".property-" + i;
     }
 }
