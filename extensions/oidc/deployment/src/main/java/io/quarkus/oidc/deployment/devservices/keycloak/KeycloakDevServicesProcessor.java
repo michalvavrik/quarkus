@@ -41,6 +41,8 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.DockerImageName;
 
+import com.github.dockerjava.api.command.InspectContainerResponse;
+
 import io.quarkus.deployment.IsNormal;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
@@ -64,6 +66,7 @@ import io.quarkus.oidc.deployment.devservices.OidcDevServicesBuildItem;
 import io.quarkus.oidc.deployment.devservices.OidcDevServicesUtils;
 import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.configuration.ConfigUtils;
+import io.quarkus.runtime.configuration.ConfigurationException;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpHeaders;
@@ -347,6 +350,14 @@ public class KeycloakDevServicesProcessor {
             return null;
         }
 
+        if (capturedDevServicesConfiguration.exportRealmPath.isPresent()) {
+            final var exportRealmPath = Path.of(capturedDevServicesConfiguration.exportRealmPath.get());
+            if (!Files.isDirectory(exportRealmPath)) {
+                throw new ConfigurationException(
+                        String.format("Export Realm path '%s' is not a valid directory", exportRealmPath));
+            }
+        }
+
         final Optional<ContainerAddress> maybeContainerAddress = keycloakDevModeContainerLocator.locateContainer(
                 capturedDevServicesConfiguration.serviceName,
                 capturedDevServicesConfiguration.shared,
@@ -366,7 +377,7 @@ public class KeycloakDevServicesProcessor {
                     capturedDevServicesConfiguration.javaOpts,
                     capturedDevServicesConfiguration.startCommand,
                     capturedDevServicesConfiguration.showLogs,
-                    errors);
+                    errors, capturedDevServicesConfiguration.exportRealmPath.orElse(null));
 
             timeout.ifPresent(oidcContainer::withStartupTimeout);
             oidcContainer.start();
@@ -421,11 +432,12 @@ public class KeycloakDevServicesProcessor {
         private final Optional<String> startCommand;
         private final boolean showLogs;
         private final List<String> errors;
+        private final String exportRealmPath;
 
         public QuarkusOidcContainer(DockerImageName dockerImageName, OptionalInt fixedExposedPort, boolean useSharedNetwork,
                 List<String> realmPaths, String containerLabelValue,
                 boolean sharedContainer, Optional<String> javaOpts, Optional<String> startCommand, boolean showLogs,
-                List<String> errors) {
+                List<String> errors, String exportRealmPath) {
             super(dockerImageName);
 
             this.useSharedNetwork = useSharedNetwork;
@@ -434,6 +446,7 @@ public class KeycloakDevServicesProcessor {
             this.sharedContainer = sharedContainer;
             this.javaOpts = javaOpts;
             this.keycloakX = isKeycloakX(dockerImageName);
+            this.exportRealmPath = exportRealmPath;
 
             if (useSharedNetwork && fixedExposedPort.isEmpty()) {
                 // We need to know the port we are exposing when using the shared network, in order to be able to tell
@@ -554,6 +567,29 @@ public class KeycloakDevServicesProcessor {
                 return hostName;
             }
             return super.getHost();
+        }
+
+        @Override
+        protected void containerIsStopping(InspectContainerResponse containerInfo) {
+            if (exportRealmPath != null) {
+
+                // we do not support exporting realms for legacy Keycloak
+                if (!keycloakX) {
+                    LOG.warn("Exporting realms for legacy Keycloak WildFly images is not supported");
+                    return;
+                }
+
+                // use a single file 'realm.json' inside container to store the configuration for all realms
+                final String containerRealmPath = "/tmp/realm.json";
+                try {
+                    execInContainer("/opt/keycloak/bin/kc.sh", "export", "--file", containerRealmPath);
+                } catch (IOException | InterruptedException e) {
+                    LOG.error("Failed to export realm", e);
+                }
+
+                // copy the realm file from container to directory specified by the user
+                copyFileFromContainer(containerRealmPath, exportRealmPath + "/realm.json");
+            }
         }
 
         /**

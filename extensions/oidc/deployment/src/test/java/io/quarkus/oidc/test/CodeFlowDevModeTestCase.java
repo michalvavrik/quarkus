@@ -23,7 +23,7 @@ import io.quarkus.test.QuarkusDevModeTest;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.keycloak.server.KeycloakTestResourceLifecycleManager;
 
-@QuarkusTestResource(KeycloakTestResourceLifecycleManager.class)
+@QuarkusTestResource(value = KeycloakTestResourceLifecycleManager.class, restrictToAnnotatedClass = true)
 public class CodeFlowDevModeTestCase {
 
     private static Class<?>[] testClasses = {

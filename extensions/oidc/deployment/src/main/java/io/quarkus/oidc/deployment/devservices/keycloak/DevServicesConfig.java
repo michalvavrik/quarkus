@@ -105,6 +105,15 @@ public class DevServicesConfig {
     public Optional<String> startCommand;
 
     /**
+     * Export all Keycloak realms to existing directory when container is stopping.
+     * Quarkus is going to use the same file named 'realm.json' to store the configuration for all the realms being exported.
+     * Please note that only containers started by Quarkus are supported and the property will be ignored
+     * with legacy Keycloak WildFly images.
+     */
+    @ConfigItem
+    public Optional<String> exportRealmPath;
+
+    /**
      * The Keycloak realm name.
      * This property will be used to create the realm if the realm file pointed to by the 'realm-path' property does not exist,
      * default value is 'quarkus' in this case.
