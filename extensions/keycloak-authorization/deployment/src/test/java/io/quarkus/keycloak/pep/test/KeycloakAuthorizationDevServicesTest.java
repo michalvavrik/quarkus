@@ -1,55 +1,63 @@
-package io.quarkus.keycloak.admin.client.reactive;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.List;
-
-import jakarta.inject.Inject;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
+package io.quarkus.keycloak.pep.test;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.keycloak.admin.client.Keycloak;
-import org.keycloak.representations.idm.RoleRepresentation;
 
 import io.quarkus.test.QuarkusDevModeTest;
 import io.restassured.RestAssured;
-import io.restassured.response.Response;
 
 public class KeycloakAuthorizationDevServicesTest {
 
     @RegisterExtension
     final static QuarkusDevModeTest app = new QuarkusDevModeTest()
             .withApplicationRoot(jar -> jar
-                    .addClasses(AdminResource.class)
-                    .addAsResource("app-dev-mode-config.properties", "application.properties"));
+                    .addClasses(AdminResource.class, PublicResource.class, UserResource.class)
+                    .addAsResource("offline-enforcer-application.properties", "application.properties")
+                    .addAsResource("quarkus-realm.json"));
 
     @Test
-    public void testGetRoles() {
-        // use 'password' grant type
-        final Response getRolesReq = RestAssured.given().get("/api/admin/roles");
-        assertEquals(200, getRolesReq.statusCode());
-        final List<RoleRepresentation> roles = getRolesReq.jsonPath().getList(".", RoleRepresentation.class);
-        assertNotNull(roles);
-        // assert there are roles admin and user (among others)
-        assertTrue(roles.stream().anyMatch(rr -> "user".equals(rr.getName())));
-        assertTrue(roles.stream().anyMatch(rr -> "admin".equals(rr.getName())));
+    public void testNoPathMatcherRemoteCalls() {
+        testPublicResource();
+        testAccessUserResource();
+        testAccessAdminResource();
     }
 
-    @Path("/api/admin")
-    public static class AdminResource {
+    private void testAccessUserResource() {
+        RestAssured.given().auth().oauth2(getAccessToken("alice"))
+                .when().get("/api/users/me")
+                .then()
+                .statusCode(200);
+        RestAssured.given().auth().oauth2(getAccessToken("jdoe"))
+                .when().get("/api/users/me")
+                .then()
+                .statusCode(200);
+    }
 
-        @Inject
-        Keycloak keycloak;
+    private void testAccessAdminResource() {
+        RestAssured.given().auth().oauth2(getAccessToken("alice"))
+                .when().get("/api/admin")
+                .then()
+                .statusCode(403);
+        RestAssured.given().auth().oauth2(getAccessToken("jdoe"))
+                .when().get("/api/admin")
+                .then()
+                .statusCode(403);
+        RestAssured.given().auth().oauth2(getAccessToken("admin"))
+                .when().get("/api/admin")
+                .then()
+                .statusCode(200);
+    }
 
-        @GET
-        @Path("/roles")
-        public List<RoleRepresentation> getRoles() {
-            return keycloak.realm("quarkus").roles().list();
-        }
+    private void testPublicResource() {
+        RestAssured.given()
+                .when().get("/api/public/serve")
+                .then()
+                .statusCode(200);
+    }
 
+    private String getAccessToken(String userName) {
+        return RestAssured.given().body(userName)
+                .get("/api/public/access-token")
+                .asString();
     }
 }

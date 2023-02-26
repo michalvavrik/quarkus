@@ -61,10 +61,10 @@ public class QuarkusPolicyEnforcer extends PolicyEnforcer {
      * @return true if we can't reliably determine that enforcement is disabled for the path
      */
     boolean isPathEnforcementDisabled(String targetUri) {
-        if (hasHandledDisabledPaths) {
-            var pathConfig = offlinePathMatcher.matches(targetUri);
-            return pathConfig != null && !pathConfig.hasPattern() && pathConfig.getEnforcementMode() == DISABLED;
-        }
+        //        if (hasHandledDisabledPaths) {
+        //            var pathConfig = offlinePathMatcher.matches(targetUri);
+        //            return pathConfig != null && !pathConfig.hasPattern() && pathConfig.getEnforcementMode() == DISABLED;
+        //        }
         return false;
     }
 
