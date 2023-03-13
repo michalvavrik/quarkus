@@ -5,7 +5,10 @@ import java.util.Optional;
 import io.quarkus.builder.item.MultiBuildItem;
 
 /**
- * Contains information on the security model used in the application
+ * Contains information on the security model used in the application.
+ * Accurate information for security models enabled at runtime like
+ * {@link SecurityModel#BASIC()} requires that all runtime configuration
+ * properties that enables authentication mechanisms are available at build time.
  */
 public final class SecurityInformationBuildItem extends MultiBuildItem {
 

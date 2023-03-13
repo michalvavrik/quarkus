@@ -1,7 +1,5 @@
 package io.quarkus.vertx.http.runtime.security;
 
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.function.BiConsumer;
@@ -13,8 +11,6 @@ import jakarta.enterprise.inject.spi.CDI;
 
 import org.jboss.logging.Logger;
 
-import io.quarkus.arc.runtime.BeanContainer;
-import io.quarkus.arc.runtime.BeanContainerListener;
 import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.annotations.Recorder;
 import io.quarkus.security.AuthenticationCompletionException;
@@ -48,15 +44,12 @@ public class HttpSecurityRecorder {
     final RuntimeValue<HttpConfiguration> httpConfiguration;
     final HttpBuildTimeConfig buildTimeConfig;
 
-    //the temp encryption key, persistent across dev mode restarts
-    static volatile String encryptionKey;
-
     public HttpSecurityRecorder(RuntimeValue<HttpConfiguration> httpConfiguration, HttpBuildTimeConfig buildTimeConfig) {
         this.httpConfiguration = httpConfiguration;
         this.buildTimeConfig = buildTimeConfig;
     }
 
-    public Handler<RoutingContext> authenticationMechanismHandler(boolean proactiveAuthentication) {
+    public Handler<RoutingContext> authenticationMechanismHandler() {
         return new Handler<RoutingContext>() {
 
             volatile HttpAuthenticator authenticator;
@@ -70,7 +63,7 @@ public class HttpSecurityRecorder {
                 event.put(HttpAuthenticator.class.getName(), authenticator);
 
                 //register the default auth failure handler
-                if (proactiveAuthentication) {
+                if (buildTimeConfig.proactiveAuth) {
                     //if proactive auth is used this is the only one
                     event.put(QuarkusHttpUser.AUTH_FAILURE_HANDLER, new DefaultAuthFailureHandler() {
                         @Override
@@ -95,7 +88,7 @@ public class HttpSecurityRecorder {
                     });
                 }
 
-                if (proactiveAuthentication) {
+                if (buildTimeConfig.proactiveAuth) {
                     Uni<SecurityIdentity> potentialUser = authenticator.attemptAuthentication(event).memoize().indefinitely();
                     potentialUser
                             .subscribe().withSubscriber(new UniSubscriber<SecurityIdentity>() {
@@ -209,82 +202,6 @@ public class HttpSecurityRecorder {
         };
     }
 
-    public BeanContainerListener initPermissions(HttpBuildTimeConfig permissions,
-            Map<String, Supplier<HttpSecurityPolicy>> policies) {
-        return new BeanContainerListener() {
-            @Override
-            public void created(BeanContainer container) {
-                container.beanInstance(PathMatchingHttpSecurityPolicy.class).init(permissions, policies);
-            }
-        };
-    }
-
-    public Supplier<FormAuthenticationMechanism> setupFormAuth() {
-
-        return new Supplier<FormAuthenticationMechanism>() {
-
-            @Override
-            public FormAuthenticationMechanism get() {
-                String key;
-                if (!httpConfiguration.getValue().encryptionKey.isPresent()) {
-                    if (encryptionKey != null) {
-                        //persist across dev mode restarts
-                        key = encryptionKey;
-                    } else {
-                        byte[] data = new byte[32];
-                        new SecureRandom().nextBytes(data);
-                        key = encryptionKey = Base64.getEncoder().encodeToString(data);
-                        log.warn("Encryption key was not specified for persistent FORM auth, using temporary key " + key);
-                    }
-                } else {
-                    key = httpConfiguration.getValue().encryptionKey.get();
-                }
-                FormAuthConfig form = buildTimeConfig.auth.form;
-                PersistentLoginManager loginManager = new PersistentLoginManager(key, form.cookieName, form.timeout.toMillis(),
-                        form.newCookieInterval.toMillis(), form.httpOnlyCookie, form.cookieSameSite.name(),
-                        form.cookiePath.orElse(null));
-                String loginPage = startWithSlash(form.loginPage.orElse(null));
-                String errorPage = startWithSlash(form.errorPage.orElse(null));
-                String landingPage = startWithSlash(form.landingPage.orElse(null));
-                String postLocation = startWithSlash(form.postLocation);
-                String usernameParameter = form.usernameParameter;
-                String passwordParameter = form.passwordParameter;
-                String locationCookie = form.locationCookie;
-                String cookiePath = form.cookiePath.orElse(null);
-                boolean redirectAfterLogin = form.redirectAfterLogin;
-                return new FormAuthenticationMechanism(loginPage, postLocation, usernameParameter, passwordParameter,
-                        errorPage, landingPage, redirectAfterLogin, locationCookie, form.cookieSameSite.name(), cookiePath,
-                        loginManager);
-            }
-        };
-    }
-
-    private static String startWithSlash(String page) {
-        if (page == null) {
-            return null;
-        }
-        return page.startsWith("/") ? page : "/" + page;
-    }
-
-    public Supplier<?> setupBasicAuth(HttpBuildTimeConfig buildTimeConfig) {
-        return new Supplier<BasicAuthenticationMechanism>() {
-            @Override
-            public BasicAuthenticationMechanism get() {
-                return new BasicAuthenticationMechanism(buildTimeConfig.auth.realm.orElse(null),
-                        buildTimeConfig.auth.form.enabled);
-            }
-        };
-    }
-
-    public Supplier<?> setupMtlsClientAuth() {
-        return new Supplier<MtlsAuthenticationMechanism>() {
-            @Override
-            public MtlsAuthenticationMechanism get() {
-                return new MtlsAuthenticationMechanism();
-            }
-        };
-    }
-
     /**
      * This handler resolves the identity, and will be mapped to the post location. Otherwise,
      * for lazy auth the post will not be evaluated if there is no security rule for the post location.
@@ -312,6 +229,31 @@ public class HttpSecurityRecorder {
                 });
             }
         };
+    }
+
+    /* RUNTIME_INIT */
+    public Supplier<String> getFormPostLocation() {
+        final String formPostLocation;
+        FormAuthConfig formConfig = httpConfiguration.getValue().auth.form;
+
+        // return POST location only if the form auth is enabled
+        // as otherwise we don't want to create route
+        if (formConfig.enabled) {
+            formPostLocation = formConfig.postLocation;
+        } else {
+            formPostLocation = null;
+        }
+
+        return new Supplier<String>() {
+            @Override
+            public String get() {
+                return formPostLocation;
+            }
+        };
+    }
+
+    public void addPathMatchingPolicies(Map<String, Supplier<HttpSecurityPolicy>> buildTimePolicies) {
+        PathMatchingHttpSecurityPolicy.setBuildTimePolicyMap(buildTimePolicies);
     }
 
     public static abstract class DefaultAuthFailureHandler implements BiConsumer<RoutingContext, Throwable> {
