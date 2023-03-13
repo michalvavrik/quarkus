@@ -12,7 +12,6 @@ import io.quarkus.runtime.annotations.ConvertWith;
 import io.quarkus.runtime.configuration.NormalizeRootHttpPathConverter;
 import io.quarkus.vertx.http.Compressed;
 import io.quarkus.vertx.http.Uncompressed;
-import io.vertx.core.http.ClientAuth;
 
 @ConfigRoot(name = "http", phase = ConfigPhase.BUILD_AND_RUN_TIME_FIXED)
 public class HttpBuildTimeConfig {
@@ -24,14 +23,15 @@ public class HttpBuildTimeConfig {
     @ConvertWith(NormalizeRootHttpPathConverter.class)
     public String rootPath;
 
-    public AuthConfig auth;
-
     /**
-     * Configures the engine to require/request client authentication.
-     * NONE, REQUEST, REQUIRED
+     * If this is true and credentials are present then a user will always be authenticated
+     * before the request progresses.
+     *
+     * If this is false then an attempt will only be made to authenticate the user if a permission
+     * check is performed or the current user is required for some other reason.
      */
-    @ConfigItem(name = "ssl.client-auth", defaultValue = "NONE")
-    public ClientAuth tlsClientAuth;
+    @ConfigItem(defaultValue = "true", name = "auth.proactive")
+    public boolean proactiveAuth;
 
     /**
      * If this is true then only a virtual channel will be set up for vertx web.

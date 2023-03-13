@@ -1,20 +1,30 @@
 package io.quarkus.vertx.http.runtime.security;
 
+import static io.quarkus.vertx.http.runtime.security.HttpPermissionsBeanLookupConfigFactory.USER_DEFINED_HTTP_PERMISSIONS;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 import jakarta.inject.Singleton;
 
+import org.eclipse.microprofile.config.ConfigProvider;
+
+import io.quarkus.arc.lookup.LookupIfProperty;
 import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.vertx.http.runtime.AuthConfig;
 import io.quarkus.vertx.http.runtime.HttpBuildTimeConfig;
+import io.quarkus.vertx.http.runtime.HttpConfiguration;
+import io.quarkus.vertx.http.runtime.PolicyConfig;
 import io.quarkus.vertx.http.runtime.PolicyMappingConfig;
+import io.smallrye.config.SmallRyeConfig;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.http.HttpServerRequest;
 import io.vertx.ext.web.RoutingContext;
@@ -24,10 +34,39 @@ import io.vertx.ext.web.RoutingContext;
  *
  * This is used for the default path/method based RBAC.
  */
+@LookupIfProperty(name = USER_DEFINED_HTTP_PERMISSIONS, stringValue = "true")
 @Singleton
 public class PathMatchingHttpSecurityPolicy implements HttpSecurityPolicy {
 
+    private static volatile Map<String, Supplier<HttpSecurityPolicy>> buildTimePolicyMap = Map.of();
     private final PathMatcher<List<HttpMatcher>> pathMatcher = new PathMatcher<>();
+    private final boolean userDefinedPermissions;
+
+    public PathMatchingHttpSecurityPolicy(HttpConfiguration httpConfiguration,
+            HttpBuildTimeConfig buildTimeConfig) {
+        userDefinedPermissions = !httpConfiguration.auth.permissions.isEmpty();
+        if (userDefinedPermissions) {
+
+            if (buildTimePolicyMap.isEmpty()) {
+                // this shouldn't happen anyway
+                throw new IllegalStateException("No named 'HttpSecurityPolicy' is available");
+            }
+            var policyMap = new HashMap<>(buildTimePolicyMap);
+
+            // add roles allowed path matching policies
+            for (Map.Entry<String, PolicyConfig> e : httpConfiguration.auth.rolePolicy.entrySet()) {
+                final String policyName = e.getKey();
+                if (policyMap.containsKey(policyName)) {
+                    throw new RuntimeException("Multiple HTTP security policies defined with name " + policyName);
+                }
+
+                policyMap.put(policyName,
+                        new SupplierImpl<>(new RolesAllowedHttpSecurityPolicy(e.getValue().rolesAllowed)));
+            }
+
+            init(buildTimeConfig.rootPath, policyMap, httpConfiguration.auth);
+        }
+    }
 
     public String getAuthMechanismName(RoutingContext routingContext) {
         PathMatcher.PathMatch<List<HttpMatcher>> toCheck = pathMatcher.match(routingContext.request().path());
@@ -45,8 +84,17 @@ public class PathMatchingHttpSecurityPolicy implements HttpSecurityPolicy {
     @Override
     public Uni<CheckResult> checkPermission(RoutingContext routingContext, Uni<SecurityIdentity> identity,
             AuthorizationRequestContext requestContext) {
-        List<HttpSecurityPolicy> permissionCheckers = findPermissionCheckers(routingContext.request());
-        return doPermissionCheck(routingContext, identity, 0, null, permissionCheckers, requestContext);
+        if (userDefinedPermissions) {
+            List<HttpSecurityPolicy> permissionCheckers = findPermissionCheckers(routingContext.request());
+            return doPermissionCheck(routingContext, identity, 0, null, permissionCheckers, requestContext);
+        } else {
+            // user defined no path permissions to check
+            // we should try to remove this bean from lookup in such situation
+            // however ArC currently doesn't support that
+            SmallRyeConfig config = (SmallRyeConfig) ConfigProvider.getConfig();
+            config.getPropertyNames();
+            return Uni.createFrom().item(CheckResult.PERMIT);
+        }
     }
 
     private Uni<CheckResult> doPermissionCheck(RoutingContext routingContext,
@@ -83,14 +131,15 @@ public class PathMatchingHttpSecurityPolicy implements HttpSecurityPolicy {
                 });
     }
 
-    void init(HttpBuildTimeConfig config, Map<String, Supplier<HttpSecurityPolicy>> supplierMap) {
+    private void init(String rootPath, Map<String, Supplier<HttpSecurityPolicy>> supplierMap,
+            AuthConfig authConfig) {
         Map<String, HttpSecurityPolicy> permissionCheckers = new HashMap<>();
         for (Map.Entry<String, Supplier<HttpSecurityPolicy>> i : supplierMap.entrySet()) {
             permissionCheckers.put(i.getKey(), i.getValue().get());
         }
 
         Map<String, List<HttpMatcher>> tempMap = new HashMap<>();
-        for (Map.Entry<String, PolicyMappingConfig> entry : config.auth.permissions.entrySet()) {
+        for (Map.Entry<String, PolicyMappingConfig> entry : authConfig.permissions.entrySet()) {
             HttpSecurityPolicy checker = permissionCheckers.get(entry.getValue().policy);
             if (checker == null) {
                 throw new RuntimeException("Unable to find HTTP security policy " + entry.getValue().policy);
@@ -100,7 +149,7 @@ public class PathMatchingHttpSecurityPolicy implements HttpSecurityPolicy {
                 for (String path : entry.getValue().paths.orElse(Collections.emptyList())) {
                     path = path.trim();
                     if (!path.startsWith("/")) {
-                        path = config.rootPath + path;
+                        path = rootPath + path;
                     }
                     if (tempMap.containsKey(path)) {
                         HttpMatcher m = new HttpMatcher(entry.getValue().authMechanism.orElse(null),
@@ -151,6 +200,11 @@ public class PathMatchingHttpSecurityPolicy implements HttpSecurityPolicy {
             return Collections.singletonList(DenySecurityPolicy.INSTANCE);
         }
 
+    }
+
+    static void setBuildTimePolicyMap(Map<String, Supplier<HttpSecurityPolicy>> buildTimePolicyMap) {
+        Objects.requireNonNull(buildTimePolicyMap);
+        PathMatchingHttpSecurityPolicy.buildTimePolicyMap = Map.copyOf(buildTimePolicyMap);
     }
 
     static class HttpMatcher {

@@ -1,171 +1,164 @@
 package io.quarkus.vertx.http.deployment;
 
+import static java.lang.Boolean.parseBoolean;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
-import jakarta.inject.Singleton;
-
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
-import io.quarkus.arc.deployment.BeanContainerListenerBuildItem;
-import io.quarkus.arc.deployment.SyntheticBeanBuildItem;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
 import io.quarkus.deployment.annotations.Record;
+import io.quarkus.deployment.builditem.ConfigurationBuildItem;
+import io.quarkus.deployment.builditem.RunTimeConfigBuilderBuildItem;
 import io.quarkus.vertx.http.runtime.HttpBuildTimeConfig;
-import io.quarkus.vertx.http.runtime.PolicyConfig;
 import io.quarkus.vertx.http.runtime.security.AuthenticatedHttpSecurityPolicy;
-import io.quarkus.vertx.http.runtime.security.BasicAuthenticationMechanism;
 import io.quarkus.vertx.http.runtime.security.DenySecurityPolicy;
-import io.quarkus.vertx.http.runtime.security.FormAuthenticationMechanism;
-import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;
+import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanismProducer;
 import io.quarkus.vertx.http.runtime.security.HttpAuthenticator;
 import io.quarkus.vertx.http.runtime.security.HttpAuthorizer;
+import io.quarkus.vertx.http.runtime.security.HttpPermissionsBeanLookupConfigFactory.HttpPermissionsBeanLookupConfigBuilder;
 import io.quarkus.vertx.http.runtime.security.HttpSecurityPolicy;
 import io.quarkus.vertx.http.runtime.security.HttpSecurityRecorder;
-import io.quarkus.vertx.http.runtime.security.MtlsAuthenticationMechanism;
 import io.quarkus.vertx.http.runtime.security.PathMatchingHttpSecurityPolicy;
 import io.quarkus.vertx.http.runtime.security.PermitSecurityPolicy;
-import io.quarkus.vertx.http.runtime.security.RolesAllowedHttpSecurityPolicy;
 import io.quarkus.vertx.http.runtime.security.SupplierImpl;
-import io.vertx.core.http.ClientAuth;
 
 public class HttpSecurityProcessor {
 
     @BuildStep
-    public void builtins(BuildProducer<HttpSecurityPolicyBuildItem> producer, HttpBuildTimeConfig buildTimeConfig,
-            BuildProducer<AdditionalBeanBuildItem> beanProducer) {
-        producer.produce(new HttpSecurityPolicyBuildItem("deny", new SupplierImpl<>(new DenySecurityPolicy())));
-        producer.produce(new HttpSecurityPolicyBuildItem("permit", new SupplierImpl<>(new PermitSecurityPolicy())));
-        producer.produce(
-                new HttpSecurityPolicyBuildItem("authenticated", new SupplierImpl<>(new AuthenticatedHttpSecurityPolicy())));
-        if (!buildTimeConfig.auth.permissions.isEmpty()) {
-            beanProducer.produce(AdditionalBeanBuildItem.unremovableOf(PathMatchingHttpSecurityPolicy.class));
-        }
-        for (Map.Entry<String, PolicyConfig> e : buildTimeConfig.auth.rolePolicy.entrySet()) {
-            producer.produce(new HttpSecurityPolicyBuildItem(e.getKey(),
-                    new SupplierImpl<>(new RolesAllowedHttpSecurityPolicy(e.getValue().rolesAllowed))));
-        }
+    void additionalBeans(Capabilities capabilities, BuildProducer<AdditionalBeanBuildItem> beanProducer) {
 
+        if (capabilities.isPresent(Capability.SECURITY)) {
+            // produces basic auth, form auth or mTLS auth mechanism (or none of them)
+            // based on runtime configuration properties
+            beanProducer.produce(AdditionalBeanBuildItem
+                    .unremovableOf(HttpAuthenticationMechanismProducer.class));
+
+            // always create 'PathMatchingHttpSecurityPolicy' bean
+            // it will only be possible to look it up if user configured at least one HTTP policy
+            beanProducer.produce(AdditionalBeanBuildItem
+                    .unremovableOf(PathMatchingHttpSecurityPolicy.class));
+
+            // create HTTP authorizer
+            beanProducer.produce(AdditionalBeanBuildItem.builder().setUnremovable()
+                    .addBeanClass(HttpAuthenticator.class).addBeanClass(HttpAuthorizer.class).build());
+        }
     }
 
     @BuildStep
-    @Record(ExecutionTime.RUNTIME_INIT)
-    SyntheticBeanBuildItem initFormAuth(
-            HttpSecurityRecorder recorder,
-            HttpBuildTimeConfig buildTimeConfig,
-            BuildProducer<RouteBuildItem> filterBuildItemBuildProducer) {
-        if (!buildTimeConfig.auth.proactive) {
-            filterBuildItemBuildProducer.produce(RouteBuildItem.builder().route(buildTimeConfig.auth.form.postLocation)
-                    .handler(recorder.formAuthPostHandler()).build());
-        }
-        if (buildTimeConfig.auth.form.enabled) {
-            return SyntheticBeanBuildItem.configure(FormAuthenticationMechanism.class)
-                    .types(HttpAuthenticationMechanism.class)
-                    .setRuntimeInit()
-                    .scope(Singleton.class)
-                    .supplier(recorder.setupFormAuth()).done();
-        }
-        return null;
+    RunTimeConfigBuilderBuildItem addHttpPermissionsBeanLookupConfigBuilder() {
+        // we want to make 'PathMatchingHttpSecurityPolicy' only available for
+        // programmatic lookup when user defined permissions
+        // however permissions are config group and ArC only provides annotations
+        // for bean suppression that requires concrete configuration property, not config groups
+        // 'HttpPermissionsBeanLookupConfigBuilder' creates new configuration property that enables
+        // lookup if and only if user defined at least one HTTP permission
+        return new RunTimeConfigBuilderBuildItem(HttpPermissionsBeanLookupConfigBuilder.class);
     }
 
-    @BuildStep
+    @BuildStep(onlyIf = ProactiveAuthDisabled.class)
     @Record(ExecutionTime.RUNTIME_INIT)
-    SyntheticBeanBuildItem initMtlsClientAuth(
-            HttpSecurityRecorder recorder,
-            HttpBuildTimeConfig buildTimeConfig) {
-        if (isMtlsClientAuthenticationEnabled(buildTimeConfig)) {
-            return SyntheticBeanBuildItem.configure(MtlsAuthenticationMechanism.class)
-                    .types(HttpAuthenticationMechanism.class)
-                    .setRuntimeInit()
-                    .scope(Singleton.class)
-                    .supplier(recorder.setupMtlsClientAuth()).done();
-        }
-        return null;
-    }
+    RouteBuildItem prepareFormPostLocationRoute(Capabilities capabilities, HttpSecurityRecorder recorder) {
 
-    @BuildStep
-    @Record(ExecutionTime.RUNTIME_INIT)
-    SyntheticBeanBuildItem initBasicAuth(
-            HttpSecurityRecorder recorder,
-            HttpBuildTimeConfig buildTimeConfig,
-            BuildProducer<SecurityInformationBuildItem> securityInformationProducer) {
-        //basic auth explicitly disabled
-        if (buildTimeConfig.auth.basic.isPresent() && !buildTimeConfig.auth.basic.get()) {
+        if (capabilities.isPresent(Capability.SECURITY)) {
+            // add route for form auth mechanism POST location
+            // the route is only going to be created if form auth is enabled
+            // otherwise the location path is resolved to null and ignored by VertX HTTP processor
+            return RouteBuildItem.builder().route(recorder.getFormPostLocation()).handler(recorder.formAuthPostHandler())
+                    .build();
+        } else {
             return null;
         }
-        boolean basicExplicitlyEnabled = buildTimeConfig.auth.basic.orElse(false);
-        if ((buildTimeConfig.auth.form.enabled || isMtlsClientAuthenticationEnabled(buildTimeConfig))
-                && !basicExplicitlyEnabled) {
-            //if form auth is enabled and we are not then we don't install
-            return null;
-        }
-        SyntheticBeanBuildItem.ExtendedBeanConfigurator configurator = SyntheticBeanBuildItem
-                .configure(BasicAuthenticationMechanism.class)
-                .types(HttpAuthenticationMechanism.class)
-                .setRuntimeInit()
-                .scope(Singleton.class)
-                .supplier(recorder.setupBasicAuth(buildTimeConfig));
-        if (!buildTimeConfig.auth.form.enabled && !isMtlsClientAuthenticationEnabled(buildTimeConfig)
-                && !basicExplicitlyEnabled) {
-            //if not explicitly enabled we make this a default bean, so it is the fallback if nothing else is defined
-            configurator.defaultBean();
-            securityInformationProducer.produce(SecurityInformationBuildItem.BASIC());
-        }
-
-        return configurator.done();
     }
 
     @BuildStep
     @Record(ExecutionTime.STATIC_INIT)
-    void setupAuthenticationMechanisms(
-            HttpSecurityRecorder recorder,
-            BuildProducer<FilterBuildItem> filterBuildItemBuildProducer,
-            BuildProducer<AdditionalBeanBuildItem> beanProducer,
-            Capabilities capabilities,
-            BuildProducer<BeanContainerListenerBuildItem> beanContainerListenerBuildItemBuildProducer,
-            HttpBuildTimeConfig buildTimeConfig,
-            List<HttpSecurityPolicyBuildItem> httpSecurityPolicyBuildItemList,
-            BuildProducer<SecurityInformationBuildItem> securityInformationProducer) {
-        Map<String, Supplier<HttpSecurityPolicy>> policyMap = new HashMap<>();
-        for (HttpSecurityPolicyBuildItem e : httpSecurityPolicyBuildItemList) {
-            if (policyMap.containsKey(e.getName())) {
-                throw new RuntimeException("Multiple HTTP security policies defined with name " + e.getName());
-            }
-            policyMap.put(e.getName(), e.policySupplier);
-        }
-
-        if (!buildTimeConfig.auth.form.enabled && buildTimeConfig.auth.basic.orElse(false)) {
-            securityInformationProducer.produce(SecurityInformationBuildItem.BASIC());
-        }
+    void produceAuthFilters(HttpSecurityRecorder recorder, Capabilities capabilities,
+            BuildProducer<FilterBuildItem> filterBuildItemBuildProducer) {
 
         if (capabilities.isPresent(Capability.SECURITY)) {
-            beanProducer
-                    .produce(AdditionalBeanBuildItem.builder().setUnremovable().addBeanClass(HttpAuthenticator.class)
-                            .addBeanClass(HttpAuthorizer.class).build());
             filterBuildItemBuildProducer
                     .produce(new FilterBuildItem(
-                            recorder.authenticationMechanismHandler(buildTimeConfig.auth.proactive),
+                            recorder.authenticationMechanismHandler(),
                             FilterBuildItem.AUTHENTICATION));
+
             filterBuildItemBuildProducer
                     .produce(new FilterBuildItem(recorder.permissionCheckHandler(), FilterBuildItem.AUTHORIZATION));
+        }
+    }
 
-            if (!buildTimeConfig.auth.permissions.isEmpty()) {
-                beanContainerListenerBuildItemBuildProducer
-                        .produce(new BeanContainerListenerBuildItem(recorder.initPermissions(buildTimeConfig, policyMap)));
+    @BuildStep
+    @Record(ExecutionTime.STATIC_INIT)
+    public void createPathMatchingHttpSecurityPolicies(Capabilities capabilities,
+            List<HttpSecurityPolicyBuildItem> additionalPolicies, HttpSecurityRecorder recorder) {
+
+        if (capabilities.isPresent(Capability.SECURITY)) {
+            Map<String, Supplier<HttpSecurityPolicy>> policyMap = new HashMap<>();
+            policyMap.put("deny", new SupplierImpl<>(new DenySecurityPolicy()));
+            policyMap.put("permit", new SupplierImpl<>(new PermitSecurityPolicy()));
+            policyMap.put("authenticated", new SupplierImpl<>(new AuthenticatedHttpSecurityPolicy()));
+
+            for (HttpSecurityPolicyBuildItem additionalPolicy : additionalPolicies) {
+                final String policyName = additionalPolicy.getName();
+                if (policyMap.containsKey(policyName)) {
+                    throw new RuntimeException("Multiple HTTP security policies defined with name " + policyName);
+                }
+                policyMap.put(policyName, additionalPolicy.getPolicySupplier());
             }
-        } else {
-            if (!buildTimeConfig.auth.permissions.isEmpty()) {
-                throw new IllegalStateException("HTTP permissions have been set however security is not enabled");
+
+            recorder.addPathMatchingPolicies(policyMap);
+        }
+    }
+
+    @BuildStep
+    void securityInformation(
+            Capabilities capabilities,
+            ConfigurationBuildItem configurationBuildItem,
+            BuildProducer<SecurityInformationBuildItem> securityInformationProducer) {
+
+        if (capabilities.isPresent(Capability.SECURITY)) {
+            // security information may only be generated if config properties that configures
+            // authentication mechanism are present at build time
+            var properties = configurationBuildItem.getReadResult().getAllBuildTimeValues();
+            var basicAuthConfigProp = properties.get("quarkus.http.auth.basic");
+            final boolean basicAuthExplicitlyEnabled = parseBoolean(basicAuthConfigProp);
+
+            final boolean basicAuthMechanismPresent;
+            if (basicAuthExplicitlyEnabled) {
+                basicAuthMechanismPresent = true;
+            } else {
+                // default bean path
+                final boolean basicAuthNotExplicitlyDisabled = basicAuthConfigProp == null;
+                final boolean formAuthDisabled = parseBoolean(properties.get("quarkus.http.auth.form.enabled"));
+                var sslClientAuthConfigProp = properties.get("quarkus.http.ssl.client-auth");
+                final boolean mTLSAuthDisabled = sslClientAuthConfigProp == null || "NONE".equals(sslClientAuthConfigProp);
+                basicAuthMechanismPresent = basicAuthNotExplicitlyDisabled && formAuthDisabled && mTLSAuthDisabled;
+            }
+
+            if (basicAuthMechanismPresent) {
+                securityInformationProducer.produce(SecurityInformationBuildItem.BASIC());
             }
         }
     }
 
-    private boolean isMtlsClientAuthenticationEnabled(HttpBuildTimeConfig buildTimeConfig) {
-        return !ClientAuth.NONE.equals(buildTimeConfig.tlsClientAuth);
+    static final class ProactiveAuthDisabled implements BooleanSupplier {
+
+        private final boolean proactiveAuthDisabled;
+
+        ProactiveAuthDisabled(HttpBuildTimeConfig httpBuildTimeConfig) {
+            this.proactiveAuthDisabled = !httpBuildTimeConfig.proactiveAuth;
+        }
+
+        @Override
+        public boolean getAsBoolean() {
+            return proactiveAuthDisabled;
+        }
     }
 }

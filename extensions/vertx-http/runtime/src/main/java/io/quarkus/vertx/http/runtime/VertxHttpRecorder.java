@@ -916,7 +916,7 @@ public class VertxHttpRecorder {
         int sslPort = httpConfiguration.determineSslPort(launchMode);
         // -2 instead of -1 (see http) to have vert.x assign two different random ports if both http and https shall be random
         serverOptions.setPort(sslPort == 0 ? -2 : sslPort);
-        serverOptions.setClientAuth(buildTimeConfig.tlsClientAuth);
+        serverOptions.setClientAuth(httpConfiguration.ssl.clientAuth);
 
         applyCommonOptions(serverOptions, buildTimeConfig, httpConfiguration, websocketSubProtocols);
 
@@ -1087,6 +1087,13 @@ public class VertxHttpRecorder {
             HandlerType blocking) {
 
         Route vr = route.apply(router.getValue());
+
+        // routes prepared during the build time for runtime configuration
+        // properties are nullable if user decided to not configure the property
+        // please see class 'RouteCandidate' for more details
+        if (vr == null) {
+            return;
+        }
 
         if (blocking == HandlerType.BLOCKING) {
             vr.blockingHandler(handler, false);

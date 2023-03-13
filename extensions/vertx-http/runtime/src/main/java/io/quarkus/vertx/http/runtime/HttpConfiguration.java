@@ -233,6 +233,8 @@ public class HttpConfiguration {
     @ConfigItem
     public Map<String, FilterConfig> filter;
 
+    public AuthConfig auth;
+
     public ProxyConfig proxy;
 
     public int determinePort(LaunchMode launchMode) {
