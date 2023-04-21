@@ -2,6 +2,12 @@ package io.quarkus.oidc.deployment.devservices;
 
 import java.util.Set;
 
+import io.quarkus.deployment.annotations.ExecutionTime;
+import io.quarkus.deployment.annotations.Record;
+import io.quarkus.devui.spi.JsonRPCProvidersBuildItem;
+import io.quarkus.devui.spi.page.CardPageBuildItem;
+import io.quarkus.oidc.runtime.devui.OidcDevJsonRpcService;
+import io.quarkus.oidc.runtime.devui.OidcDevUiRecorder;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
@@ -26,6 +32,8 @@ import io.vertx.mutiny.core.buffer.Buffer;
 import io.vertx.mutiny.ext.web.client.HttpResponse;
 import io.vertx.mutiny.ext.web.client.WebClient;
 
+import static io.quarkus.deployment.annotations.ExecutionTime.RUNTIME_INIT;
+
 public class OidcDevConsoleProcessor extends AbstractDevConsoleProcessor {
     static volatile Vertx vertxInstance;
     private static final Logger LOG = Logger.getLogger(OidcDevConsoleProcessor.class);
@@ -44,12 +52,16 @@ public class OidcDevConsoleProcessor extends AbstractDevConsoleProcessor {
 
     OidcBuildTimeConfig oidcConfig;
 
+    @Record(RUNTIME_INIT)
     @BuildStep(onlyIf = IsDevelopment.class)
     @Consume(RuntimeConfigSetupCompleteBuildItem.class)
     void prepareOidcDevConsole(BuildProducer<DevConsoleTemplateInfoBuildItem> devConsoleInfo,
             BuildProducer<DevConsoleRuntimeTemplateInfoBuildItem> devConsoleRuntimeInfo,
             CuratedApplicationShutdownBuildItem closeBuildItem,
             BuildProducer<DevConsoleRouteBuildItem> devConsoleRoute,
+            BuildProducer<CardPageBuildItem> cardPageProducer,
+            BuildProducer<JsonRPCProvidersBuildItem> jsonRPCProvidersProducer,
+            OidcDevUiRecorder recorder,
             Capabilities capabilities, CurateOutcomeBuildItem curateOutcomeBuildItem) {
         if (isOidcTenantEnabled() && isAuthServerUrlSet() && isClientIdSet()) {
 
@@ -91,6 +103,9 @@ public class OidcDevConsoleProcessor extends AbstractDevConsoleProcessor {
                 devConsoleInfo.produce(new DevConsoleTemplateInfoBuildItem("keycloakAdminUrl",
                         authServerUrl.substring(0, authServerUrl.indexOf("/realms/"))));
             }
+            final boolean metadataNotNull = metadata != null;
+
+            // old DEV UI
             produceDevConsoleTemplateItems(capabilities,
                     devConsoleInfo,
                     devConsoleRuntimeInfo,
@@ -98,11 +113,11 @@ public class OidcDevConsoleProcessor extends AbstractDevConsoleProcessor {
                     providerName,
                     getApplicationType(),
                     oidcConfig.devui.grant.type.isPresent() ? oidcConfig.devui.grant.type.get().getGrantType() : "code",
-                    metadata != null ? metadata.getString("authorization_endpoint") : null,
-                    metadata != null ? metadata.getString("token_endpoint") : null,
-                    metadata != null ? metadata.getString("end_session_endpoint") : null,
-                    metadata != null ? metadata.containsKey("introspection_endpoint")
-                            || metadata.containsKey("userinfo_endpoint") : false);
+                    metadataNotNull ? metadata.getString("authorization_endpoint") : null,
+                    metadataNotNull ? metadata.getString("token_endpoint") : null,
+                    metadataNotNull ? metadata.getString("end_session_endpoint") : null,
+                    metadataNotNull && (metadata.containsKey("introspection_endpoint")
+                            || metadata.containsKey("userinfo_endpoint")));
 
             produceDevConsoleRouteItems(devConsoleRoute,
                     new OidcTestServiceHandler(vertxInstance, oidcConfig.devui.webClientTimeout),
@@ -110,6 +125,22 @@ public class OidcDevConsoleProcessor extends AbstractDevConsoleProcessor {
                             oidcConfig.devui.grantOptions),
                     new OidcPasswordClientCredHandler(vertxInstance, oidcConfig.devui.webClientTimeout,
                             oidcConfig.devui.grantOptions));
+
+            // new DEV UI
+            cardPageProducer.produce(createCardPage(
+                    recorder,
+                    capabilities,
+                    providerName,
+                    getApplicationType(),
+                    oidcConfig.devui.grant.type.isPresent() ? oidcConfig.devui.grant.type.get().getGrantType() : "code",
+                    metadataNotNull ? metadata.getString("authorization_endpoint") : null,
+                    metadataNotNull ? metadata.getString("token_endpoint") : null,
+                    metadataNotNull ? metadata.getString("end_session_endpoint") : null,
+                    metadataNotNull && (metadata.containsKey("introspection_endpoint")
+                            || metadata.containsKey("userinfo_endpoint"))
+            ));
+            // FIXME: different route handler???
+            jsonRPCProvidersProducer.produce(new JsonRPCProvidersBuildItem(OidcDevJsonRpcService.class));
         }
     }
 

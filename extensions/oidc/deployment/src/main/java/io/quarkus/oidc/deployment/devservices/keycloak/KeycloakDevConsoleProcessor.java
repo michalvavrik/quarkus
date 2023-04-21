@@ -15,11 +15,15 @@ import io.quarkus.deployment.pkg.builditem.CurateOutcomeBuildItem;
 import io.quarkus.devconsole.spi.DevConsoleRouteBuildItem;
 import io.quarkus.devconsole.spi.DevConsoleRuntimeTemplateInfoBuildItem;
 import io.quarkus.devconsole.spi.DevConsoleTemplateInfoBuildItem;
+import io.quarkus.devui.spi.JsonRPCProvidersBuildItem;
+import io.quarkus.devui.spi.page.CardPageBuildItem;
 import io.quarkus.oidc.deployment.OidcBuildTimeConfig;
 import io.quarkus.oidc.deployment.devservices.AbstractDevConsoleProcessor;
 import io.quarkus.oidc.deployment.devservices.OidcAuthorizationCodePostHandler;
 import io.quarkus.oidc.deployment.devservices.OidcPasswordClientCredHandler;
 import io.quarkus.oidc.deployment.devservices.OidcTestServiceHandler;
+import io.quarkus.oidc.runtime.devui.OidcDevJsonRpcService;
+import io.quarkus.oidc.runtime.devui.OidcDevUiRecorder;
 
 public class KeycloakDevConsoleProcessor extends AbstractDevConsoleProcessor {
 
@@ -32,6 +36,8 @@ public class KeycloakDevConsoleProcessor extends AbstractDevConsoleProcessor {
     public void setConfigProperties(BuildProducer<DevConsoleTemplateInfoBuildItem> devConsoleInfo,
             BuildProducer<DevConsoleRuntimeTemplateInfoBuildItem> devConsoleRuntimeInfo,
             Optional<KeycloakDevServicesConfigBuildItem> configProps,
+            BuildProducer<CardPageBuildItem> cardPageProducer,
+            OidcDevUiRecorder recorder,
             Capabilities capabilities, CurateOutcomeBuildItem curateOutcomeBuildItem) {
         if (configProps.isPresent() && configProps.get().getConfig().containsKey("keycloak.url")) {
             devConsoleInfo.produce(
@@ -44,6 +50,8 @@ public class KeycloakDevConsoleProcessor extends AbstractDevConsoleProcessor {
                             configProps.get().getProperties().get("keycloak.realms")));
 
             String realmUrl = configProps.get().getConfig().get("quarkus.oidc.auth-server-url");
+
+            // old DEV UI
             produceDevConsoleTemplateItems(capabilities,
                     devConsoleInfo,
                     devConsoleRuntimeInfo,
@@ -56,11 +64,26 @@ public class KeycloakDevConsoleProcessor extends AbstractDevConsoleProcessor {
                     realmUrl + "/protocol/openid-connect/token",
                     realmUrl + "/protocol/openid-connect/logout",
                     true);
+
+            // new DEV UI
+            cardPageProducer.produce(createCardPage(
+                    recorder,
+                    capabilities,
+                    "Keycloak",
+                    configProps.get().getConfig().get("quarkus.oidc.application-type"),
+                    oidcConfig.devui.grant.type.isPresent() ? oidcConfig.devui.grant.type.get().getGrantType()
+                            : keycloakConfig.devservices.grant.type.getGrantType(),
+                    realmUrl + "/protocol/openid-connect/auth",
+                    realmUrl + "/protocol/openid-connect/token",
+                    realmUrl + "/protocol/openid-connect/logout",
+                    true
+            ));
         }
     }
 
     @BuildStep(onlyIf = IsDevelopment.class)
     void invokeEndpoint(BuildProducer<DevConsoleRouteBuildItem> devConsoleRoute,
+                        BuildProducer<JsonRPCProvidersBuildItem> jsonRPCProvidersProducer,
             Optional<KeycloakDevServicesConfigBuildItem> configProps) {
         if (configProps.isPresent() && configProps.get().getConfig().containsKey("keycloak.url")) {
             @SuppressWarnings("unchecked")
@@ -73,6 +96,9 @@ public class KeycloakDevConsoleProcessor extends AbstractDevConsoleProcessor {
                     new OidcPasswordClientCredHandler(KeycloakDevServicesProcessor.vertxInstance,
                             oidcConfig.devui.webClientTimeout, users,
                             oidcConfig.devui.grantOptions));
+
+            // FIXME: different route handler???
+            jsonRPCProvidersProducer.produce(new JsonRPCProvidersBuildItem(OidcDevJsonRpcService.class));
         }
     }
 }
