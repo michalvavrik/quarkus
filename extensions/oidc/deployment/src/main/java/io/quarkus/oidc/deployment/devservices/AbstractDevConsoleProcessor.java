@@ -8,7 +8,10 @@ import io.quarkus.devconsole.runtime.spi.DevConsolePostHandler;
 import io.quarkus.devconsole.spi.DevConsoleRouteBuildItem;
 import io.quarkus.devconsole.spi.DevConsoleRuntimeTemplateInfoBuildItem;
 import io.quarkus.devconsole.spi.DevConsoleTemplateInfoBuildItem;
+import io.quarkus.devui.spi.page.CardPageBuildItem;
+import io.quarkus.devui.spi.page.Page;
 import io.quarkus.oidc.runtime.OidcConfigPropertySupplier;
+import io.quarkus.oidc.runtime.devui.OidcDevUiRecorder;
 
 public abstract class AbstractDevConsoleProcessor {
     protected static final String CONFIG_PREFIX = "quarkus.oidc.";
@@ -80,5 +83,43 @@ public abstract class AbstractDevConsoleProcessor {
         devConsoleRoute.produce(new DevConsoleRouteBuildItem("testServiceWithToken", "POST", testServiceWithToken));
         devConsoleRoute.produce(new DevConsoleRouteBuildItem("exchangeCodeForTokens", "POST", exchangeCodeForTokens));
         devConsoleRoute.produce(new DevConsoleRouteBuildItem("testService", "POST", passwordClientCredHandler));
+    }
+
+    protected static CardPageBuildItem createCardPage(OidcDevUiRecorder recorder,
+                                               Capabilities capabilities,
+                                               String oidcProviderName,
+                                               String oidcApplicationType,
+                                               String oidcGrantType,
+                                               String authorizationUrl,
+                                               String tokenUrl,
+                                               String logoutUrl,
+                                               boolean introspectionIsAvailable) {
+        final CardPageBuildItem cardPage = new CardPageBuildItem();
+
+        // prepare provider component
+        cardPage.addPage(Page
+                .webComponentPageBuilder()
+                .icon("font-awesome-solid:boxes-stacked")
+                .title(oidcProviderName == null ? "OpenId Connect Dev Console" : oidcProviderName)
+                .componentLink("oidc-provider-component.js")
+                .dynamicLabelJsonRPCMethodName("getCardLabel"));
+        // JsonRPC method 'getCardLabel' (this one ^^^) will need OIDC provider name and default authorization URL
+        recorder.setCardLabel(oidcProviderName, authorizationUrl, AUTHORIZATION_PATH_CONFIG_KEY);
+
+        // prepare data for provider component
+        cardPage.addBuildTimeData("oidcProviderName", oidcProviderName);
+        cardPage.addBuildTimeData("oidcApplicationType", oidcApplicationType);
+        cardPage.addBuildTimeData("oidcGrantType", oidcGrantType);
+        cardPage.addBuildTimeData("swaggerIsAvailable", capabilities.isPresent(Capability.SMALLRYE_OPENAPI));
+        cardPage.addBuildTimeData("graphqlIsAvailable", capabilities.isPresent(Capability.SMALLRYE_GRAPHQL));
+        cardPage.addBuildTimeData("introspectionIsAvailable", introspectionIsAvailable);
+        cardPage.addBuildTimeData("clientId", new OidcConfigPropertySupplier(CLIENT_ID_CONFIG_KEY));
+        cardPage.addBuildTimeData("clientSecret", new OidcConfigPropertySupplier(CLIENT_SECRET_CONFIG_KEY, ""));
+        cardPage.addBuildTimeData("authorizationUrl", new OidcConfigPropertySupplier(AUTHORIZATION_PATH_CONFIG_KEY, authorizationUrl, true));
+        cardPage.addBuildTimeData("tokenUrl", new OidcConfigPropertySupplier(TOKEN_PATH_CONFIG_KEY, tokenUrl, true));
+        cardPage.addBuildTimeData("logoutUrl", new OidcConfigPropertySupplier(END_SESSION_PATH_CONFIG_KEY, logoutUrl, true));
+        cardPage.addBuildTimeData("postLogoutUriParam", new OidcConfigPropertySupplier(POST_LOGOUT_URI_PARAM_CONFIG_KEY));
+
+        return cardPage;
     }
 }
