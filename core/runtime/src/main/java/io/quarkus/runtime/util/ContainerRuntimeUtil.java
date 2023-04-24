@@ -165,6 +165,7 @@ public final class ContainerRuntimeUtil {
             return "";
         } catch (Throwable t) {
             log.error("FOOOOOOOOOOOOOOOOOO FOOOOOOOOOO ", t);
+            throw t;
         } finally {
             if (versionProcess != null) {
                 versionProcess.destroy();
