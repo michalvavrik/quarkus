@@ -161,7 +161,10 @@ public final class ContainerRuntimeUtil {
         } catch (IOException | InterruptedException e) {
             // If an exception is thrown in the process, just return an empty String
             log.debugf(e, "Failure to read version output from %s", containerRuntime.getExecutableName());
+            log.error("EEEEEEEEEEEEEE ", e);
             return "";
+        } catch (Throwable t) {
+            log.error("FOOOOOOOOOOOOOOOOOO FOOOOOOOOOO ", t);
         } finally {
             if (versionProcess != null) {
                 versionProcess.destroy();
