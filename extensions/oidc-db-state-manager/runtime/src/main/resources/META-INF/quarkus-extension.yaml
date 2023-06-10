@@ -1,0 +1,15 @@
+---
+artifact: ${project.groupId}:${project.artifactId}:${project.version}
+name: "OpenID Connect Database State Manager"
+metadata:
+  keywords:
+  - "oauth2"
+  - "openid-connect"
+  - "oidc"
+  - "quarkus-oidc-db-state-manager"
+  guide: "https://quarkus.io/guides/security-openid-connect-client"
+  categories:
+  - "security"
+  status: "preview"
+  config:
+  - "quarkus.oidc-db-state-manager."
