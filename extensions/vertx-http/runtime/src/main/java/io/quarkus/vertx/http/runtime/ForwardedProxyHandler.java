@@ -45,8 +45,12 @@ public class ForwardedProxyHandler implements Handler<HttpServerRequest> {
 
     @Override
     public void handle(HttpServerRequest event) {
-        if (event.remoteAddress().isDomainSocket()) {
-            // we do not support domain socket proxy checks, ignore the headers
+        if (event.remoteAddress() == null) {
+            // client address may not be available with virtual http channel
+            LOGGER.debug("Client address is not available, 'Forwarded' and 'X-Forwarded' headers are going to be ignored");
+            handleForwardedServerRequest(event, denyAll());
+        } else if (event.remoteAddress().isDomainSocket()) {
+            // we do not support domain socket proxy checks, ignore the\ headers
             LOGGER.debug("Domain socket are not supported, 'Forwarded' and 'X-Forwarded' headers are going to be ignored");
             handleForwardedServerRequest(event, denyAll());
         } else {
