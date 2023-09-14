@@ -71,6 +71,7 @@ It is an exact path match because it does not end with `*`.
 
 Permission sets can also specify paths and methods as a comma-separated list.
 If a path ends with the `*` wildcard, the query it generates matches all sub-paths.
+On the other hand, the `*` wildcard used inside path represents exactly one path segment.
 Otherwise, it queries for an exact match and only matches that specific path:
 
 [source,properties]
@@ -123,6 +124,32 @@ quarkus.http.auth.permission.public.policy=permit
 ----
 ====
 
+The `*` wildcard used inside path, not at the end, can be used as replacement for exactly one path segment, consisting of any HTTP path characters.
+Let's consider an HTTP request to the `/one/two/three/four/five` path with 5 path segments (`one`, `two`, `three`, `four`, `five`).
+Valid pattern using the wildcard to represent one path segment inside path, like `/one/two/*/four/five`, will match as
+long as it is the most specific path pattern. The longest segment sequence without wildcard is considered the most specific.
+On the other hand, the path `/one/two/*/five` will never be matched, for the wildcard can only represent more than a one segment when used at then end.
+Here are some of possible path matches ordered from the most specific to the least specific:
+
+[source, text]
+----
+/one/two/three/four/five
+/one/two/three/four/*
+/one/two/three/*/five
+/one/two/three/*/*
+/one/two/three/*
+/one/two/*/four/five
+/one/two/*/*/five
+/one/two/*
+/one/*/three/four/five
+/one/*
+/*/two/three/four/five
+/*/two/*/four/five
+/*
+----
+
+NOTE: The `*` wildcard inside path can be only used as standalone segment character, representing all the segment characters. Thus, paths like `/one/tw*/three` are invalid.
+
 === Matching multiple paths: most specific method wins
 
 When a path is registered with multiple permission sets, the permission sets explicitly specifying an HTTP method that matches the request take precedence.
@@ -156,15 +183,25 @@ Method-specific matches take precedence.
 ----
 quarkus.http.auth.policy.user-policy1.roles-allowed=user
 quarkus.http.auth.policy.admin-policy1.roles-allowed=admin
+quarkus.http.auth.policy.root-policy1.roles-allowed=root
 
-quarkus.http.auth.permission.roles1.paths=/api/*,/restricted/*
+quarkus.http.auth.permission.roles1.paths=/api/*,/restricted/* <1>
 quarkus.http.auth.permission.roles1.policy=user-policy1
 
 quarkus.http.auth.permission.roles2.paths=/api/*,/admin/*
 quarkus.http.auth.permission.roles2.policy=admin-policy1
-----
 
-TIP: Given the preceding permission set, `GET /api/foo` would match both permission sets' paths, requiring both the `user` and `admin` roles.
+quarkus.http.auth.permission.roles3.paths=/foo/*/bar
+quarkus.http.auth.permission.roles3.policy=user-policy1
+
+quarkus.http.auth.permission.roles4.paths=/foo/*/bar
+quarkus.http.auth.permission.roles4.policy=admin-policy1
+
+quarkus.http.auth.permission.roles5.paths=/foo/baz/bar <2>
+quarkus.http.auth.permission.roles5.policy=root-policy1
+----
+<1> Given the preceding permission set, `GET /api/foo` would match both permission sets' paths, requiring both the `user` and `admin` roles.
+<2> When the `*` wildcard is used anywhere else but at the end, only exact pattern matches can win simultaneously. Thus the path `/foo/baz/bar` requires the `root` role, while `/foo/fum/bar` requires both `user` and `admin` roles.
 
 === Configuration properties to deny access
 

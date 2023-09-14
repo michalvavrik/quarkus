@@ -50,6 +50,13 @@ public class PolicyMappingConfig {
      * If multiple permission sets match the same path then explicit methods matches take precedence
      * over matches without methods set, otherwise the most restrictive permissions are applied.
      *
+     * The wildcard can also be used anywhere in the path more than once, as replacement for exactly one path segment.
+     * In which case, the path is divided into a sequence of path segments separated by a slash ("/") character,
+     * and the most specific sequence wins. For more information and practical example, please see the section
+     * xref:security-authorize-web-endpoints-reference.adoc#matching-multiple-paths[Matching multiple paths]
+     * of the Security Authorization guide.
+     *
+     * @asciidoclet
      */
     @ConfigItem
     public Optional<List<String>> paths;
