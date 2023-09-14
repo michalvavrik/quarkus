@@ -1,9 +1,6 @@
 package io.quarkus.vertx.http.runtime.security;
 
-import java.util.Comparator;
 import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -25,11 +22,6 @@ public class PathMatcher<T> {
     private final SubstringMap<T> paths = new SubstringMap<>();
     private final ConcurrentMap<String, T> exactPathMatches = new ConcurrentHashMap<>();
 
-    /**
-     * lengths of all registered paths
-     */
-    private volatile int[] lengths = {};
-
     public PathMatcher(final T defaultHandler) {
         this.defaultHandler = defaultHandler;
     }
@@ -50,28 +42,62 @@ public class PathMatcher<T> {
                 return new PathMatch<>(path, "", match);
             }
         }
+        PathMatch<T> prefixMatch = matchPrefixPath(path, paths.getLengths(), path.length(), paths);
+        if (prefixMatch != null) {
+            return prefixMatch;
+        }
+        // FIXME this can be problematic when this is nested path?
+        // FIXME and what should be default handler? what if it turns out that one/*/three/four doesn't match
+        // FIXME one/two/jamaica, and therefore something like */two/* should be used instead??
+        // FIXME this can only be avoided by limiting * to exactly one inside path (that is two * in general)
+        // FIXME but then, it can still happen than /one/*/jamaica will not match but /*/two/three
+        // FIXME this means it can only work when matching will be done in paths."get"
+        // FIXME or
+        return new PathMatch<>("", path, defaultHandler);
+    }
 
-        int length = path.length();
-        final int[] lengths = this.lengths;
+    private static <T> PathMatch<T> matchPrefixPath(String path, int[] lengths, int length, SubstringMap<T> paths) {
         for (int pathLength : lengths) {
             if (pathLength == length) {
                 SubstringMap.SubstringMatch<T> next = paths.get(path, length);
                 if (next != null) {
-                    return new PathMatch<>(path, "", next.getValue());
+                    if (next.hasSubPaths()) {
+                        // fixme the path in fact needs to be subpath!!!!! this needs to work differently
+                        //   probably substring
+                        // FIXME can we really match any subpath if path length already matches????
+                        String subPath = path;
+                        PathMatch<T> match = matchPrefixPath(subPath, next.getSubPaths().getLengths(), subPath.length(), next.getSubPaths());
+                        if (match != null) {
+                            return match;
+                        }
+                    } else {
+                        return new PathMatch<>(path, "", next.getValue());
+                    }
                 }
             } else if (pathLength < length) {
                 char c = path.charAt(pathLength);
+                // FIXME: this thing about / needs to be extremely well inspected
                 if (c == '/') {
 
                     //String part = path.substring(0, pathLength);
                     SubstringMap.SubstringMatch<T> next = paths.get(path, pathLength);
                     if (next != null) {
-                        return new PathMatch<>(next.getKey(), path.substring(pathLength), next.getValue());
+                        if (next.hasSubPaths()) {
+                            // fixme the path in fact needs to be subpath!!!!! this needs to work differently
+                            //   probably substring
+                            String subPath = path.substring(pathLength);
+                            PathMatch<T> match = matchPrefixPath(subPath, next.getSubPaths().getLengths(), subPath.length(), next.getSubPaths());
+                            if (match != null) {
+                                return match;
+                            }
+                        } else {
+                            return new PathMatch<>(next.getKey(), path.substring(pathLength), next.getValue());
+                        }
                     }
                 }
             }
         }
-        return new PathMatch<>("", path, defaultHandler);
+        return null;
     }
 
     /**
@@ -98,7 +124,6 @@ public class PathMatcher<T> {
 
         paths.put(path, handler);
 
-        buildLengths();
         return this;
     }
 
@@ -129,25 +154,6 @@ public class PathMatcher<T> {
         return match.getValue();
     }
 
-    private void buildLengths() {
-        final Set<Integer> lengths = new TreeSet<>(new Comparator<Integer>() {
-            @Override
-            public int compare(Integer o1, Integer o2) {
-                return -o1.compareTo(o2);
-            }
-        });
-        for (String p : paths.keys()) {
-            lengths.add(p.length());
-        }
-
-        int[] lengthArray = new int[lengths.size()];
-        int pos = 0;
-        for (int i : lengths) {
-            lengthArray[pos++] = i;
-        }
-        this.lengths = lengthArray;
-    }
-
     @Deprecated
     public synchronized PathMatcher removePath(final String path) {
         return removePrefixPath(path);
@@ -165,7 +171,6 @@ public class PathMatcher<T> {
 
         paths.remove(path);
 
-        buildLengths();
         return this;
     }
 
@@ -182,7 +187,6 @@ public class PathMatcher<T> {
     public synchronized PathMatcher clearPaths() {
         paths.clear();
         exactPathMatches.clear();
-        this.lengths = new int[0];
         defaultHandler = null;
         return this;
     }

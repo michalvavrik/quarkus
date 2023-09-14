@@ -1,9 +1,12 @@
 package io.quarkus.vertx.http.runtime.security;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * A string keyed map that can be accessed as a substring, eliminating the need to allocate a new string
@@ -19,6 +22,10 @@ import java.util.NoSuchElementException;
 public class SubstringMap<V> {
     private static final int ALL_BUT_LAST_BIT = ~1;
 
+    /**
+     * lengths of all registered paths
+     */
+    private volatile int[] lengths = {};
     private volatile Object[] table = new Object[16];
     private int size;
 
@@ -94,6 +101,7 @@ public class SubstringMap<V> {
         doPut(newTable, key, new SubstringMap.SubstringMatch<>(key, value));
         this.table = newTable;
         size++;
+        buildLengths();
     }
 
     public synchronized V remove(String key) {
@@ -117,6 +125,9 @@ public class SubstringMap<V> {
         if (value == null) {
             return null;
         }
+
+        buildLengths();
+
         return ((SubstringMatch<V>) value).getValue();
     }
 
@@ -147,6 +158,34 @@ public class SubstringMap<V> {
     public synchronized void clear() {
         size = 0;
         table = new Object[16];
+        this.clearLengths();
+    }
+
+    int[] getLengths() {
+        return lengths;
+    }
+
+    private void clearLengths() {
+        this.lengths = new int[0];
+    }
+
+    private void buildLengths() {
+        final Set<Integer> lengths = new TreeSet<>(new Comparator<Integer>() {
+            @Override
+            public int compare(Integer o1, Integer o2) {
+                return -o1.compareTo(o2);
+            }
+        });
+        for (String p : keys()) {
+            lengths.add(p.length());
+        }
+
+        int[] lengthArray = new int[lengths.size()];
+        int pos = 0;
+        for (int i : lengths) {
+            lengthArray[pos++] = i;
+        }
+        this.lengths = lengthArray;
     }
 
     private static int hash(String value, int length) {
@@ -209,10 +248,23 @@ public class SubstringMap<V> {
     public static final class SubstringMatch<V> {
         private final String key;
         private final V value;
+        private final SubstringMap<V> subPaths;
+        private final boolean hasSubPaths;
 
         public SubstringMatch(String key, V value) {
             this.key = key;
             this.value = value;
+            this.subPaths = null;
+            this.hasSubPaths = false;
+        }
+
+        public SubstringMatch(String key, V value, String subPath) {
+            this.key = key;
+            this.value = value;
+            // FIXME subpaths! not just one, add mechanism for more than one so that map is not singleton
+            // FIXME also value can be null, heh?
+            this.subPaths = new SubstringMap<>();
+            this.hasSubPaths = true;
         }
 
         public String getKey() {
@@ -221,6 +273,14 @@ public class SubstringMap<V> {
 
         public V getValue() {
             return value;
+        }
+
+        SubstringMap<V> getSubPaths() {
+            return subPaths;
+        }
+
+        boolean hasSubPaths() {
+            return hasSubPaths;
         }
     }
 }
