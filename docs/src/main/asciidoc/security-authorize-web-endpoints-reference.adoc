@@ -46,6 +46,37 @@ quarkus.http.auth.policy.role-policy1.roles-allowed=user,admin                  
 ----
 <1> This defines a role-based policy that allows users with the `user` and `admin` roles.
 
+Sometimes it might be useful to register your own named policy. You can get it done by creating application scoped CDI
+bean that implements the `io.quarkus.vertx.http.runtime.security.HttpSecurityPolicy` interface like in the example below:
+
+[source,java]
+----
+import jakarta.enterprise.context.ApplicationScoped;
+
+import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.vertx.http.runtime.security.HttpSecurityPolicy;
+import io.smallrye.mutiny.Uni;
+import io.vertx.ext.web.RoutingContext;
+
+@ApplicationScoped
+public class CustomNamedHttpSecPolicy implements HttpSecurityPolicy {
+    @Override
+    public Uni<CheckResult> checkPermission(RoutingContext request, Uni<SecurityIdentity> identity,
+            AuthorizationRequestContext requestContext) {
+        if (customRequestAuthorization(request)) {
+            return Uni.createFrom().item(CheckResult.PERMIT);
+        }
+        return Uni.createFrom().item(CheckResult.DENY);
+    }
+
+    @Override
+    public String name() {
+        return "custom"; <1>
+    }
+}
+----
+<1> Named HTTP Security policy will only be applied to requests matched by the `application.properties` path matching rules.
+
 You can reference a custom policy by configuring the built-in permission sets that are defined in the `application.properties` file, as outlined in the following configuration example:
 
 .Example of policy configuration
@@ -60,6 +91,9 @@ quarkus.http.auth.permission.deny1.policy=deny
 
 quarkus.http.auth.permission.roles1.paths=/roles-secured/*,/other/*,/api/*      <3>
 quarkus.http.auth.permission.roles1.policy=role-policy1
+
+quarkus.http.auth.permission.custom1.paths=/custom/*
+quarkus.http.auth.permission.custom1.policy=custom                              <4>
 ----
 <1> This permission references the default built-in `permit` policy to allow `GET` methods to `/public`.
 In this case, the demonstrated setting would not affect this example because this request is allowed anyway.
@@ -67,6 +101,7 @@ In this case, the demonstrated setting would not affect this example because thi
 It is an exact path match because it does not end with `*`.
 <3> This permission set references the previously defined policy.
 `roles1` is an example name; you can call the permission sets whatever you want.
+<4> Custom policy name must match the value returned by the `io.quarkus.vertx.http.runtime.security.HttpSecurityPolicy.name` method.
 
 
 === Matching on paths and methods
@@ -643,19 +678,22 @@ Similarly to the `CRUDResource` example, the following example shows how you can
 ----
 package org.acme.library;
 
+import io.quarkus.runtime.annotations.RegisterForReflection;
 import java.security.Permission;
 import java.util.Arrays;
 import java.util.Set;
 
+@RegisterForReflection <1>
 public class MediaLibraryPermission extends LibraryPermission {
 
     public MediaLibraryPermission(String libraryName, String[] actions) {
-        super(libraryName, actions, new MediaLibrary());    <1>
+        super(libraryName, actions, new MediaLibrary());    <2>
     }
 
 }
 ----
-<1> We want to pass the `MediaLibrary` instance to the `LibraryPermission` constructor.
+<1> When building a native executable, the permission class must be registered for reflection unless it is also used in at least one `io.quarkus.security.PermissionsAllowed#name` parameter.
+<2> We want to pass the `MediaLibrary` instance to the `LibraryPermission` constructor.
 
 [source,properties]
 ----
