@@ -620,6 +620,60 @@ are using an executor that is capable of propagating the identity (e.g. no `Comp
 to make sure that Quarkus can propagate it. For more information see the
 xref:context-propagation.adoc[Context Propagation Guide].
 
+[[observe-security-events]]
+== Observe security events
+
+Quarkus beans fire various security events that can be consumed by xref:cdi.adoc#events-and-observers[CDI observers].
+All security events implement the `io.quarkus.security.spi.runtime.SecurityEvent` interface, which allows you to consume all the events with one observer method.
+
+.List of supported security events
+
+* `io.quarkus.security.spi.runtime.AuthenticationFailureEvent`
+* `io.quarkus.security.spi.runtime.AuthenticationSuccessEvent`
+* `io.quarkus.security.spi.runtime.AuthorizationFailureEvent`
+* `io.quarkus.security.spi.runtime.AuthorizationSuccessEvent`
+* `io.quarkus.oidc.SecurityEvent`
+
+[[TIP]]
+For more information about security events specific to the Quarkus OpenID Connect extension, please see
+the xref:security-oidc-code-flow-authentication.adoc#listen-to-authentication-events[Listening to important authentication events]
+section of the OIDC code flow mechanism for protecting web applications guide.
+
+[source,java]
+----
+package org.acme.security;
+
+import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.spi.runtime.AuthenticationFailureEvent;
+import io.quarkus.security.spi.runtime.AuthorizationFailureEvent;
+import io.quarkus.security.spi.runtime.SecurityEvent;
+import io.vertx.ext.web.RoutingContext;
+import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.event.ObservesAsync;
+
+public class SecurityEventObserver {
+
+    void observe(@ObservesAsync SecurityEvent event) {              <1>
+        SecurityIdentity identity = event.getSecurityIdentity();
+    }
+
+    void observe(@Observes AuthenticationFailureEvent event) {
+        RoutingContext routingContext = (RoutingContext) event      <2>
+                .getEventProperties()
+                .get(RoutingContext.class.getName());
+    }
+
+    void observe(@Observes AuthorizationFailureEvent event) {       <3>
+        Throwable failure = event.getAuthorizationFailure();
+    }
+}
+----
+<1> This observer consumes all the security events asynchronously, which means that HTTP request processing will continue regardless on the event processing.
+The `SecurityEvent` observer method is notified with every authentication and authorization success, depending on the application, that can be a lot of events.
+For that reason, asynchronous processing can have positive effect on performance.
+<2> Applications based on the Vert.x HTTP extension should be able to access the `RoutingContext` from event properties.
+<3> The `AuthorizationFailureEvent` event is fired when request does not comply a standard security annotation constrain or is denied access by an HTTP Security policy.
+
 == References
 
 * xref:security-overview.adoc[Quarkus Security overview]

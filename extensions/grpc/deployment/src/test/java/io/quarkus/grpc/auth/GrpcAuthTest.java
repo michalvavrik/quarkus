@@ -8,5 +8,4 @@ public class GrpcAuthTest extends GrpcAuthTestBase {
 
     @RegisterExtension
     static final QuarkusUnitTest config = createQuarkusUnitTest(null);
-
 }

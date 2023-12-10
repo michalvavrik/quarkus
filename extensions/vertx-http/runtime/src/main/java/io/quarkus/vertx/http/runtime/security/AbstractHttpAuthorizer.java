@@ -2,10 +2,14 @@ package io.quarkus.vertx.http.runtime.security;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+
+import jakarta.enterprise.event.Event;
+import jakarta.enterprise.inject.spi.BeanManager;
 
 import org.jboss.logging.Logger;
 
@@ -15,7 +19,10 @@ import io.quarkus.security.ForbiddenException;
 import io.quarkus.security.identity.IdentityProviderManager;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.spi.runtime.AuthorizationController;
+import io.quarkus.security.spi.runtime.AuthorizationFailureEvent;
+import io.quarkus.security.spi.runtime.AuthorizationSuccessEvent;
 import io.quarkus.security.spi.runtime.BlockingSecurityExecutor;
+import io.quarkus.security.spi.runtime.SecurityEventHelper;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.UniSubscriber;
 import io.smallrye.mutiny.subscription.UniSubscription;
@@ -33,15 +40,22 @@ abstract class AbstractHttpAuthorizer {
     private final AuthorizationController controller;
     private final List<HttpSecurityPolicy> policies;
     private final BlockingSecurityExecutor blockingExecutor;
+    private final Event<AuthorizationFailureEvent> authZFailureEvent;
+    private final Event<AuthorizationSuccessEvent> authZSuccessEvent;
 
     AbstractHttpAuthorizer(HttpAuthenticator httpAuthenticator, IdentityProviderManager identityProviderManager,
-            AuthorizationController controller, List<HttpSecurityPolicy> policies,
-            BlockingSecurityExecutor blockingExecutor) {
+            AuthorizationController controller, List<HttpSecurityPolicy> policies, BeanManager beanManager,
+            BlockingSecurityExecutor blockingExecutor, Event<AuthorizationFailureEvent> authZFailureEvent,
+            Event<AuthorizationSuccessEvent> authZSuccessEvent, boolean securityEventsEnabled) {
         this.httpAuthenticator = httpAuthenticator;
         this.identityProviderManager = identityProviderManager;
         this.controller = controller;
         this.policies = policies;
         this.blockingExecutor = blockingExecutor;
+        var eventHelper = SecurityEventHelper.of(AuthorizationSuccessEvent.EMPTY_INSTANCE,
+                AuthorizationFailureEvent.EMPTY_INSTANCE, beanManager, securityEventsEnabled);
+        this.authZSuccessEvent = eventHelper.fireEventOnSuccess() ? authZSuccessEvent : null;
+        this.authZFailureEvent = eventHelper.fireEventOnFailure() ? authZFailureEvent : null;
     }
 
     /**
@@ -92,6 +106,11 @@ abstract class AbstractHttpAuthorizer {
                     routingContext.setUser(new QuarkusHttpUser(augmentedIdentity));
                     routingContext.put(QuarkusHttpUser.DEFERRED_IDENTITY_KEY, Uni.createFrom().item(augmentedIdentity));
                 }
+                if (authZSuccessEvent != null) {
+                    fireAuthZSuccessEvent(routingContext, augmentedIdentity);
+                }
+            } else if (authZSuccessEvent != null && permissionCheckPerformed(permissionCheckers, routingContext, index)) {
+                fireAuthZSuccessEvent(routingContext, currentUser == null ? null : currentUser.getSecurityIdentity());
             }
             routingContext.next();
             return;
@@ -103,7 +122,7 @@ abstract class AbstractHttpAuthorizer {
                     @Override
                     public void accept(HttpSecurityPolicy.CheckResult checkResult) {
                         if (!checkResult.isPermitted()) {
-                            doDeny(identity, routingContext);
+                            doDeny(identity, routingContext, res);
                         } else {
                             if (checkResult.getAugmentedIdentity() != null) {
                                 doPermissionCheck(routingContext, Uni.createFrom().item(checkResult.getAugmentedIdentity()),
@@ -134,7 +153,7 @@ abstract class AbstractHttpAuthorizer {
                 });
     }
 
-    private void doDeny(Uni<SecurityIdentity> identity, RoutingContext routingContext) {
+    private void doDeny(Uni<SecurityIdentity> identity, RoutingContext routingContext, HttpSecurityPolicy policy) {
         identity.subscribe().withSubscriber(new UniSubscriber<SecurityIdentity>() {
             @Override
             public void onSubscribe(UniSubscription subscription) {
@@ -156,10 +175,12 @@ abstract class AbstractHttpAuthorizer {
                             if (!routingContext.response().ended()) {
                                 routingContext.response().end();
                             }
+                            fireAuthZFailureEvent(routingContext, policy, null, identity);
                         }
 
                         @Override
                         public void onFailure(Throwable failure) {
+                            fireAuthZFailureEvent(routingContext, policy, failure, identity);
                             if (!routingContext.response().ended()) {
                                 routingContext.fail(failure);
                             } else if (!(failure instanceof IOException)) {
@@ -170,15 +191,46 @@ abstract class AbstractHttpAuthorizer {
                         }
                     });
                 } else {
+                    ForbiddenException forbiddenException = new ForbiddenException();
+                    fireAuthZFailureEvent(routingContext, policy, forbiddenException, identity);
                     routingContext.fail(new ForbiddenException());
                 }
             }
 
             @Override
             public void onFailure(Throwable failure) {
+                fireAuthZFailureEvent(routingContext, policy, failure, null);
                 routingContext.fail(failure);
             }
         });
 
+    }
+
+    private void fireAuthZFailureEvent(RoutingContext routingContext, HttpSecurityPolicy policy, Throwable failure,
+            SecurityIdentity identity) {
+        if (authZFailureEvent != null) {
+            final String context = policy != null ? policy.getClass().getName() : null;
+            final AuthorizationFailureEvent event = new AuthorizationFailureEvent(identity, failure, context,
+                    Map.of(RoutingContext.class.getName(), routingContext));
+            authZFailureEvent.fire(event);
+            authZFailureEvent.fireAsync(event);
+        }
+    }
+
+    private void fireAuthZSuccessEvent(RoutingContext routingContext, SecurityIdentity augmentedIdentity) {
+        var event = new AuthorizationSuccessEvent(augmentedIdentity,
+                Map.of(RoutingContext.class.getName(), routingContext));
+        authZSuccessEvent.fire(event);
+        authZSuccessEvent.fireAsync(event);
+    }
+
+    private static boolean permissionCheckPerformed(List<HttpSecurityPolicy> permissionCheckers,
+            RoutingContext routingContext, int index) {
+        // the path matching policy is not permission check itself, it selects policy based on
+        // configured HTTP permissions, but if there are no path matching HTTP permissions, there is no check
+        if (index == 1 && permissionCheckers.get(0) instanceof AbstractPathMatchingHttpSecurityPolicy) {
+            return AbstractPathMatchingHttpSecurityPolicy.policyApplied(routingContext);
+        }
+        return index > 0;
     }
 }

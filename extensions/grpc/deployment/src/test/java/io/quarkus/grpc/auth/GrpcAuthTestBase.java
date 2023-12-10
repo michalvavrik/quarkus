@@ -14,12 +14,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.example.security.SecuredService;
@@ -29,9 +31,16 @@ import io.grpc.Metadata;
 import io.quarkus.grpc.GrpcClient;
 import io.quarkus.grpc.GrpcClientUtils;
 import io.quarkus.grpc.GrpcService;
+import io.quarkus.security.UnauthorizedException;
 import io.quarkus.security.credential.PasswordCredential;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.identity.request.AuthenticationRequest;
 import io.quarkus.security.identity.request.UsernamePasswordAuthenticationRequest;
+import io.quarkus.security.runtime.interceptor.check.RolesAllowedCheck;
+import io.quarkus.security.spi.runtime.AuthenticationFailureEvent;
+import io.quarkus.security.spi.runtime.AuthenticationSuccessEvent;
+import io.quarkus.security.spi.runtime.AuthorizationFailureEvent;
+import io.quarkus.security.spi.runtime.AuthorizationSuccessEvent;
 import io.quarkus.test.QuarkusUnitTest;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Multi;
@@ -62,6 +71,7 @@ public abstract class GrpcAuthTestBase {
 
                     return ShrinkWrap.create(JavaArchive.class)
                             .addClasses(Service.class, BasicGrpcSecurityMechanism.class, BlockingHttpSecurityPolicy.class)
+                            .addClass(SecurityEventObserver.class)
                             .addPackage(SecuredService.class.getPackage())
                             .add(new StringAsset(props), "application.properties");
                 });
@@ -72,6 +82,50 @@ public abstract class GrpcAuthTestBase {
 
     @GrpcClient
     SecuredService securityClient;
+
+    @Inject
+    SecurityEventObserver securityEventObserver;
+
+    @BeforeEach
+    public void clearSecurityEventStorage() {
+        securityEventObserver.getStorage().clear();
+    }
+
+    private void testSecurityEventsWhenRightCredentials() {
+        Assertions.assertTrue(securityEventObserver.getStorage().size() >= 2);
+        AuthenticationSuccessEvent authSuccessEvent = (AuthenticationSuccessEvent) securityEventObserver.getStorage().stream()
+                .filter(event -> event instanceof AuthenticationSuccessEvent).findFirst().get();
+        SecurityIdentity identity = authSuccessEvent.getSecurityIdentity();
+        Assertions.assertNotNull(identity);
+        Assertions.assertEquals("john", identity.getPrincipal().getName());
+        Assertions.assertTrue(identity.hasRole("employees"));
+        AuthorizationSuccessEvent authZSuccessEvent = (AuthorizationSuccessEvent) securityEventObserver.getStorage().stream()
+                .filter(event -> event instanceof AuthorizationSuccessEvent).findFirst().get();
+        identity = authZSuccessEvent.getSecurityIdentity();
+        Assertions.assertNotNull(identity);
+        Assertions.assertEquals("john", identity.getPrincipal().getName());
+        Assertions.assertTrue(identity.hasRole("employees"));
+    }
+
+    private void testSecurityEventsWhenWrongCredentials() {
+        Assertions.assertFalse(securityEventObserver.getStorage().isEmpty());
+        AuthenticationFailureEvent authFailureEvent = (AuthenticationFailureEvent) securityEventObserver.getStorage().stream()
+                .filter(event -> event instanceof AuthenticationFailureEvent).findFirst().get();
+        Throwable failure = authFailureEvent.getAuthenticationFailure();
+        Assertions.assertNotNull(failure);
+        Assertions.assertTrue(failure.getMessage().contains("Illegal base64 character 20"));
+    }
+
+    private void testSecurityEventsWhenInsufficientRole() {
+        Assertions.assertFalse(securityEventObserver.getStorage().isEmpty());
+        AuthorizationFailureEvent event = (AuthorizationFailureEvent) securityEventObserver.getStorage().stream()
+                .filter(e -> e instanceof AuthorizationFailureEvent).findFirst().get();
+        SecurityIdentity identity = event.getSecurityIdentity();
+        Assertions.assertNotNull(identity);
+        Assertions.assertTrue(identity.isAnonymous());
+        Assertions.assertTrue(event.getAuthorizationFailure() instanceof UnauthorizedException);
+        Assertions.assertEquals(RolesAllowedCheck.class.getName(), event.getAuthorizationContext());
+    }
 
     @Test
     void shouldSecureUniEndpoint() {
@@ -89,6 +143,7 @@ public abstract class GrpcAuthTestBase {
 
         await().atMost(10, TimeUnit.SECONDS)
                 .until(() -> resultCount.get() == 1);
+        testSecurityEventsWhenRightCredentials();
     }
 
     @Test
@@ -107,6 +162,7 @@ public abstract class GrpcAuthTestBase {
 
         await().atMost(10, TimeUnit.SECONDS)
                 .until(() -> resultCount.get() == 1);
+        testSecurityEventsWhenRightCredentials();
     }
 
     @Test
@@ -135,7 +191,7 @@ public abstract class GrpcAuthTestBase {
                 .supplier(() -> (Security.Container.newBuilder().setText("woo-hoo").build())).atMost(4))
                 .subscribe().with(e -> results.add(e.getIsOnEventLoop()));
 
-        await().atMost(10, TimeUnit.SECONDS)
+        await().atMost(20, TimeUnit.SECONDS)
                 .until(() -> results.size() == 5);
 
         assertThat(results.stream().filter(e -> e)).isEmpty();
@@ -156,6 +212,7 @@ public abstract class GrpcAuthTestBase {
 
         await().atMost(10, TimeUnit.SECONDS)
                 .until(() -> error.get() != null);
+        testSecurityEventsWhenWrongCredentials();
     }
 
     @Test
@@ -173,6 +230,7 @@ public abstract class GrpcAuthTestBase {
 
         await().atMost(10, TimeUnit.SECONDS)
                 .until(() -> error.get() != null);
+        testSecurityEventsWhenInsufficientRole();
     }
 
     @Test

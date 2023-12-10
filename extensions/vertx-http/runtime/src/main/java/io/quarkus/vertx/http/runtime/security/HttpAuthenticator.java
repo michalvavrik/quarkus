@@ -4,13 +4,18 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
+import jakarta.enterprise.event.Event;
 import jakarta.enterprise.inject.Instance;
+import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.inject.Singleton;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -19,6 +24,9 @@ import io.quarkus.security.identity.IdentityProviderManager;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.identity.request.AnonymousAuthenticationRequest;
 import io.quarkus.security.identity.request.AuthenticationRequest;
+import io.quarkus.security.spi.runtime.AuthenticationFailureEvent;
+import io.quarkus.security.spi.runtime.AuthenticationSuccessEvent;
+import io.quarkus.security.spi.runtime.SecurityEventHelper;
 import io.smallrye.mutiny.Uni;
 import io.vertx.ext.web.RoutingContext;
 
@@ -31,11 +39,20 @@ public class HttpAuthenticator {
 
     private final IdentityProviderManager identityProviderManager;
     private final HttpAuthenticationMechanism[] mechanisms;
+    private final Event<AuthenticationFailureEvent> authFailureEvent;
+    private final Event<AuthenticationSuccessEvent> authSuccessEvent;
 
     public HttpAuthenticator(IdentityProviderManager identityProviderManager,
-            Instance<PathMatchingHttpSecurityPolicy> pathMatchingPolicy,
+            Event<AuthenticationFailureEvent> authFailureEvent,
+            Event<AuthenticationSuccessEvent> authSuccessEvent,
+            BeanManager beanManager,
             Instance<HttpAuthenticationMechanism> httpAuthenticationMechanism,
-            Instance<IdentityProvider<?>> providers) {
+            Instance<IdentityProvider<?>> providers,
+            @ConfigProperty(name = "quarkus.security.events.enabled") boolean securityEventsEnabled) {
+        var eventHelper = SecurityEventHelper.of(AuthenticationSuccessEvent.EMPTY_INSTANCE,
+                AuthenticationFailureEvent.EMPTY_INSTANCE, beanManager, securityEventsEnabled);
+        this.authSuccessEvent = eventHelper.fireEventOnSuccess() ? authSuccessEvent : null;
+        this.authFailureEvent = eventHelper.fireEventOnFailure() ? authFailureEvent : null;
         this.identityProviderManager = identityProviderManager;
         List<HttpAuthenticationMechanism> mechanisms = new ArrayList<>();
         for (HttpAuthenticationMechanism mechanism : httpAuthenticationMechanism) {
@@ -47,7 +64,7 @@ public class HttpAuthenticator {
                         break;
                     }
                 }
-                if (found == true) {
+                if (found) {
                     break;
                 }
             }
@@ -93,25 +110,48 @@ public class HttpAuthenticator {
                 ? pathMatchingPolicy.getAuthMechanismName(routingContext)
                 : null;
         Uni<HttpAuthenticationMechanism> matchingMechUni = findBestCandidateMechanism(routingContext, pathSpecificMechanism);
+        Uni<SecurityIdentity> result;
         if (matchingMechUni == null) {
-            return createSecurityIdentity(routingContext);
-        }
+            result = createSecurityIdentity(routingContext);
+        } else {
+            result = matchingMechUni.onItem()
+                    .transformToUni(new Function<HttpAuthenticationMechanism, Uni<? extends SecurityIdentity>>() {
 
-        return matchingMechUni.onItem()
-                .transformToUni(new Function<HttpAuthenticationMechanism, Uni<? extends SecurityIdentity>>() {
-
-                    @Override
-                    public Uni<SecurityIdentity> apply(HttpAuthenticationMechanism mech) {
-                        if (mech != null) {
-                            return mech.authenticate(routingContext, identityProviderManager);
-                        } else if (pathSpecificMechanism != null) {
-                            return Uni.createFrom().optional(Optional.empty());
+                        @Override
+                        public Uni<SecurityIdentity> apply(HttpAuthenticationMechanism mech) {
+                            if (mech != null) {
+                                return mech.authenticate(routingContext, identityProviderManager);
+                            } else if (pathSpecificMechanism != null) {
+                                return Uni.createFrom().optional(Optional.empty());
+                            }
+                            return createSecurityIdentity(routingContext);
                         }
-                        return createSecurityIdentity(routingContext);
-                    }
 
-                });
-
+                    });
+        }
+        if (authFailureEvent != null) {
+            result = result.onFailure().invoke(new Consumer<Throwable>() {
+                @Override
+                public void accept(Throwable throwable) {
+                    var event = new AuthenticationFailureEvent(throwable,
+                            Map.of(RoutingContext.class.getName(), routingContext));
+                    authFailureEvent.fire(event);
+                    authFailureEvent.fireAsync(event);
+                }
+            });
+        }
+        if (authSuccessEvent != null) {
+            result = result.onItem().ifNotNull().invoke(new Consumer<SecurityIdentity>() {
+                @Override
+                public void accept(SecurityIdentity securityIdentity) {
+                    var event = new AuthenticationSuccessEvent(securityIdentity,
+                            Map.of(RoutingContext.class.getName(), routingContext));
+                    authSuccessEvent.fire(event);
+                    authSuccessEvent.fireAsync(event);
+                }
+            });
+        }
+        return result;
     }
 
     private Uni<SecurityIdentity> createSecurityIdentity(RoutingContext routingContext) {
@@ -275,16 +315,6 @@ public class HttpAuthenticator {
             return null;
         }
 
-    }
-
-    static class NoopCloseTask implements Runnable {
-
-        static final NoopCloseTask INSTANCE = new NoopCloseTask();
-
-        @Override
-        public void run() {
-
-        }
     }
 
 }

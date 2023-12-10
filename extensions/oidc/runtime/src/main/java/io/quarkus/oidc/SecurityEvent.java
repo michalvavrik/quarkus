@@ -8,7 +8,7 @@ import io.quarkus.security.identity.SecurityIdentity;
  * Security event.
  *
  */
-public class SecurityEvent {
+public class SecurityEvent implements io.quarkus.security.spi.runtime.SecurityEvent {
     public static final String SESSION_TOKENS_PROPERTY = "session-tokens";
 
     public enum Type {

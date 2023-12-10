@@ -97,7 +97,7 @@ public class BackChannelLogoutHandler {
                                             tokens.addTokenVerification(key, result);
 
                                             if (resolver.isSecurityEventObserved()) {
-                                                resolver.getSecurityEvent().fire(
+                                                resolver.fireSecurityEvent(
                                                         new SecurityEvent(Type.OIDC_BACKCHANNEL_LOGOUT_INITIATED,
                                                                 Map.of(OidcConstants.BACK_CHANNEL_LOGOUT_TOKEN, result)));
                                             }

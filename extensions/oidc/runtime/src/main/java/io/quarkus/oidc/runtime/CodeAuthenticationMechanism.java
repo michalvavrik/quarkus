@@ -987,13 +987,13 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
 
     private void fireEvent(SecurityEvent.Type eventType, SecurityIdentity securityIdentity) {
         if (resolver.isSecurityEventObserved()) {
-            resolver.getSecurityEvent().fire(new SecurityEvent(eventType, securityIdentity));
+            resolver.fireSecurityEvent(new SecurityEvent(eventType, securityIdentity));
         }
     }
 
     private void fireEvent(SecurityEvent.Type eventType, Map<String, Object> properties) {
         if (resolver.isSecurityEventObserved()) {
-            resolver.getSecurityEvent().fire(new SecurityEvent(eventType, properties));
+            resolver.fireSecurityEvent(new SecurityEvent(eventType, properties));
         }
     }
 

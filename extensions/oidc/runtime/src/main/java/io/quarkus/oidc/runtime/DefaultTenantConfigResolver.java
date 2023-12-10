@@ -9,6 +9,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.enterprise.inject.Instance;
+import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -24,7 +25,10 @@ import io.quarkus.oidc.TokenIntrospectionCache;
 import io.quarkus.oidc.TokenStateManager;
 import io.quarkus.oidc.UserInfo;
 import io.quarkus.oidc.UserInfoCache;
+import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.runtime.SecurityConfig;
 import io.quarkus.security.spi.runtime.BlockingSecurityExecutor;
+import io.quarkus.security.spi.runtime.SecurityEventHelper;
 import io.smallrye.mutiny.Uni;
 import io.vertx.ext.web.RoutingContext;
 
@@ -36,7 +40,7 @@ public class DefaultTenantConfigResolver {
     private static final String CURRENT_STATIC_TENANT_ID_NULL = "static.tenant.id.null";
     private static final String CURRENT_DYNAMIC_TENANT_CONFIG = "dynamic.tenant.config";
 
-    private DefaultStaticTenantResolver defaultStaticTenantResolver = new DefaultStaticTenantResolver();
+    private final DefaultStaticTenantResolver defaultStaticTenantResolver = new DefaultStaticTenantResolver();
 
     @Inject
     Instance<TenantResolver> tenantResolver;
@@ -60,20 +64,20 @@ public class DefaultTenantConfigResolver {
     Instance<UserInfoCache> userInfoCache;
 
     @Inject
-    Event<SecurityEvent> securityEvent;
-
-    @Inject
     @ConfigProperty(name = "quarkus.http.proxy.enable-forwarded-prefix")
     boolean enableHttpForwardedPrefix;
 
     private final BlockingTaskRunner<OidcTenantConfig> blockingRequestContext;
+    private final boolean securityEventObserved;
+    private final Event<SecurityEvent> securityEvent;
+    private final ConcurrentHashMap<String, BackChannelLogoutTokenCache> backChannelLogoutTokens = new ConcurrentHashMap<>();
 
-    private volatile boolean securityEventObserved;
-
-    private ConcurrentHashMap<String, BackChannelLogoutTokenCache> backChannelLogoutTokens = new ConcurrentHashMap<>();
-
-    public DefaultTenantConfigResolver(BlockingSecurityExecutor blockingExecutor) {
+    public DefaultTenantConfigResolver(BlockingSecurityExecutor blockingExecutor, Event<SecurityEvent> securityEvent,
+            BeanManager beanManager, SecurityConfig securityConfig) {
         this.blockingRequestContext = new BlockingTaskRunner<OidcTenantConfig>(blockingExecutor);
+        this.securityEventObserved = SecurityEventHelper.eventObserved(new SecurityEvent(null, (SecurityIdentity) null),
+                beanManager, securityConfig.events().enabled());
+        this.securityEvent = securityEvent;
     }
 
     @PostConstruct
@@ -189,12 +193,9 @@ public class DefaultTenantConfigResolver {
         return securityEventObserved;
     }
 
-    void setSecurityEventObserved(boolean securityEventObserved) {
-        this.securityEventObserved = securityEventObserved;
-    }
-
-    Event<SecurityEvent> getSecurityEvent() {
-        return securityEvent;
+    void fireSecurityEvent(SecurityEvent event) {
+        securityEvent.fire(event);
+        securityEvent.fireAsync(event);
     }
 
     TokenStateManager getTokenStateManager() {

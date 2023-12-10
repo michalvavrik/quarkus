@@ -5,6 +5,8 @@ import static io.quarkus.resteasy.reactive.server.runtime.StandardSecurityCheckI
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.jboss.resteasy.reactive.common.model.ResourceClass;
@@ -20,12 +22,15 @@ import io.quarkus.security.UnauthorizedException;
 import io.quarkus.security.identity.CurrentIdentityAssociation;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.spi.runtime.AuthorizationController;
+import io.quarkus.security.spi.runtime.AuthorizationFailureEvent;
+import io.quarkus.security.spi.runtime.AuthorizationSuccessEvent;
 import io.quarkus.security.spi.runtime.MethodDescription;
 import io.quarkus.security.spi.runtime.SecurityCheck;
 import io.quarkus.security.spi.runtime.SecurityCheckStorage;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.UniSubscriber;
 import io.smallrye.mutiny.subscription.UniSubscription;
+import io.vertx.ext.web.RoutingContext;
 
 public class EagerSecurityHandler implements ServerRestHandler {
 
@@ -44,6 +49,7 @@ public class EagerSecurityHandler implements ServerRestHandler {
     private final boolean isProactiveAuthDisabled;
     private volatile InjectableInstance<CurrentIdentityAssociation> currentIdentityAssociation;
     private volatile SecurityCheck check;
+    private volatile SecurityEventContext securityEventContext;
     private volatile AuthorizationController authorizationController;
 
     public EagerSecurityHandler(boolean isProactiveAuthDisabled) {
@@ -79,6 +85,9 @@ public class EagerSecurityHandler implements ServerRestHandler {
         SecurityCheck theCheck = check;
         if (theCheck.isPermitAll()) {
             preventRepeatedSecurityChecks(requestContext, methodDescription);
+            if (getSecurityEventContext().fireAuthorizationSuccessEvent) {
+                fireAuthZSuccessEvent(null, theCheck, requestContext);
+            }
         } else {
             requestContext.suspend();
             Uni<SecurityIdentity> deferredIdentity = getCurrentIdentityAssociation().get().getDeferredIdentity();
@@ -101,13 +110,38 @@ public class EagerSecurityHandler implements ServerRestHandler {
                         // if security check requires method arguments, we can't perform it now
                         // however we only allow to pass authenticated requests to avoid security risks
                         if (securityIdentity.isAnonymous()) {
-                            throw new UnauthorizedException();
+                            var unauthorizedException = new UnauthorizedException();
+                            if (getSecurityEventContext().fireAuthorizationFailureEvent) {
+                                fireAuthZFailureEvent(securityIdentity, unauthorizedException, theCheck, requestContext);
+                            }
+                            throw unauthorizedException;
                         }
                         // security check will be performed by CDI interceptor
                         return Uni.createFrom().nullItem();
                     } else {
                         preventRepeatedSecurityChecks(requestContext, methodDescription);
-                        return theCheck.nonBlockingApply(securityIdentity, methodDescription, requestContext.getParameters());
+                        var checkResult = theCheck.nonBlockingApply(securityIdentity, methodDescription,
+                                requestContext.getParameters());
+                        if (getSecurityEventContext().fireAuthorizationFailureEvent) {
+                            checkResult = checkResult
+                                    .onFailure()
+                                    .invoke(new Consumer<Throwable>() {
+                                        @Override
+                                        public void accept(Throwable throwable) {
+                                            fireAuthZFailureEvent(securityIdentity, throwable, theCheck, requestContext);
+                                        }
+                                    });
+                        }
+                        if (getSecurityEventContext().fireAuthorizationSuccessEvent) {
+                            checkResult = checkResult
+                                    .invoke(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            fireAuthZSuccessEvent(securityIdentity, theCheck, requestContext);
+                                        }
+                                    });
+                        }
+                        return checkResult;
                     }
                 }
             })
@@ -130,6 +164,31 @@ public class EagerSecurityHandler implements ServerRestHandler {
         }
     }
 
+    private void fireAuthZFailureEvent(SecurityIdentity securityIdentity, Throwable failure,
+            SecurityCheck theCheck, ResteasyReactiveRequestContext requestContext) {
+        var event = new AuthorizationFailureEvent(securityIdentity, failure, theCheck.getClass().getName(),
+                createEventPropsWithRoutingCtx(requestContext));
+        getSecurityEventContext().authorizationFailureEvent.fire(event);
+        getSecurityEventContext().authorizationFailureEvent.fireAsync(event);
+    }
+
+    private static Map<String, Object> createEventPropsWithRoutingCtx(ResteasyReactiveRequestContext requestContext) {
+        final RoutingContext routingContext = requestContext.unwrap(RoutingContext.class);
+        if (routingContext == null) {
+            return Map.of();
+        } else {
+            return Map.of(RoutingContext.class.getName(), routingContext);
+        }
+    }
+
+    private void fireAuthZSuccessEvent(SecurityIdentity securityIdentity, SecurityCheck theCheck,
+            ResteasyReactiveRequestContext requestContext) {
+        var event = new AuthorizationSuccessEvent(securityIdentity, theCheck.getClass().getName(),
+                createEventPropsWithRoutingCtx(requestContext));
+        getSecurityEventContext().authorizationSuccessEvent.fire(event);
+        getSecurityEventContext().authorizationSuccessEvent.fireAsync(event);
+    }
+
     static MethodDescription lazyMethodToMethodDescription(ResteasyReactiveResourceInfo lazyMethod) {
         return new MethodDescription(lazyMethod.getResourceClass().getName(),
                 lazyMethod.getName(), MethodDescription.typesAsStrings(lazyMethod.getParameterTypes()));
@@ -148,6 +207,13 @@ public class EagerSecurityHandler implements ServerRestHandler {
             return this.currentIdentityAssociation = Arc.container().select(CurrentIdentityAssociation.class);
         }
         return identityAssociation;
+    }
+
+    private SecurityEventContext getSecurityEventContext() {
+        if (securityEventContext == null) {
+            securityEventContext = Arc.container().select(SecurityEventContext.class).get();
+        }
+        return securityEventContext;
     }
 
     public static abstract class Customizer implements HandlerChainCustomizer {
