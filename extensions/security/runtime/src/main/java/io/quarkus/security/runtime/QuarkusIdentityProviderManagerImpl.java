@@ -86,7 +86,7 @@ public class QuarkusIdentityProviderManagerImpl implements IdentityProviderManag
                     .flatMap(new Function<SecurityIdentity, Uni<? extends SecurityIdentity>>() {
                         @Override
                         public Uni<? extends SecurityIdentity> apply(SecurityIdentity securityIdentity) {
-                            return handleIdentityFromProvider(0, securityIdentity, blockingRequestContext);
+                            return handleIdentityFromProvider(0, securityIdentity, blockingRequestContext, request);
                         }
                     });
         }
@@ -132,23 +132,24 @@ public class QuarkusIdentityProviderManagerImpl implements IdentityProviderManag
         return cs.onItem().transformToUni(new Function<SecurityIdentity, Uni<? extends SecurityIdentity>>() {
             @Override
             public Uni<? extends SecurityIdentity> apply(SecurityIdentity securityIdentity) {
-                return handleIdentityFromProvider(0, securityIdentity, context);
+                return handleIdentityFromProvider(0, securityIdentity, context, request);
             }
         });
     }
 
     private Uni<SecurityIdentity> handleIdentityFromProvider(int pos, SecurityIdentity identity,
-            AuthenticationRequestContext context) {
+            AuthenticationRequestContext context, AuthenticationRequest request) {
         if (pos == augmenters.size()) {
             return Uni.createFrom().item(identity);
         }
         SecurityIdentityAugmentor a = augmenters.get(pos);
-        return a.augment(identity, context).flatMap(new Function<SecurityIdentity, Uni<? extends SecurityIdentity>>() {
-            @Override
-            public Uni<SecurityIdentity> apply(SecurityIdentity securityIdentity) {
-                return handleIdentityFromProvider(pos + 1, securityIdentity, context);
-            }
-        });
+        return a.augment(identity, context, request.getAttributes())
+                .flatMap(new Function<SecurityIdentity, Uni<? extends SecurityIdentity>>() {
+                    @Override
+                    public Uni<SecurityIdentity> apply(SecurityIdentity securityIdentity) {
+                        return handleIdentityFromProvider(pos + 1, securityIdentity, context, request);
+                    }
+                });
     }
 
     /**
