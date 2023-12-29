@@ -34,13 +34,6 @@ public class QuarkusIdentityProviderManagerImpl implements IdentityProviderManag
     private final List<SecurityIdentityAugmentor> augmenters;
     private final BlockingSecurityExecutor blockingExecutor;
 
-    private final AuthenticationRequestContext blockingRequestContext = new AuthenticationRequestContext() {
-        @Override
-        public Uni<SecurityIdentity> runBlocking(Supplier<SecurityIdentity> function) {
-            return blockingExecutor.executeBlocking(function);
-        }
-    };
-
     QuarkusIdentityProviderManagerImpl(Builder builder) {
         this.providers = builder.providers;
         this.augmenters = builder.augmentors;
@@ -57,6 +50,18 @@ public class QuarkusIdentityProviderManagerImpl implements IdentityProviderManag
      * @return The first identity provider that was registered with this type
      */
     public Uni<SecurityIdentity> authenticate(AuthenticationRequest request) {
+        AuthenticationRequestContext blockingRequestContext = new AuthenticationRequestContext() {
+
+            @Override
+            public Uni<SecurityIdentity> runBlocking(Supplier<SecurityIdentity> supplier) {
+                return blockingExecutor.executeBlocking(supplier);
+            }
+
+            @Override
+            public Map<String, Object> getAttributes() {
+                return request.getAttributes();
+            }
+        };
         try {
             List<IdentityProvider> providers = this.providers.get(request.getClass());
             if (providers == null) {
@@ -64,7 +69,7 @@ public class QuarkusIdentityProviderManagerImpl implements IdentityProviderManag
                         "No IdentityProviders were registered to handle AuthenticationRequest " + request));
             }
             if (providers.size() == 1) {
-                return handleSingleProvider(providers.get(0), request);
+                return handleSingleProvider(providers.get(0), request, blockingRequestContext);
             }
             return handleProvider(0, (List) providers, request, blockingRequestContext);
         } catch (Throwable t) {
@@ -72,7 +77,8 @@ public class QuarkusIdentityProviderManagerImpl implements IdentityProviderManag
         }
     }
 
-    private Uni<SecurityIdentity> handleSingleProvider(IdentityProvider identityProvider, AuthenticationRequest request) {
+    private Uni<SecurityIdentity> handleSingleProvider(IdentityProvider identityProvider, AuthenticationRequest request,
+            AuthenticationRequestContext blockingRequestContext) {
         Uni<SecurityIdentity> authenticated = identityProvider.authenticate(request, blockingRequestContext)
                 .onItem().ifNull().failWith(new Supplier<Throwable>() {
                     @Override
@@ -108,7 +114,17 @@ public class QuarkusIdentityProviderManagerImpl implements IdentityProviderManag
             throw new IllegalArgumentException(
                     "No IdentityProviders were registered to handle AuthenticationRequest " + request);
         }
-        return (SecurityIdentity) handleProvider(0, (List) providers, request, blockingRequestContext).await().indefinitely();
+        return (SecurityIdentity) handleProvider(0, (List) providers, request, new AuthenticationRequestContext() {
+            @Override
+            public Uni<SecurityIdentity> runBlocking(Supplier<SecurityIdentity> identitySupplier) {
+                return blockingExecutor.executeBlocking(identitySupplier);
+            }
+
+            @Override
+            public Map<String, Object> getAttributes() {
+                return request.getAttributes();
+            }
+        }).await().indefinitely();
     }
 
     private <T extends AuthenticationRequest> Uni<SecurityIdentity> handleProvider(int pos,
