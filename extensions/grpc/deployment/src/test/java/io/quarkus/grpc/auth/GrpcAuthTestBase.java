@@ -54,6 +54,7 @@ public abstract class GrpcAuthTestBase {
                         props += extraProperty;
                     }
                     var jar = ShrinkWrap.create(JavaArchive.class)
+                            .addClass(SecurityEventObserver.class)
                             .addClasses(Service.class, BlockingHttpSecurityPolicy.class)
                             .addPackage(SecuredService.class.getPackage())
                             .add(new StringAsset(props), "application.properties");

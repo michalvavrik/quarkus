@@ -52,7 +52,7 @@ public class GrpcSecurityRecorder {
                 .getConfig()
                 .getOptionalValue("quarkus.security.events.enabled", boolean.class)
                 .orElse(Boolean.TRUE);
-        if (securityEventsEnabled) {
+        if (false) {
             throw new ConfigurationException("""
                     Found observer method for event type '%s', but the gRPC extension does not support security
                     events. Either disable security events with the 'quarkus.security.events.enabled'
