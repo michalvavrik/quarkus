@@ -67,4 +67,27 @@ public class PolicyMappingConfig {
      */
     @ConfigItem(defaultValue = "false")
     public boolean shared;
+
+    /**
+     * Allows to apply this permission check only to Jakarta REST specific paths.
+     */
+    @ConfigItem(defaultValue = "ALL")
+    public AppliesTo appliesTo;
+
+    /**
+     * TODO
+     */
+    public enum AppliesTo {
+        /**
+         * All matched paths are secured by this policy.
+         */
+        ALL,
+        /**
+         * Matched path is secured by this policy if some Jakarta REST resource method is matched with
+         * the incoming HTTP request. This policy will secure no Vert.x route handler.
+         * This option only makes sense in cases explicitly defined by the Quarkus documentation.
+         * For example, when you use the OIDC extension and select an OIDC tenant with the `io.quarkus.oidc.Tenant` annotation.
+         */
+        JAXRS
+    }
 }
