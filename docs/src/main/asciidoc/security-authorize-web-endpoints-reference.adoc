@@ -392,10 +392,21 @@ These roles are then applicable for endpoint authorization by using the @RolesAl
 [source,properties]
 ----
 quarkus.http.auth.policy.admin-policy1.roles.admin=Admin1 <1>
-quarkus.http.auth.permission.roles1.paths=/*
+quarkus.http.auth.permission.roles1.paths=/* <2>
 quarkus.http.auth.permission.roles1.policy=admin-policy1
 ----
 <1> Map the `admin` role to `Admin1` role. The `SecurityIdentity` will have both `admin` and `Admin1` roles.
+<2> The HTTP permission `roles1` secures the `/*` path. Only authenticated HTTP requests are authorized to access application endpoints.
+
+Example below shows how to map the `SecurityIdentity` roles to the deployment-specific roles for all the paths without securing the `/*` path:
+
+[source,properties]
+----
+quarkus.security.roles.admin=Admin1 <1>
+----
+<1> The `SecurityIdentity` will have mapped same roles like in the example before.
+However, the `/*` path is not secured by the role-based policy.
+You can either annotate your endpoints with standard security annotations or define additional path-specific HTTP permissions.
 
 === Shared permission checks
 
