@@ -2,7 +2,13 @@ package io.quarkus.hibernate.reactive.rest.data.panache.deployment.openapi;
 
 import static org.hamcrest.Matchers.is;
 
+import java.security.Permission;
+import java.security.Principal;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import jakarta.inject.Singleton;
 
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
@@ -21,8 +27,17 @@ import io.quarkus.hibernate.reactive.rest.data.panache.deployment.repository.Ite
 import io.quarkus.hibernate.reactive.rest.data.panache.deployment.repository.ItemsRepository;
 import io.quarkus.hibernate.reactive.rest.data.panache.deployment.repository.ItemsResource;
 import io.quarkus.maven.dependency.Dependency;
+import io.quarkus.security.StringPermission;
+import io.quarkus.security.credential.Credential;
+import io.quarkus.security.identity.IdentityProviderManager;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.test.QuarkusProdModeTest;
+import io.quarkus.vertx.http.runtime.security.ChallengeData;
+import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;
 import io.restassured.RestAssured;
+import io.restassured.filter.log.ResponseLoggingFilter;
+import io.smallrye.mutiny.Uni;
+import io.vertx.ext.web.RoutingContext;
 
 class OpenApiIntegrationTest {
 
@@ -35,7 +50,7 @@ class OpenApiIntegrationTest {
                     .addClasses(Collection.class, CollectionsResource.class, CollectionsRepository.class,
                             AbstractEntity.class, AbstractItem.class, Item.class, ItemsResource.class,
                             ItemsRepository.class, EmptyListItem.class, EmptyListItemsRepository.class,
-                            EmptyListItemsResource.class)
+                            EmptyListItemsResource.class, CustomHttpAuthMechanism.class)
                     .addAsResource("application.properties")
                     .addAsResource("import.sql"))
             .setForcedDependencies(List.of(
@@ -93,5 +108,98 @@ class OpenApiIntegrationTest {
                 .body("paths.'/items/{id}'", Matchers.hasKey("get"))
                 .body("paths.'/items/{id}'", Matchers.hasKey("put"))
                 .body("paths.'/items/{id}'", Matchers.hasKey("delete"));
+    }
+
+    @Test
+    public void testEndpointsSecured() {
+        RestAssured.given()
+                .log().all().filter(new ResponseLoggingFilter())
+                .get("/secured")
+                .then()
+                .statusCode(403);
+        RestAssured.given()
+                .header("authenticated", true)
+                .log().all().filter(new ResponseLoggingFilter())
+                .get("/secured")
+                .then()
+                .statusCode(200);
+        RestAssured.given()
+                .log().all().filter(new ResponseLoggingFilter())
+                .delete("/secured/1")
+                .then()
+                .statusCode(403);
+        RestAssured.given()
+                .header("authenticated", true)
+                .log().all().filter(new ResponseLoggingFilter())
+                .delete("/secured/1")
+                .then()
+                .statusCode(200);
+    }
+
+    @Singleton
+    public static class CustomHttpAuthMechanism implements HttpAuthenticationMechanism {
+
+        @Override
+        public Uni<SecurityIdentity> authenticate(RoutingContext context, IdentityProviderManager identityProviderManager) {
+            if (context.request().getHeader("authenticated") != null) {
+                return Uni.createFrom().item(new SecurityIdentity() {
+                    @Override
+                    public Principal getPrincipal() {
+                        return new Principal() {
+                            @Override
+                            public String getName() {
+                                return "Zeebrugge";
+                            }
+                        };
+                    }
+
+                    @Override
+                    public boolean isAnonymous() {
+                        return false;
+                    }
+
+                    @Override
+                    public Set<String> getRoles() {
+                        return Set.of("admin");
+                    }
+
+                    @Override
+                    public boolean hasRole(String s) {
+                        return "admin".equals(s);
+                    }
+
+                    @Override
+                    public <T extends Credential> T getCredential(Class<T> aClass) {
+                        return null;
+                    }
+
+                    @Override
+                    public Set<Credential> getCredentials() {
+                        return Set.of();
+                    }
+
+                    @Override
+                    public <T> T getAttribute(String s) {
+                        return null;
+                    }
+
+                    @Override
+                    public Map<String, Object> getAttributes() {
+                        return Map.of();
+                    }
+
+                    @Override
+                    public Uni<Boolean> checkPermission(Permission permission) {
+                        return Uni.createFrom().item(new StringPermission("get").implies(permission));
+                    }
+                });
+            }
+            return Uni.createFrom().nullItem();
+        }
+
+        @Override
+        public Uni<ChallengeData> getChallenge(RoutingContext context) {
+            return Uni.createFrom().item(new ChallengeData(403, null, null));
+        }
     }
 }

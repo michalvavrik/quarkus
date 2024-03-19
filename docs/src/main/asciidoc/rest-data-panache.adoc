@@ -350,7 +350,7 @@ And this method will be exposed along with the generated methods using `http://l
 
 == Securing endpoints
 
-REST Data with Panache will use the Security annotations within the package `jakarta.annotation.security` that are defined on your resource interfaces:
+REST Data with Panache will use the xref:security-authorize-web-endpoints-reference.adoc#standard-security-annotations[standard security annotations] that are defined on your resource interfaces:
 
 [source,java]
 ----
@@ -363,6 +363,9 @@ import jakarta.annotation.security.RolesAllowed;
 public interface PeopleResource extends PanacheEntityResource<Person, Long> {
     @RolesAllowed("superuser")
     boolean delete(Long id);
+
+    @PermissionsAllowed("get")
+    Person get(Long id);
 }
 ----
 

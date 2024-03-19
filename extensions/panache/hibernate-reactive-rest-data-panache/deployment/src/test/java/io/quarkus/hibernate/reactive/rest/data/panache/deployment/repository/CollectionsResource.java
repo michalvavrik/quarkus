@@ -10,14 +10,16 @@ import jakarta.ws.rs.PathParam;
 import io.quarkus.hibernate.reactive.rest.data.panache.PanacheRepositoryResource;
 import io.quarkus.rest.data.panache.MethodProperties;
 import io.quarkus.rest.data.panache.ResourceProperties;
+import io.quarkus.security.PermissionsAllowed;
 import io.smallrye.mutiny.Uni;
 
-@ResourceProperties(hal = true, paged = false, halCollectionName = "item-collections", rolesAllowed = "user")
+@ResourceProperties(hal = true, paged = false, halCollectionName = "item-collections")
 public interface CollectionsResource extends PanacheRepositoryResource<CollectionsRepository, Collection, String> {
 
     @MethodProperties(rolesAllowed = "admin")
     Uni<Boolean> delete(String name);
 
+    @PermissionsAllowed("get")
     @GET
     @Path("/name/{name}")
     default Uni<Collection> findByName(@PathParam("name") String name) {
