@@ -13,12 +13,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.security.Permission;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.jboss.shrinkwrap.api.ShrinkWrap;
@@ -37,15 +41,21 @@ import io.quarkus.grpc.GrpcClientUtils;
 import io.quarkus.grpc.GrpcService;
 import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.security.UnauthorizedException;
+import io.quarkus.security.identity.AuthenticationRequestContext;
+import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.identity.SecurityIdentityAugmentor;
+import io.quarkus.security.runtime.QuarkusSecurityIdentity;
 import io.quarkus.security.runtime.interceptor.check.RolesAllowedCheck;
 import io.quarkus.security.spi.runtime.AuthenticationSuccessEvent;
 import io.quarkus.security.spi.runtime.AuthorizationFailureEvent;
 import io.quarkus.security.spi.runtime.AuthorizationSuccessEvent;
 import io.quarkus.test.QuarkusUnitTest;
+import io.quarkus.vertx.http.runtime.security.HttpSecurityUtils;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.Context;
+import io.vertx.ext.web.RoutingContext;
 
 public abstract class GrpcAuthTestBase {
 
@@ -59,11 +69,6 @@ public abstract class GrpcAuthTestBase {
             "quarkus.security.users.embedded.users.paul=paul\n" +
             "quarkus.security.users.embedded.roles.paul=interns\n" +
             "quarkus.security.users.embedded.plain-text=true\n" +
-            "quarkus.http.auth.permission.perm1.paths=/security.SecuredService/unaryCall\n" +
-            "quarkus.http.auth.permission.perm1.policy=perm-mapping\n" +
-            "quarkus.http.auth.policy.perm-mapping.permissions.employees=read\n" +
-            "quarkus.http.auth.policy.perm-mapping.permission-class=io.quarkus.grpc.auth.GrpcAuthTestBase$Service$GrantedPayloadPermission\n"
-            +
             "quarkus.http.auth.basic=true\n";
 
     protected static QuarkusUnitTest createQuarkusUnitTest(String extraProperty, boolean useGrpcAuthMechanism) {
@@ -75,6 +80,7 @@ public abstract class GrpcAuthTestBase {
                     }
                     var jar = ShrinkWrap.create(JavaArchive.class)
                             .addClasses(Service.PayloadPermission.class)
+                            .addClasses(HeaderSecurityIdentityAugmentor.class)
                             .addClasses(Service.class, BlockingHttpSecurityPolicy.class, SecurityEventObserver.class)
                             .addPackage(SecuredService.class.getPackage())
                             .add(new StringAsset(props), "application.properties");
@@ -339,13 +345,6 @@ public abstract class GrpcAuthTestBase {
                     .atMost(5);
         }
 
-        public static class GrantedPayloadPermission extends PayloadPermission {
-
-            public GrantedPayloadPermission(String name) {
-                super(name, null);
-            }
-        }
-
         public static class PayloadPermission extends Permission {
 
             private final Security.Container request;
@@ -357,11 +356,6 @@ public abstract class GrpcAuthTestBase {
 
             @Override
             public boolean implies(Permission p) {
-                if (p instanceof PayloadPermission that) {
-                    var payload = that.request.getText();
-                    System.out.println("payload is " + payload);
-                    return "read".equals(p.getName());
-                }
                 return false;
             }
 
@@ -379,6 +373,44 @@ public abstract class GrpcAuthTestBase {
             public String getActions() {
                 return null;
             }
+        }
+    }
+
+    @ApplicationScoped
+    public static class HeaderSecurityIdentityAugmentor implements SecurityIdentityAugmentor {
+
+        @Override
+        public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context,
+                Map<String, Object> attributes) {
+            if (identity.hasRole("employees")) {
+                RoutingContext routingContext = HttpSecurityUtils.getRoutingContextAttribute(attributes);
+                Objects.requireNonNull(routingContext); // shouldn't be null as we know identity is not anonymous, better check
+                SecurityIdentity augmentedIdentity = QuarkusSecurityIdentity.builder(identity)
+                        .addAttribute("routing-context", routingContext)
+                        .addPermissionChecker(new Function<Permission, Uni<Boolean>>() {
+                            @Override
+                            public Uni<Boolean> apply(Permission requiredPermission) {
+                                if (requiredPermission instanceof Service.PayloadPermission that) {
+                                    var payload = that.request.getText();
+                                    var path = routingContext.normalizedPath();
+                                    var headers = routingContext.request().headers();
+                                    System.out.println("Payload is " + payload + " path is " + path);
+                                    // TODO: add permission check logic based on payload here
+                                    return Uni.createFrom().item(Boolean.TRUE);
+                                }
+                                return Uni.createFrom().item(Boolean.FALSE);
+                            }
+                        })
+                        .build();
+                return Uni.createFrom().item(augmentedIdentity);
+            }
+            return Uni.createFrom().item(identity);
+        }
+
+        @Override
+        public Uni<SecurityIdentity> augment(SecurityIdentity securityIdentity,
+                AuthenticationRequestContext authenticationRequestContext) {
+            throw new IllegalStateException("TODO");
         }
     }
 }
