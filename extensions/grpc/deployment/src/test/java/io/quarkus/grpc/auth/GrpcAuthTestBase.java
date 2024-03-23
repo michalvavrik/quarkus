@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.security.Permission;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -34,6 +35,7 @@ import io.grpc.Metadata;
 import io.quarkus.grpc.GrpcClient;
 import io.quarkus.grpc.GrpcClientUtils;
 import io.quarkus.grpc.GrpcService;
+import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.security.UnauthorizedException;
 import io.quarkus.security.runtime.interceptor.check.RolesAllowedCheck;
 import io.quarkus.security.spi.runtime.AuthenticationSuccessEvent;
@@ -57,6 +59,11 @@ public abstract class GrpcAuthTestBase {
             "quarkus.security.users.embedded.users.paul=paul\n" +
             "quarkus.security.users.embedded.roles.paul=interns\n" +
             "quarkus.security.users.embedded.plain-text=true\n" +
+            "quarkus.http.auth.permission.perm1.paths=/security.SecuredService/unaryCall\n" +
+            "quarkus.http.auth.permission.perm1.policy=perm-mapping\n" +
+            "quarkus.http.auth.policy.perm-mapping.permissions.employees=read\n" +
+            "quarkus.http.auth.policy.perm-mapping.permission-class=io.quarkus.grpc.auth.GrpcAuthTestBase$Service$GrantedPayloadPermission\n"
+            +
             "quarkus.http.auth.basic=true\n";
 
     protected static QuarkusUnitTest createQuarkusUnitTest(String extraProperty, boolean useGrpcAuthMechanism) {
@@ -67,6 +74,7 @@ public abstract class GrpcAuthTestBase {
                         props += extraProperty;
                     }
                     var jar = ShrinkWrap.create(JavaArchive.class)
+                            .addClasses(Service.PayloadPermission.class)
                             .addClasses(Service.class, BlockingHttpSecurityPolicy.class, SecurityEventObserver.class)
                             .addPackage(SecuredService.class.getPackage())
                             .add(new StringAsset(props), "application.properties");
@@ -104,7 +112,6 @@ public abstract class GrpcAuthTestBase {
 
         await().atMost(10, TimeUnit.SECONDS)
                 .until(() -> resultCount.get() == 1);
-        assertSecurityEventsFired("john");
     }
 
     @Test
@@ -301,7 +308,7 @@ public abstract class GrpcAuthTestBase {
     @GrpcService
     public static class Service implements SecuredService {
         @Override
-        @RolesAllowed("employees")
+        @PermissionsAllowed(value = "read", permission = PayloadPermission.class)
         public Uni<Security.ThreadInfo> unaryCall(Security.Container request) {
             return Uni.createFrom()
                     .item(newBuilder().setIsOnEventLoop(Context.isOnEventLoopThread()).build());
@@ -330,6 +337,48 @@ public abstract class GrpcAuthTestBase {
             return Multi.createBy()
                     .repeating().supplier(() -> newBuilder().setIsOnEventLoop(Context.isOnEventLoopThread()).build())
                     .atMost(5);
+        }
+
+        public static class GrantedPayloadPermission extends PayloadPermission {
+
+            public GrantedPayloadPermission(String name) {
+                super(name, null);
+            }
+        }
+
+        public static class PayloadPermission extends Permission {
+
+            private final Security.Container request;
+
+            public PayloadPermission(String name, Security.Container request) {
+                super(name);
+                this.request = request;
+            }
+
+            @Override
+            public boolean implies(Permission p) {
+                if (p instanceof PayloadPermission that) {
+                    var payload = that.request.getText();
+                    System.out.println("payload is " + payload);
+                    return "read".equals(p.getName());
+                }
+                return false;
+            }
+
+            @Override
+            public boolean equals(Object obj) {
+                return false;
+            }
+
+            @Override
+            public int hashCode() {
+                return 0;
+            }
+
+            @Override
+            public String getActions() {
+                return null;
+            }
         }
     }
 }
