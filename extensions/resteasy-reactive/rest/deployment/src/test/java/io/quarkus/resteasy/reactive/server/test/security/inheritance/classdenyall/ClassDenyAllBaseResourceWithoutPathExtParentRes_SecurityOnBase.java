@@ -13,9 +13,11 @@ import static io.quarkus.resteasy.reactive.server.test.security.inheritance.SubP
 import jakarta.annotation.security.DenyAll;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.inject.Singleton;
 
 import io.vertx.core.json.JsonObject;
 
+@Singleton // this seems to be required when the @Path annotation is on a parent
 @DenyAll
 public class ClassDenyAllBaseResourceWithoutPathExtParentRes_SecurityOnBase
         extends ClassDenyAllParentResourceWithPath_SecurityOnBase {

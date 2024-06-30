@@ -9,9 +9,11 @@ import static io.quarkus.resteasy.reactive.server.test.security.inheritance.SubP
 import static io.quarkus.resteasy.reactive.server.test.security.inheritance.SubPaths.SUB_IMPL_ON_BASE;
 
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.inject.Singleton;
 
 import io.vertx.core.json.JsonObject;
 
+@Singleton // this seems to be required when the @Path annotation is on a parent
 @RolesAllowed("admin")
 public class ClassRolesAllowedBaseResourceWithoutPathExtParentRes_SecurityOnBase
         extends ClassRolesAllowedParentResourceWithPath_SecurityOnBase {

@@ -16,11 +16,15 @@ import static io.quarkus.resteasy.reactive.server.test.security.inheritance.SubP
 import jakarta.annotation.security.DenyAll;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.inject.Singleton;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 
+import io.quarkus.arc.Unremovable;
 import io.vertx.core.json.JsonObject;
 
+@Unremovable
+@Singleton // this seems to be required when the @Path annotation is on a parent
 public class NoAnnotationBaseResourceWithoutPathExtParentRes extends NoAnnotationParentResourceWithPath {
 
     @Override

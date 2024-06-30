@@ -217,17 +217,15 @@ public abstract class AbstractImplMethodSecuredTest {
     @EnumSource(SecurityAnnotation.class)
     @ParameterizedTest
     public void test_ClassPathOnInterface_SubDeclaredOnInterface_SubImplOnInterface(Object securityAnnotationObj) {
-        // this combination won't work in the RESTEasy Classic because it looks like this:
+        // test subresource locator defined on an interface
         // @Path("i")
         // public interface I {
         //    @Path("sub")
         //    @RolesAllowed("admin")
         //    default SubResource subResource() {
-        //      return null;
+        //      return new SubResource();
         //    }
         // }
-        // but post-match JAX-RS filter is not invoked for SubResource locator
-        // and CDI interceptors doesn't work for default interface methods
 
         var resourceSubPath = CLASS_PATH_ON_INTERFACE + PATH_SEPARATOR + CLASS_PATH_ON_INTERFACE
                 + SUB_DECLARED_ON_INTERFACE + SUB_IMPL_ON_INTERFACE;

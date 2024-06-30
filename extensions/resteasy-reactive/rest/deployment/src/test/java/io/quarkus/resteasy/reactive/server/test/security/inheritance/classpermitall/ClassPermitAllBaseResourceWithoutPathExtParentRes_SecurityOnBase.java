@@ -10,9 +10,11 @@ import static io.quarkus.resteasy.reactive.server.test.security.inheritance.SubP
 import static io.quarkus.resteasy.reactive.server.test.security.inheritance.SubPaths.SUB_IMPL_ON_BASE;
 
 import jakarta.annotation.security.PermitAll;
+import jakarta.inject.Singleton;
 
 import io.vertx.core.json.JsonObject;
 
+@Singleton // this seems to be required when the @Path annotation is on a parent
 @PermitAll
 public class ClassPermitAllBaseResourceWithoutPathExtParentRes_SecurityOnBase
         extends ClassPermitAllParentResourceWithPath_SecurityOnBase {
