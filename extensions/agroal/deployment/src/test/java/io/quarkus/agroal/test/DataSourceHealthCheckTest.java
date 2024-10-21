@@ -8,7 +8,7 @@ import io.quarkus.test.QuarkusUnitTest;
 import io.restassured.RestAssured;
 import io.restassured.filter.log.ResponseLoggingFilter;
 
-public class DataSourceHealthCheckExclusionTest {
+public class DataSourceHealthCheckTest {
 
     @RegisterExtension
     static final QuarkusUnitTest config = new QuarkusUnitTest()
