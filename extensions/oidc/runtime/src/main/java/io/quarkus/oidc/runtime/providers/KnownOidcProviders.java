@@ -19,11 +19,33 @@ public class KnownOidcProviders {
             case LINKEDIN -> linkedIn();
             case MASTODON -> mastodon();
             case MICROSOFT -> microsoft();
+            case SLACK -> slack();
             case SPOTIFY -> spotify();
             case STRAVA -> strava();
             case TWITCH -> twitch();
             case TWITTER, X -> twitter();
         };
+    }
+
+    private static OidcTenantConfig slack() {
+        OidcTenantConfig ret = new OidcTenantConfig();
+        ret.setAuthServerUrl("https://slack.com");
+        ret.setApplicationType(OidcTenantConfig.ApplicationType.WEB_APP);
+        ret.getCredentials().getClientSecret().setMethod(Method.POST);
+
+        var token = ret.getToken();
+        token.setPrincipalClaim("name");
+        token.setSubjectRequired(true);
+        token.setSignatureAlgorithm(OidcTenantConfig.SignatureAlgorithm.RS256);
+
+        var authentication = ret.getAuthentication();
+        authentication.setScopes(List.of("email", "profile"));
+        authentication.setForceRedirectHttpsScheme(true);
+        authentication.setAddOpenidScope(true);
+        authentication.setNonceRequired(true);
+        authentication.failOnMissingStateParam = true;
+
+        return ret;
     }
 
     private static OidcTenantConfig linkedIn() {
