@@ -39,7 +39,7 @@ public class WiremockTestResource {
         server.start();
 
         server.stubFor(
-                get(urlEqualTo("/auth/realms/quarkus2/.well-known/openid-configuration"))
+                get(urlEqualTo("/.well-known/openid-configuration"))
                         .withHeader("Filter", equalTo("OK"))
                         .withHeader("Cookie", absent())
                         .willReturn(aResponse()

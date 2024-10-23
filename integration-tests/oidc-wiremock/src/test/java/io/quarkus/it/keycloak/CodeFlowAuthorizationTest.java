@@ -515,6 +515,25 @@ public class CodeFlowAuthorizationTest {
         clearCache();
     }
 
+    @Test
+    public void testSlackKnownProvider() throws IOException {
+        try (var ignored = new SlackWiremockTestResource(); var webClient = createWebClient()) {
+            webClient.getOptions().setRedirectEnabled(true);
+            HtmlPage page = webClient.getPage("http://localhost:8081/slack-code-flow");
+
+            HtmlForm form = page.getFormByName("form");
+            form.getInputByName("username").type("alice");
+            form.getInputByName("password").type("alice");
+
+            TextPage textPage = form.getInputByValue("login").click();
+
+            assertEquals("alice:alice", textPage.getContent());
+
+            webClient.getCookieManager().clearCookies();
+        }
+        clearCache();
+    }
+
     private void doTestCodeFlowUserInfo(String tenantId, long internalIdTokenLifetime, boolean cacheUserInfoInIdToken,
             boolean tenantConfigResolver, int inMemoryCacheSize, int userInfoRequests) throws Exception {
         try (final WebClient webClient = createWebClient()) {
