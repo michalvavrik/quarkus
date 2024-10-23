@@ -519,7 +519,7 @@ public class CodeFlowAuthorizationTest {
     public void testSlackKnownProvider() throws IOException {
         try (var ignored = new SlackWiremockTestResource(); var webClient = createWebClient()) {
             webClient.getOptions().setRedirectEnabled(true);
-            HtmlPage page = webClient.getPage("http://localhost:8081/slack-code-flow");
+            HtmlPage page = webClient.getPage("http://localhost:8081/code-flow-slack");
 
             HtmlForm form = page.getFormByName("form");
             form.getInputByName("username").type("alice");

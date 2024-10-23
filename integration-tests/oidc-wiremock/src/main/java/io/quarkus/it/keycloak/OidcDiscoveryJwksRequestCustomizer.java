@@ -29,6 +29,7 @@ public class OidcDiscoveryJwksRequestCustomizer implements OidcRequestFilter {
     private boolean isJwksRequest(HttpRequest<Buffer> request) {
         return request.uri().endsWith("/protocol/openid-connect/certs")
                 || request.uri().endsWith("/auth/azure/jwk")
-                || request.uri().endsWith("/single-key-without-kid-thumbprint");
+                || request.uri().endsWith("/single-key-without-kid-thumbprint")
+                || request.uri().endsWith("/openid/connect/keys");
     }
 }

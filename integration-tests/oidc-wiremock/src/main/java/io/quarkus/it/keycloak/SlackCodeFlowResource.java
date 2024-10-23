@@ -6,7 +6,7 @@ import jakarta.ws.rs.core.SecurityContext;
 
 import io.quarkus.security.Authenticated;
 
-@Path("/slack-code-flow")
+@Path("/code-flow-slack")
 public class SlackCodeFlowResource {
 
     @Authenticated
