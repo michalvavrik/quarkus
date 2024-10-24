@@ -5,8 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public sealed interface ConnectionInterceptor
-        permits TracesConnectionInterceptor, ConnectionInterceptor.CompositeConnectionInterceptor {
+public sealed interface ConnectionInterceptor permits MetricsConnectionInterceptor, TracesConnectionInterceptor,
+        ConnectionInterceptor.CompositeConnectionInterceptor {
 
     void connectionOpened();
 

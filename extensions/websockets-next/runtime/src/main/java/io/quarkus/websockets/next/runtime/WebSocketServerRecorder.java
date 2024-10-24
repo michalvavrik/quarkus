@@ -113,7 +113,7 @@ public class WebSocketServerRecorder {
                     Vertx vertx = VertxCoreRecorder.getVertx().get();
 
                     WebSocketConnectionImpl connection = new WebSocketConnectionImpl(generatedEndpointClass, endpointId, ws,
-                            connectionManager, codecs, ctx, trafficLogger);
+                            connectionManager, codecs, ctx, trafficLogger, telemetrySupport.getSendingInterceptor());
                     connectionManager.add(generatedEndpointClass, connection);
                     if (trafficLogger != null) {
                         trafficLogger.connectionOpened(connection);

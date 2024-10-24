@@ -7,6 +7,10 @@ import io.quarkus.websockets.next.runtime.WebSocketEndpoint;
 
 public final class TelemetrySupportProvider {
 
+    private final Function<String, SendingInterceptor> pathToClientSendingInterceptor;
+    private final Function<String, SendingInterceptor> pathToServerSendingInterceptor;
+    private final Function<String, ErrorInterceptor> pathToClientErrorInterceptor;
+    private final Function<String, ErrorInterceptor> pathToServerErrorInterceptor;
     private final Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> serverEndpointDecorator;
     private final Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> clientEndpointDecorator;
     private final Function<String, ConnectionInterceptor> pathToClientConnectionInterceptor;
@@ -14,19 +18,33 @@ public final class TelemetrySupportProvider {
     private final boolean clientTelemetryEnabled;
     private final boolean serverTelemetryEnabled;
 
-    TelemetrySupportProvider(Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> serverEndpointDecorator,
+    TelemetrySupportProvider(Function<String, SendingInterceptor> pathToClientSendingInterceptor,
+            Function<String, SendingInterceptor> pathToServerSendingInterceptor,
+            Function<String, ErrorInterceptor> pathToClientErrInterceptor,
+            Function<String, ErrorInterceptor> pathToServerErrInterceptor,
+            Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> serverEndpointDecorator,
             Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> clientEndpointDecorator,
             Function<String, ConnectionInterceptor> pathToClientConnectionInterceptor,
             Function<String, ConnectionInterceptor> pathToServerConnectionInterceptor) {
-        this.serverTelemetryEnabled = serverEndpointDecorator != null || pathToServerConnectionInterceptor != null;
+        this.serverTelemetryEnabled = pathToServerSendingInterceptor != null || pathToServerErrInterceptor != null
+                || serverEndpointDecorator != null || pathToServerConnectionInterceptor != null;
+        this.pathToServerSendingInterceptor = pathToServerSendingInterceptor;
+        this.pathToServerErrorInterceptor = pathToServerErrInterceptor;
         this.serverEndpointDecorator = serverEndpointDecorator;
         this.pathToServerConnectionInterceptor = pathToServerConnectionInterceptor;
-        this.clientTelemetryEnabled = clientEndpointDecorator != null || pathToClientConnectionInterceptor != null;
+        this.clientTelemetryEnabled = clientEndpointDecorator != null || pathToClientSendingInterceptor != null
+                || pathToClientErrInterceptor != null || pathToClientConnectionInterceptor != null;
         this.clientEndpointDecorator = clientEndpointDecorator;
+        this.pathToClientSendingInterceptor = pathToClientSendingInterceptor;
+        this.pathToClientErrorInterceptor = pathToClientErrInterceptor;
         this.pathToClientConnectionInterceptor = pathToClientConnectionInterceptor;
     }
 
     TelemetrySupportProvider() {
+        this.pathToClientSendingInterceptor = null;
+        this.pathToServerSendingInterceptor = null;
+        this.pathToClientErrorInterceptor = null;
+        this.pathToServerErrorInterceptor = null;
         this.pathToClientConnectionInterceptor = null;
         this.pathToServerConnectionInterceptor = null;
         this.serverEndpointDecorator = null;
@@ -43,7 +61,8 @@ public final class TelemetrySupportProvider {
      */
     public TelemetrySupport createServerTelemetrySupport(String path) {
         if (serverTelemetryEnabled) {
-            return new TelemetrySupport(getServerConnectionInterceptor(path)) {
+            return new TelemetrySupport(getServerSendingInterceptor(path), getServerErrorInterceptor(path),
+                    getServerConnectionInterceptor(path)) {
                 @Override
                 public WebSocketEndpoint decorate(WebSocketEndpoint endpoint, WebSocketConnectionBase connection) {
                     if (serverEndpointDecorator == null) {
@@ -59,7 +78,8 @@ public final class TelemetrySupportProvider {
 
     public TelemetrySupport createClientTelemetrySupport(String path) {
         if (clientTelemetryEnabled) {
-            return new TelemetrySupport(getClientConnectionInterceptor(path)) {
+            return new TelemetrySupport(getClientSendingInterceptor(path), getClientErrorInterceptor(path),
+                    getClientConnectionInterceptor(path)) {
                 @Override
                 public WebSocketEndpoint decorate(WebSocketEndpoint endpoint, WebSocketConnectionBase connection) {
                     if (clientEndpointDecorator == null) {
@@ -73,8 +93,24 @@ public final class TelemetrySupportProvider {
         return TelemetrySupport.EMPTY;
     }
 
+    private ErrorInterceptor getServerErrorInterceptor(String path) {
+        return pathToServerErrorInterceptor == null ? null : pathToServerErrorInterceptor.apply(path);
+    }
+
+    private SendingInterceptor getServerSendingInterceptor(String path) {
+        return pathToServerSendingInterceptor == null ? null : pathToServerSendingInterceptor.apply(path);
+    }
+
     private ConnectionInterceptor getServerConnectionInterceptor(String path) {
         return pathToServerConnectionInterceptor == null ? null : pathToServerConnectionInterceptor.apply(path);
+    }
+
+    private ErrorInterceptor getClientErrorInterceptor(String path) {
+        return pathToClientErrorInterceptor == null ? null : pathToClientErrorInterceptor.apply(path);
+    }
+
+    private SendingInterceptor getClientSendingInterceptor(String path) {
+        return pathToClientSendingInterceptor == null ? null : pathToClientSendingInterceptor.apply(path);
     }
 
     private ConnectionInterceptor getClientConnectionInterceptor(String path) {

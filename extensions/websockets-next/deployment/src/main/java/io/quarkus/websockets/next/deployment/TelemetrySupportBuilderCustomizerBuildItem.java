@@ -6,7 +6,7 @@ import io.quarkus.builder.item.MultiBuildItem;
 import io.quarkus.websockets.next.runtime.telemetry.TelemetrySupportProviderBuilder;
 
 /**
- * Provides a way to set up traces support in the WebSockets extension.
+ * Provides a way to set up metrics and/or traces support in the WebSockets extension.
  */
 final class TelemetrySupportBuilderCustomizerBuildItem extends MultiBuildItem {
 

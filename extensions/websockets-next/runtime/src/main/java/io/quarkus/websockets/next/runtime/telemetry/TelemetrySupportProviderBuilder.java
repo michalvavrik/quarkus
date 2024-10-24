@@ -12,6 +12,10 @@ import io.quarkus.websockets.next.runtime.telemetry.ConnectionInterceptor.Compos
  */
 public final class TelemetrySupportProviderBuilder {
 
+    private Function<String, SendingInterceptor> pathToClientSendingInterceptor;
+    private Function<String, SendingInterceptor> pathToServerSendingInterceptor;
+    private Function<String, ErrorInterceptor> pathToClientErrorInterceptor;
+    private Function<String, ErrorInterceptor> pathToServerErrorInterceptor;
     private Function<String, ConnectionInterceptor> pathToClientConnectionInterceptor;
     private Function<String, ConnectionInterceptor> pathToServerConnectionInterceptor;
     private Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> serverEndpointDecorator;
@@ -19,6 +23,10 @@ public final class TelemetrySupportProviderBuilder {
     private boolean telemetryEnabled;
 
     TelemetrySupportProviderBuilder() {
+        pathToClientSendingInterceptor = null;
+        pathToServerSendingInterceptor = null;
+        pathToClientErrorInterceptor = null;
+        pathToServerErrorInterceptor = null;
         serverEndpointDecorator = null;
         clientEndpointDecorator = null;
         telemetryEnabled = false;
@@ -60,6 +68,50 @@ public final class TelemetrySupportProviderBuilder {
         }
     }
 
+    void pathToServerErrorInterceptor(Function<String, ErrorInterceptor> pathToServerErrorInterceptor) {
+        Objects.requireNonNull(pathToServerErrorInterceptor);
+        if (this.pathToServerErrorInterceptor == null) {
+            this.telemetryEnabled = true;
+            this.pathToServerErrorInterceptor = pathToServerErrorInterceptor;
+        } else {
+            // we can implement composite if we need this in the future
+            throw new IllegalStateException("Only one server ErrorInterceptor is supported");
+        }
+    }
+
+    void pathToClientErrorInterceptor(Function<String, ErrorInterceptor> pathToClientErrorInterceptor) {
+        Objects.requireNonNull(pathToClientErrorInterceptor);
+        if (this.pathToClientErrorInterceptor == null) {
+            this.telemetryEnabled = true;
+            this.pathToClientErrorInterceptor = pathToClientErrorInterceptor;
+        } else {
+            // we can implement composite if we need this in the future
+            throw new IllegalStateException("Only one client ErrorInterceptor is supported");
+        }
+    }
+
+    void pathToServerSendingInterceptor(Function<String, SendingInterceptor> pathToServerSendingInterceptor) {
+        Objects.requireNonNull(pathToServerSendingInterceptor);
+        if (this.pathToServerSendingInterceptor == null) {
+            this.telemetryEnabled = true;
+            this.pathToServerSendingInterceptor = pathToServerSendingInterceptor;
+        } else {
+            // we can implement composite if we need this in the future
+            throw new IllegalStateException("Only one server SendingInterceptor is supported");
+        }
+    }
+
+    void pathToClientSendingInterceptor(Function<String, SendingInterceptor> pathToClientSendingInterceptor) {
+        Objects.requireNonNull(pathToClientSendingInterceptor);
+        if (this.pathToClientSendingInterceptor == null) {
+            this.telemetryEnabled = true;
+            this.pathToClientSendingInterceptor = pathToClientSendingInterceptor;
+        } else {
+            // we can implement composite if we need this in the future
+            throw new IllegalStateException("Only one client SendingInterceptor is supported");
+        }
+    }
+
     void pathToClientConnectionInterceptor(Function<String, ConnectionInterceptor> pathToInterceptor1) {
         Objects.requireNonNull(pathToInterceptor1);
         if (this.pathToClientConnectionInterceptor == null) {
@@ -98,8 +150,9 @@ public final class TelemetrySupportProviderBuilder {
 
     TelemetrySupportProvider build() {
         if (telemetryEnabled) {
-            return new TelemetrySupportProvider(serverEndpointDecorator, clientEndpointDecorator,
-                    pathToClientConnectionInterceptor, pathToServerConnectionInterceptor);
+            return new TelemetrySupportProvider(pathToClientSendingInterceptor, pathToServerSendingInterceptor,
+                    pathToClientErrorInterceptor, pathToServerErrorInterceptor, serverEndpointDecorator,
+                    clientEndpointDecorator, pathToClientConnectionInterceptor, pathToServerConnectionInterceptor);
         }
         return new TelemetrySupportProvider();
     }

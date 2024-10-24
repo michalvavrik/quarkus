@@ -56,4 +56,44 @@ public interface TelemetryConstants {
      */
     String URI_ATTR_KEY = "uri";
 
+    /**
+     * Number of messages received by server endpoints.
+     */
+    String SERVER_MESSAGES_COUNT_RECEIVED = "quarkus.websockets.server.messages.count.received";
+
+    /**
+     * Counts all the WebSockets server endpoint errors.
+     */
+    String SERVER_MESSAGES_COUNT_ERRORS = "quarkus.websockets.server.messages.count.errors";
+
+    /**
+     * Number of bytes sent from server endpoints.
+     */
+    String SERVER_MESSAGES_COUNT_SENT_BYTES = "quarkus.websockets.server.messages.count.sent.bytes";
+
+    /**
+     * Number of bytes received by server endpoints.
+     */
+    String SERVER_MESSAGES_COUNT_RECEIVED_BYTES = "quarkus.websockets.server.messages.count.received.bytes";
+
+    /**
+     * Number of messages sent from client endpoints.
+     */
+    String CLIENT_MESSAGES_COUNT_SENT = "quarkus.websockets.client.messages.count.sent";
+
+    /**
+     * Counts all the WebSockets client endpoint errors.
+     */
+    String CLIENT_MESSAGES_COUNT_ERRORS = "quarkus.websockets.client.messages.count.errors";
+
+    /**
+     * Number of bytes sent from client endpoints.
+     */
+    String CLIENT_MESSAGES_COUNT_SENT_BYTES = "quarkus.websockets.client.messages.count.sent.bytes";
+
+    /**
+     * Number of bytes received by client endpoints.
+     */
+    String CLIENT_MESSAGES_COUNT_RECEIVED_BYTES = "quarkus.websockets.client.messages.count.received.bytes";
+
 }
