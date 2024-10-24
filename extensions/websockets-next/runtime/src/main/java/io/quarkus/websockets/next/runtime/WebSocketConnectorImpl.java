@@ -23,6 +23,7 @@ import io.quarkus.websockets.next.WebSocketConnector;
 import io.quarkus.websockets.next.WebSocketsClientRuntimeConfig;
 import io.quarkus.websockets.next.runtime.WebSocketClientRecorder.ClientEndpoint;
 import io.quarkus.websockets.next.runtime.WebSocketClientRecorder.ClientEndpointsContext;
+import io.quarkus.websockets.next.runtime.telemetry.TelemetrySupportProvider;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
@@ -42,11 +43,14 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
 
     private final ClientEndpoint clientEndpoint;
 
+    private final TelemetrySupportProvider telemetrySupportProvider;
+
     WebSocketConnectorImpl(InjectionPoint injectionPoint, Codecs codecs, Vertx vertx, ClientConnectionManager connectionManager,
             ClientEndpointsContext endpointsContext, WebSocketsClientRuntimeConfig config,
-            TlsConfigurationRegistry tlsConfigurationRegistry) {
+            TlsConfigurationRegistry tlsConfigurationRegistry, TelemetrySupportProvider telemetrySupportProvider) {
         super(vertx, codecs, connectionManager, config, tlsConfigurationRegistry);
         this.clientEndpoint = Objects.requireNonNull(endpointsContext.endpoint(getEndpointClass(injectionPoint)));
+        this.telemetrySupportProvider = telemetrySupportProvider;
         setPath(clientEndpoint.path);
     }
 
@@ -94,6 +98,7 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
         }
         subprotocols.forEach(connectOptions::addSubProtocol);
 
+        var telemetrySupport = telemetrySupportProvider.createClientTelemetrySupport(clientEndpoint.path);
         Uni<WebSocket> websocket = Uni.createFrom().<WebSocket> emitter(e -> {
             // Create a new event loop context for each client, otherwise the current context is used
             // We want to avoid a situation where if multiple clients/connections are created in a row,
@@ -105,12 +110,18 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
                 public void handle(Void event) {
                     WebSocketClient c = vertx.createWebSocketClient(populateClientOptions());
                     client.setPlain(c);
+                    if (telemetrySupport.interceptConnection()) {
+                        telemetrySupport.connectionOpened();
+                    }
                     c.connect(connectOptions, new Handler<AsyncResult<WebSocket>>() {
                         @Override
                         public void handle(AsyncResult<WebSocket> r) {
                             if (r.succeeded()) {
                                 e.complete(r.result());
                             } else {
+                                if (telemetrySupport.interceptConnection()) {
+                                    telemetrySupport.connectionOpeningFailed(r.cause());
+                                }
                                 e.fail(r.cause());
                             }
                         }
@@ -135,7 +146,7 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
                     () -> {
                         connectionManager.remove(clientEndpoint.generatedEndpointClass, connection);
                         client.get().close();
-                    }, true);
+                    }, true, telemetrySupport);
 
             return connection;
         });
