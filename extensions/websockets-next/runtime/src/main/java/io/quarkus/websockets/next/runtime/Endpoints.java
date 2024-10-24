@@ -1,5 +1,6 @@
 package io.quarkus.websockets.next.runtime;
 
+import java.lang.reflect.InvocationTargetException;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -386,14 +387,27 @@ class Endpoints {
             @SuppressWarnings("unchecked")
             Class<? extends WebSocketEndpoint> endpointClazz = (Class<? extends WebSocketEndpoint>) cl
                     .loadClass(endpointClassName);
-            WebSocketEndpoint endpoint = (WebSocketEndpoint) endpointClazz
-                    .getDeclaredConstructor(WebSocketConnectionBase.class, Codecs.class, ContextSupport.class,
-                            SecuritySupport.class, ErrorInterceptor.class)
-                    .newInstance(connection, codecs, contextSupport, securitySupport, telemetrySupport.getErrorInterceptor());
-            return telemetrySupport.decorate(endpoint, connection);
+
+            if (telemetrySupport != null) {
+                WebSocketEndpoint endpoint = createWebSocketEndpoint(connection, codecs, contextSupport, securitySupport,
+                        endpointClazz, telemetrySupport.getErrorInterceptor());
+                return telemetrySupport.decorate(endpoint, connection);
+            }
+
+            return createWebSocketEndpoint(connection, codecs, contextSupport, securitySupport, endpointClazz, null);
         } catch (Exception e) {
             throw new WebSocketException("Unable to create endpoint instance: " + endpointClassName, e);
         }
+    }
+
+    private static WebSocketEndpoint createWebSocketEndpoint(WebSocketConnectionBase connection, Codecs codecs,
+            ContextSupport contextSupport, SecuritySupport securitySupport, Class<? extends WebSocketEndpoint> endpointClazz,
+            ErrorInterceptor errorInterceptor)
+            throws InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+        return (WebSocketEndpoint) endpointClazz
+                .getDeclaredConstructor(WebSocketConnectionBase.class, Codecs.class, ContextSupport.class,
+                        SecuritySupport.class, ErrorInterceptor.class)
+                .newInstance(connection, codecs, contextSupport, securitySupport, errorInterceptor);
     }
 
     private static WebSocketSessionContext sessionContext(ArcContainer container) {

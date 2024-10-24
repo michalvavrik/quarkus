@@ -11,19 +11,6 @@ import io.quarkus.websockets.next.runtime.WebSocketEndpoint;
  */
 public abstract class TelemetrySupport {
 
-    static final TelemetrySupport EMPTY = new TelemetrySupport(null, null, null) {
-
-        @Override
-        public WebSocketEndpoint decorate(WebSocketEndpoint endpoint, WebSocketConnectionBase connection) {
-            return endpoint;
-        }
-
-        @Override
-        public boolean interceptConnection() {
-            return false;
-        }
-    };
-
     private final SendingInterceptor sendingInterceptor;
     private final ErrorInterceptor errorInterceptor;
     private final ConnectionInterceptor connectionInterceptor;

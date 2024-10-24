@@ -5,7 +5,7 @@ import java.util.function.Function;
 import io.quarkus.websockets.next.runtime.WebSocketConnectionBase;
 import io.quarkus.websockets.next.runtime.WebSocketEndpoint;
 
-public final class TelemetrySupportProvider {
+public final class WebsocketTelemetryProvider {
 
     private final Function<String, SendingInterceptor> pathToClientSendingInterceptor;
     private final Function<String, SendingInterceptor> pathToServerSendingInterceptor;
@@ -18,7 +18,7 @@ public final class TelemetrySupportProvider {
     private final boolean clientTelemetryEnabled;
     private final boolean serverTelemetryEnabled;
 
-    TelemetrySupportProvider(Function<String, SendingInterceptor> pathToClientSendingInterceptor,
+    WebsocketTelemetryProvider(Function<String, SendingInterceptor> pathToClientSendingInterceptor,
             Function<String, SendingInterceptor> pathToServerSendingInterceptor,
             Function<String, ErrorInterceptor> pathToClientErrInterceptor,
             Function<String, ErrorInterceptor> pathToServerErrInterceptor,
@@ -38,19 +38,6 @@ public final class TelemetrySupportProvider {
         this.pathToClientSendingInterceptor = pathToClientSendingInterceptor;
         this.pathToClientErrorInterceptor = pathToClientErrInterceptor;
         this.pathToClientConnectionInterceptor = pathToClientConnectionInterceptor;
-    }
-
-    TelemetrySupportProvider() {
-        this.pathToClientSendingInterceptor = null;
-        this.pathToServerSendingInterceptor = null;
-        this.pathToClientErrorInterceptor = null;
-        this.pathToServerErrorInterceptor = null;
-        this.pathToClientConnectionInterceptor = null;
-        this.pathToServerConnectionInterceptor = null;
-        this.serverEndpointDecorator = null;
-        this.clientEndpointDecorator = null;
-        this.serverTelemetryEnabled = false;
-        this.clientTelemetryEnabled = false;
     }
 
     /**
@@ -73,7 +60,7 @@ public final class TelemetrySupportProvider {
                 }
             };
         }
-        return TelemetrySupport.EMPTY;
+        return null;
     }
 
     public TelemetrySupport createClientTelemetrySupport(String path) {
@@ -90,7 +77,7 @@ public final class TelemetrySupportProvider {
                 }
             };
         }
-        return TelemetrySupport.EMPTY;
+        return null;
     }
 
     private ErrorInterceptor getServerErrorInterceptor(String path) {

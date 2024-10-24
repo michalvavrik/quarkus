@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.enterprise.context.Dependent;
+import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.Typed;
 import jakarta.enterprise.inject.spi.InjectionPoint;
 
@@ -23,7 +24,7 @@ import io.quarkus.websockets.next.WebSocketConnector;
 import io.quarkus.websockets.next.WebSocketsClientRuntimeConfig;
 import io.quarkus.websockets.next.runtime.WebSocketClientRecorder.ClientEndpoint;
 import io.quarkus.websockets.next.runtime.WebSocketClientRecorder.ClientEndpointsContext;
-import io.quarkus.websockets.next.runtime.telemetry.TelemetrySupportProvider;
+import io.quarkus.websockets.next.runtime.telemetry.WebsocketTelemetryProvider;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
@@ -43,14 +44,14 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
 
     private final ClientEndpoint clientEndpoint;
 
-    private final TelemetrySupportProvider telemetrySupportProvider;
+    private final WebsocketTelemetryProvider telemetryProvider;
 
     WebSocketConnectorImpl(InjectionPoint injectionPoint, Codecs codecs, Vertx vertx, ClientConnectionManager connectionManager,
             ClientEndpointsContext endpointsContext, WebSocketsClientRuntimeConfig config,
-            TlsConfigurationRegistry tlsConfigurationRegistry, TelemetrySupportProvider telemetrySupportProvider) {
+            TlsConfigurationRegistry tlsConfigurationRegistry, Instance<WebsocketTelemetryProvider> telemetryProvider) {
         super(vertx, codecs, connectionManager, config, tlsConfigurationRegistry);
         this.clientEndpoint = Objects.requireNonNull(endpointsContext.endpoint(getEndpointClass(injectionPoint)));
-        this.telemetrySupportProvider = telemetrySupportProvider;
+        this.telemetryProvider = telemetryProvider.isResolvable() ? telemetryProvider.get() : null;
         setPath(clientEndpoint.path);
     }
 
@@ -98,7 +99,8 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
         }
         subprotocols.forEach(connectOptions::addSubProtocol);
 
-        var telemetrySupport = telemetrySupportProvider.createClientTelemetrySupport(clientEndpoint.path);
+        var telemetrySupport = telemetryProvider == null ? null
+                : telemetryProvider.createClientTelemetrySupport(clientEndpoint.path);
         Uni<WebSocket> websocket = Uni.createFrom().<WebSocket> emitter(e -> {
             // Create a new event loop context for each client, otherwise the current context is used
             // We want to avoid a situation where if multiple clients/connections are created in a row,
@@ -110,7 +112,7 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
                 public void handle(Void event) {
                     WebSocketClient c = vertx.createWebSocketClient(populateClientOptions());
                     client.setPlain(c);
-                    if (telemetrySupport.interceptConnection()) {
+                    if (telemetrySupport != null && telemetrySupport.interceptConnection()) {
                         telemetrySupport.connectionOpened();
                     }
                     c.connect(connectOptions, new Handler<AsyncResult<WebSocket>>() {
@@ -119,7 +121,7 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
                             if (r.succeeded()) {
                                 e.complete(r.result());
                             } else {
-                                if (telemetrySupport.interceptConnection()) {
+                                if (telemetrySupport != null && telemetrySupport.interceptConnection()) {
                                     telemetrySupport.connectionOpeningFailed(r.cause());
                                 }
                                 e.fail(r.cause());
@@ -132,9 +134,8 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
         return websocket.map(ws -> {
             TrafficLogger trafficLogger = TrafficLogger.forClient(config);
             WebSocketClientConnectionImpl connection = new WebSocketClientConnectionImpl(clientEndpoint.clientId, ws,
-                    codecs,
-                    pathParams,
-                    serverEndpointUri, headers, trafficLogger, telemetrySupport.getSendingInterceptor());
+                    codecs, pathParams, serverEndpointUri, headers, trafficLogger,
+                    telemetrySupport != null ? telemetrySupport.getSendingInterceptor() : null);
             if (trafficLogger != null) {
                 trafficLogger.connectionOpened(connection);
             }

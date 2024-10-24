@@ -1,13 +1,9 @@
 package io.quarkus.websockets.next.test.telemetry;
 
-import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.CLIENT_CONNECTION_CLOSED;
-import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.CLIENT_CONNECTION_OPENED;
+import static io.opentelemetry.semconv.UrlAttributes.URL_PATH;
 import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.CONNECTION_CLIENT_ATTR_KEY;
 import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.CONNECTION_ENDPOINT_ATTR_KEY;
 import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.CONNECTION_ID_ATTR_KEY;
-import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.SERVER_CONNECTION_CLOSED;
-import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.SERVER_CONNECTION_OPENED;
-import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.URI_ATTR_KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +24,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.quarkus.builder.Version;
@@ -89,7 +86,18 @@ public class OpenTelemetryWebSocketsTest {
             assertEquals("How U Livin'", response);
         }
         waitForTracesToArrive(3);
-        assertServerTraces();
+        var initialRequestSpan = getSpanByName("GET /bounce", SpanKind.SERVER);
+
+        var connectionOpenedSpan = getSpanByName("OPEN " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
+        assertEquals(initialRequestSpan.getSpanId(), connectionOpenedSpan.getLinks().get(0).getSpanContext().getSpanId());
+
+        var connectionClosedSpan = getSpanByName("CLOSE " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
+        assertEquals(BounceEndpoint.connectionId, getConnectionIdAttrVal(connectionClosedSpan));
+        assertEquals(BounceEndpoint.endpointId, getEndpointIdAttrVal(connectionClosedSpan));
+        assertEquals(1, connectionClosedSpan.getLinks().size());
+        assertEquals(connectionOpenedSpan.getSpanId(), connectionClosedSpan.getLinks().get(0).getSpanContext().getSpanId());
     }
 
     @Test
@@ -111,8 +119,29 @@ public class OpenTelemetryWebSocketsTest {
         assertTrue(BounceEndpoint.CLOSED_LATCH.await(5, TimeUnit.SECONDS));
 
         waitForTracesToArrive(5);
-        assertServerTraces();
-        assertClientTraces();
+
+        // server traces
+        var initialRequestSpan = getSpanByName("GET /bounce", SpanKind.SERVER);
+        var connectionOpenedSpan = getSpanByName("OPEN " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
+        assertEquals(initialRequestSpan.getSpanId(), connectionOpenedSpan.getLinks().get(0).getSpanContext().getSpanId());
+        var connectionClosedSpan = getSpanByName("CLOSE " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
+        assertEquals(BounceEndpoint.connectionId, getConnectionIdAttrVal(connectionClosedSpan));
+        assertEquals(BounceEndpoint.endpointId, getEndpointIdAttrVal(connectionClosedSpan));
+        assertEquals(1, connectionClosedSpan.getLinks().size());
+        assertEquals(connectionOpenedSpan.getSpanId(), connectionClosedSpan.getLinks().get(0).getSpanContext().getSpanId());
+
+        // client traces
+        connectionOpenedSpan = getSpanByName("OPEN " + bounceUri.getPath(), SpanKind.CLIENT);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
+        assertTrue(connectionOpenedSpan.getLinks().isEmpty());
+        connectionClosedSpan = getSpanByName("CLOSE " + bounceUri.getPath(), SpanKind.CLIENT);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
+        assertNotNull(getConnectionIdAttrVal(connectionClosedSpan));
+        assertNotNull(getClientIdAttrVal(connectionClosedSpan));
+        assertEquals(1, connectionClosedSpan.getLinks().size());
+        assertEquals(connectionOpenedSpan.getSpanId(), connectionClosedSpan.getLinks().get(0).getSpanContext().getSpanId());
     }
 
     @Test
@@ -130,30 +159,13 @@ public class OpenTelemetryWebSocketsTest {
             assertEquals(WebSocketCloseStatus.INTERNAL_SERVER_ERROR.code(), client.closeStatusCode());
         }
         waitForTracesToArrive(3);
-        assertServerTraces();
-    }
 
-    private void assertClientTraces() {
-        var connectionOpenedSpan = getSpanByName(CLIENT_CONNECTION_OPENED);
-        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
-        assertTrue(connectionOpenedSpan.getLinks().isEmpty());
-
-        var connectionClosedSpan = getSpanByName(CLIENT_CONNECTION_CLOSED);
-        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
-        assertNotNull(getConnectionIdAttrVal(connectionClosedSpan));
-        assertNotNull(getClientIdAttrVal(connectionClosedSpan));
-        assertEquals(1, connectionClosedSpan.getLinks().size());
-        assertEquals(connectionOpenedSpan.getSpanId(), connectionClosedSpan.getLinks().get(0).getSpanContext().getSpanId());
-    }
-
-    private void assertServerTraces() {
-        var initialRequestSpan = getSpanByName("GET /bounce");
-
-        var connectionOpenedSpan = getSpanByName(SERVER_CONNECTION_OPENED);
+        // server traces
+        var initialRequestSpan = getSpanByName("GET /bounce", SpanKind.SERVER);
+        var connectionOpenedSpan = getSpanByName("OPEN " + bounceUri.getPath(), SpanKind.SERVER);
         assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
         assertEquals(initialRequestSpan.getSpanId(), connectionOpenedSpan.getLinks().get(0).getSpanContext().getSpanId());
-
-        var connectionClosedSpan = getSpanByName(SERVER_CONNECTION_CLOSED);
+        var connectionClosedSpan = getSpanByName("CLOSE " + bounceUri.getPath(), SpanKind.SERVER);
         assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
         assertEquals(BounceEndpoint.connectionId, getConnectionIdAttrVal(connectionClosedSpan));
         assertEquals(BounceEndpoint.endpointId, getEndpointIdAttrVal(connectionClosedSpan));
@@ -174,9 +186,7 @@ public class OpenTelemetryWebSocketsTest {
     }
 
     private String getUriAttrVal(SpanData connectionOpenedSpan) {
-        return connectionOpenedSpan
-                .getAttributes()
-                .get(AttributeKey.stringKey(URI_ATTR_KEY));
+        return connectionOpenedSpan.getAttributes().get(URL_PATH);
     }
 
     private String getEndpointIdAttrVal(SpanData connectionOpenedSpan) {
@@ -187,16 +197,18 @@ public class OpenTelemetryWebSocketsTest {
 
     private void waitForTracesToArrive(int expectedTracesCount) {
         Awaitility.await()
-                .atMost(Duration.ofSeconds(30))
+                .atMost(Duration.ofSeconds(5))
                 .untilAsserted(() -> assertEquals(expectedTracesCount, spanExporter.getFinishedSpanItems().size()));
     }
 
-    private SpanData getSpanByName(String name) {
+    private SpanData getSpanByName(String name, SpanKind kind) {
         return spanExporter.getFinishedSpanItems()
                 .stream()
                 .filter(sd -> name.equals(sd.getName()))
+                .filter(sd -> sd.getKind() == kind)
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(
-                        "Expected span '" + name + "' not found: " + spanExporter.getFinishedSpanItems()));
+                        "Expected span name '" + name + "' and kind '" + kind + "' not found: "
+                                + spanExporter.getFinishedSpanItems()));
     }
 }

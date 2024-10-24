@@ -128,9 +128,9 @@ import io.quarkus.websockets.next.runtime.kotlin.ApplicationCoroutineScope;
 import io.quarkus.websockets.next.runtime.kotlin.CoroutineInvoker;
 import io.quarkus.websockets.next.runtime.telemetry.ErrorInterceptor;
 import io.quarkus.websockets.next.runtime.telemetry.MetricsBuilderCustomizer;
-import io.quarkus.websockets.next.runtime.telemetry.TelemetrySupportProvider;
 import io.quarkus.websockets.next.runtime.telemetry.TracesBuilderCustomizer;
 import io.quarkus.websockets.next.runtime.telemetry.WebSocketTelemetryRecorder;
+import io.quarkus.websockets.next.runtime.telemetry.WebsocketTelemetryProvider;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.groups.UniCreate;
@@ -421,7 +421,7 @@ public class WebSocketProcessor {
             BuildProducer<GeneratedClassBuildItem> generatedClasses,
             BuildProducer<GeneratedEndpointBuildItem> generatedEndpoints,
             BuildProducer<ReflectiveClassBuildItem> reflectiveClasses,
-            List<TelemetrySupportBuilderCustomizerBuildItem> telemetryBuilderCustomizers) {
+            List<WebsocketTelemetryCustomizerBuildItem> telemetryBuilderCustomizers) {
         final boolean telemetryRequired = !telemetryBuilderCustomizers.isEmpty();
         ClassOutput classOutput = new GeneratedClassGizmoAdaptor(generatedClasses, new Function<String, String>() {
             @Override
@@ -649,37 +649,36 @@ public class WebSocketProcessor {
 
     @BuildStep
     void addMetricsSupport(Optional<MetricsCapabilityBuildItem> metricsCapability,
-            BuildProducer<TelemetrySupportBuilderCustomizerBuildItem> builderProducer) {
+            BuildProducer<WebsocketTelemetryCustomizerBuildItem> builderProducer) {
         boolean metricsEnabled = metricsCapability.map(m -> m.metricsSupported(MetricsFactory.MICROMETER)).orElse(false);
         if (metricsEnabled) {
-            builderProducer.produce(new TelemetrySupportBuilderCustomizerBuildItem(new MetricsBuilderCustomizer()));
+            builderProducer.produce(new WebsocketTelemetryCustomizerBuildItem(new MetricsBuilderCustomizer()));
         }
     }
 
     @BuildStep
     void addTracesSupport(Capabilities capabilities,
-            BuildProducer<TelemetrySupportBuilderCustomizerBuildItem> builderProducer) {
+            BuildProducer<WebsocketTelemetryCustomizerBuildItem> builderProducer) {
         if (capabilities.isPresent(Capability.OPENTELEMETRY_TRACER)) {
-            builderProducer.produce(new TelemetrySupportBuilderCustomizerBuildItem(new TracesBuilderCustomizer()));
+            builderProducer.produce(new WebsocketTelemetryCustomizerBuildItem(new TracesBuilderCustomizer()));
         }
     }
 
     @BuildStep
     @Record(RUNTIME_INIT)
-    SyntheticBeanBuildItem createTelemetrySupportProvider(
-            List<TelemetrySupportBuilderCustomizerBuildItem> builderCustomizerItems, WebSocketTelemetryRecorder recorder) {
+    void createTelemetryProvider(BuildProducer<SyntheticBeanBuildItem> syntheticBeanProducer,
+            List<WebsocketTelemetryCustomizerBuildItem> builderCustomizerItems, WebSocketTelemetryRecorder recorder) {
         var builderCustomizers = builderCustomizerItems.stream().map(i -> i.builderCustomizer).toList();
-        var configurator = SyntheticBeanBuildItem
-                .configure(TelemetrySupportProvider.class)
-                .setRuntimeInit() // consumes runtime config: traces / metrics enabled
-                .unremovable()
-                .scope(Singleton.class);
-        if (builderCustomizers.isEmpty()) {
-            configurator.runtimeValue(recorder.createEmptyTelemetrySupportProvider());
-        } else {
-            configurator.supplier(recorder.createTelemetrySupportProvider(builderCustomizers));
+        if (!builderCustomizers.isEmpty()) {
+            var syntheticBeanBuildItem = SyntheticBeanBuildItem
+                    .configure(WebsocketTelemetryProvider.class)
+                    .setRuntimeInit() // consumes runtime config: traces / metrics enabled
+                    .unremovable()
+                    .supplier(recorder.createTelemetryProvider(builderCustomizers))
+                    .scope(Singleton.class)
+                    .done();
+            syntheticBeanProducer.produce(syntheticBeanBuildItem);
         }
-        return configurator.done();
     }
 
     private static Map<String, SecurityCheck> collectEndpointSecurityChecks(List<WebSocketEndpointBuildItem> endpoints,

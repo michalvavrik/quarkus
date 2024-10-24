@@ -23,7 +23,7 @@ import io.quarkus.websockets.next.HttpUpgradeCheck.CheckResult;
 import io.quarkus.websockets.next.HttpUpgradeCheck.HttpUpgradeContext;
 import io.quarkus.websockets.next.WebSocketServerException;
 import io.quarkus.websockets.next.WebSocketsServerRuntimeConfig;
-import io.quarkus.websockets.next.runtime.telemetry.TelemetrySupportProvider;
+import io.quarkus.websockets.next.runtime.telemetry.WebsocketTelemetryProvider;
 import io.smallrye.common.vertx.VertxContext;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.Context;
@@ -68,7 +68,7 @@ public class WebSocketServerRecorder {
         Codecs codecs = container.instance(Codecs.class).get();
         HttpUpgradeCheck[] httpUpgradeChecks = getHttpUpgradeChecks(endpointId, container);
         TrafficLogger trafficLogger = TrafficLogger.forServer(config);
-        TelemetrySupportProvider telemetrySupportProvider = container.instance(TelemetrySupportProvider.class).get();
+        WebsocketTelemetryProvider telemetryProvider = container.instance(WebsocketTelemetryProvider.class).orElse(null);
         return new Handler<RoutingContext>() {
 
             @Override
@@ -95,9 +95,10 @@ public class WebSocketServerRecorder {
             }
 
             private void httpUpgrade(RoutingContext ctx) {
-                var telemetrySupport = telemetrySupportProvider.createServerTelemetrySupport(endpointPath);
+                var telemetrySupport = telemetryProvider == null ? null
+                        : telemetryProvider.createServerTelemetrySupport(endpointPath);
                 final Future<ServerWebSocket> future;
-                if (telemetrySupport.interceptConnection()) {
+                if (telemetrySupport != null && telemetrySupport.interceptConnection()) {
                     telemetrySupport.connectionOpened();
                     future = ctx.request().toWebSocket().onFailure(new Handler<Throwable>() {
                         @Override
@@ -113,7 +114,8 @@ public class WebSocketServerRecorder {
                     Vertx vertx = VertxCoreRecorder.getVertx().get();
 
                     WebSocketConnectionImpl connection = new WebSocketConnectionImpl(generatedEndpointClass, endpointId, ws,
-                            connectionManager, codecs, ctx, trafficLogger, telemetrySupport.getSendingInterceptor());
+                            connectionManager, codecs, ctx, trafficLogger,
+                            telemetrySupport == null ? null : telemetrySupport.getSendingInterceptor());
                     connectionManager.add(generatedEndpointClass, connection);
                     if (trafficLogger != null) {
                         trafficLogger.connectionOpened(connection);

@@ -1,39 +1,37 @@
 package io.quarkus.websockets.next.runtime.telemetry;
 
-import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.CONNECTION_FAILURE_ATTR_KEY;
-import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.URI_ATTR_KEY;
-
 import java.util.HashMap;
 import java.util.Map;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.semconv.UrlAttributes;
 
 final class TracesConnectionInterceptor implements ConnectionInterceptor {
 
     static final String CONNECTION_OPENED_SPAN_CTX = "io.quarkus.websockets.next.connection-opened-span-ctx";
 
     private final Tracer tracer;
-    private final String connectionOpenedSpanName;
-    private final String connectionOpeningFailedSpanName;
     private final String path;
     private final Map<String, Object> contextData;
+    private final SpanKind spanKind;
 
-    TracesConnectionInterceptor(Tracer tracer, String connectionOpenedSpanName, String connectionOpeningFailedSpanName,
-            String path) {
+    TracesConnectionInterceptor(Tracer tracer, SpanKind spanKind, String path) {
         this.tracer = tracer;
-        this.connectionOpenedSpanName = connectionOpenedSpanName;
-        this.connectionOpeningFailedSpanName = connectionOpeningFailedSpanName;
         this.path = path;
         this.contextData = new HashMap<>();
+        this.spanKind = spanKind;
     }
 
     @Override
     public void connectionOpened() {
-        var span = tracer.spanBuilder(connectionOpenedSpanName)
+        var span = tracer
+                .spanBuilder("OPEN " + path)
+                .setSpanKind(spanKind)
                 .addLink(previousSpanContext())
-                .setAttribute(URI_ATTR_KEY, path)
+                .setAttribute(UrlAttributes.URL_PATH, path)
                 .startSpan();
         contextData.put(CONNECTION_OPENED_SPAN_CTX, span.getSpanContext());
         span.end();
@@ -41,11 +39,13 @@ final class TracesConnectionInterceptor implements ConnectionInterceptor {
 
     @Override
     public void connectionOpeningFailed(Throwable cause) {
-        tracer.spanBuilder(connectionOpeningFailedSpanName)
+        tracer
+                .spanBuilder("OPEN " + path)
+                .setSpanKind(spanKind)
                 .addLink((SpanContext) contextData.get(CONNECTION_OPENED_SPAN_CTX))
-                .setAttribute(URI_ATTR_KEY, path)
-                .setAttribute(CONNECTION_FAILURE_ATTR_KEY, cause.getMessage())
+                .setAttribute(UrlAttributes.URL_PATH, path)
                 .startSpan()
+                .recordException(cause)
                 .end();
     }
 

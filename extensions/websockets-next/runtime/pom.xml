@@ -49,6 +49,11 @@
             <artifactId>opentelemetry-api</artifactId>
             <optional>true</optional>
         </dependency>
+        <dependency>
+            <groupId>io.opentelemetry.semconv</groupId>
+            <artifactId>opentelemetry-semconv</artifactId>
+            <optional>true</optional>
+        </dependency>
         <!-- Dependencies used for integration with Micrometer extension -->
         <dependency>
             <groupId>io.micrometer</groupId>

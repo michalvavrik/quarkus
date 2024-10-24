@@ -14,7 +14,6 @@ import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.SE
 import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.SERVER_MESSAGES_COUNT_RECEIVED;
 import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.SERVER_MESSAGES_COUNT_RECEIVED_BYTES;
 import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.SERVER_MESSAGES_COUNT_SENT_BYTES;
-import static io.quarkus.websockets.next.runtime.telemetry.TelemetryConstants.URI_ATTR_KEY;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -30,9 +29,15 @@ import io.quarkus.websockets.next.runtime.WebSocketEndpoint;
 /**
  * Installs metrics support into the WebSockets extension.
  */
-public final class MetricsBuilderCustomizer implements Consumer<TelemetrySupportProviderBuilder> {
+public final class MetricsBuilderCustomizer implements Consumer<WebsocketTelemetryProviderBuilder> {
+
+    /**
+     * WebSocket endpoint path (with path params in it).
+     */
+    private static final String URI_ATTR_KEY = "uri";
+
     @Override
-    public void accept(TelemetrySupportProviderBuilder builder) {
+    public void accept(WebsocketTelemetryProviderBuilder builder) {
         var container = Arc.container();
 
         var serverMetricsEnabled = container.instance(WebSocketsServerRuntimeConfig.class).get().telemetry().metricsEnabled();
@@ -48,7 +53,7 @@ public final class MetricsBuilderCustomizer implements Consumer<TelemetrySupport
         }
     }
 
-    private static void addServerMetricsSupport(TelemetrySupportProviderBuilder builder, MeterRegistry registry) {
+    private static void addServerMetricsSupport(WebsocketTelemetryProviderBuilder builder, MeterRegistry registry) {
         builder.serverEndpointDecorator(new Function<>() {
 
             private final Meter.MeterProvider<Counter> receivedMessagesCounter = Counter
@@ -118,7 +123,7 @@ public final class MetricsBuilderCustomizer implements Consumer<TelemetrySupport
         });
     }
 
-    private static void addClientMetricsSupport(TelemetrySupportProviderBuilder builder, MeterRegistry registry) {
+    private static void addClientMetricsSupport(WebsocketTelemetryProviderBuilder builder, MeterRegistry registry) {
         builder.clientEndpointDecorator(new Function<>() {
 
             private final Meter.MeterProvider<Counter> receivedBytesCounter = Counter

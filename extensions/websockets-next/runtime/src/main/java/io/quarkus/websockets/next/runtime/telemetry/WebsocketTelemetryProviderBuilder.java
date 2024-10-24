@@ -8,9 +8,9 @@ import io.quarkus.websockets.next.runtime.WebSocketEndpoint;
 import io.quarkus.websockets.next.runtime.telemetry.ConnectionInterceptor.CompositeConnectionInterceptor;
 
 /**
- * Quarkus uses this class internally to build {@link TelemetrySupportProvider}.
+ * Quarkus uses this class internally to build {@link WebsocketTelemetryProvider}.
  */
-public final class TelemetrySupportProviderBuilder {
+public final class WebsocketTelemetryProviderBuilder {
 
     private Function<String, SendingInterceptor> pathToClientSendingInterceptor;
     private Function<String, SendingInterceptor> pathToServerSendingInterceptor;
@@ -20,22 +20,19 @@ public final class TelemetrySupportProviderBuilder {
     private Function<String, ConnectionInterceptor> pathToServerConnectionInterceptor;
     private Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> serverEndpointDecorator;
     private Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> clientEndpointDecorator;
-    private boolean telemetryEnabled;
 
-    TelemetrySupportProviderBuilder() {
+    WebsocketTelemetryProviderBuilder() {
         pathToClientSendingInterceptor = null;
         pathToServerSendingInterceptor = null;
         pathToClientErrorInterceptor = null;
         pathToServerErrorInterceptor = null;
         serverEndpointDecorator = null;
         clientEndpointDecorator = null;
-        telemetryEnabled = false;
     }
 
     void clientEndpointDecorator(Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> decorator) {
         Objects.requireNonNull(decorator);
         if (this.clientEndpointDecorator == null) {
-            this.telemetryEnabled = true;
             this.clientEndpointDecorator = decorator;
         } else {
             this.clientEndpointDecorator = this.clientEndpointDecorator
@@ -53,7 +50,6 @@ public final class TelemetrySupportProviderBuilder {
     void serverEndpointDecorator(Function<TelemetryWebSocketEndpointContext, WebSocketEndpoint> decorator) {
         Objects.requireNonNull(decorator);
         if (this.serverEndpointDecorator == null) {
-            this.telemetryEnabled = true;
             this.serverEndpointDecorator = decorator;
         } else {
             this.serverEndpointDecorator = this.serverEndpointDecorator
@@ -71,7 +67,6 @@ public final class TelemetrySupportProviderBuilder {
     void pathToServerErrorInterceptor(Function<String, ErrorInterceptor> pathToServerErrorInterceptor) {
         Objects.requireNonNull(pathToServerErrorInterceptor);
         if (this.pathToServerErrorInterceptor == null) {
-            this.telemetryEnabled = true;
             this.pathToServerErrorInterceptor = pathToServerErrorInterceptor;
         } else {
             // we can implement composite if we need this in the future
@@ -82,7 +77,6 @@ public final class TelemetrySupportProviderBuilder {
     void pathToClientErrorInterceptor(Function<String, ErrorInterceptor> pathToClientErrorInterceptor) {
         Objects.requireNonNull(pathToClientErrorInterceptor);
         if (this.pathToClientErrorInterceptor == null) {
-            this.telemetryEnabled = true;
             this.pathToClientErrorInterceptor = pathToClientErrorInterceptor;
         } else {
             // we can implement composite if we need this in the future
@@ -93,7 +87,6 @@ public final class TelemetrySupportProviderBuilder {
     void pathToServerSendingInterceptor(Function<String, SendingInterceptor> pathToServerSendingInterceptor) {
         Objects.requireNonNull(pathToServerSendingInterceptor);
         if (this.pathToServerSendingInterceptor == null) {
-            this.telemetryEnabled = true;
             this.pathToServerSendingInterceptor = pathToServerSendingInterceptor;
         } else {
             // we can implement composite if we need this in the future
@@ -104,7 +97,6 @@ public final class TelemetrySupportProviderBuilder {
     void pathToClientSendingInterceptor(Function<String, SendingInterceptor> pathToClientSendingInterceptor) {
         Objects.requireNonNull(pathToClientSendingInterceptor);
         if (this.pathToClientSendingInterceptor == null) {
-            this.telemetryEnabled = true;
             this.pathToClientSendingInterceptor = pathToClientSendingInterceptor;
         } else {
             // we can implement composite if we need this in the future
@@ -115,7 +107,6 @@ public final class TelemetrySupportProviderBuilder {
     void pathToClientConnectionInterceptor(Function<String, ConnectionInterceptor> pathToInterceptor1) {
         Objects.requireNonNull(pathToInterceptor1);
         if (this.pathToClientConnectionInterceptor == null) {
-            this.telemetryEnabled = true;
             this.pathToClientConnectionInterceptor = pathToInterceptor1;
         } else {
             var pathToInterceptor2 = this.pathToClientConnectionInterceptor;
@@ -133,7 +124,6 @@ public final class TelemetrySupportProviderBuilder {
     void pathToServerConnectionInterceptor(Function<String, ConnectionInterceptor> pathToInterceptor1) {
         Objects.requireNonNull(pathToInterceptor1);
         if (this.pathToServerConnectionInterceptor == null) {
-            this.telemetryEnabled = true;
             this.pathToServerConnectionInterceptor = pathToInterceptor1;
         } else {
             var pathToInterceptor2 = this.pathToServerConnectionInterceptor;
@@ -148,13 +138,10 @@ public final class TelemetrySupportProviderBuilder {
         }
     }
 
-    TelemetrySupportProvider build() {
-        if (telemetryEnabled) {
-            return new TelemetrySupportProvider(pathToClientSendingInterceptor, pathToServerSendingInterceptor,
-                    pathToClientErrorInterceptor, pathToServerErrorInterceptor, serverEndpointDecorator,
-                    clientEndpointDecorator, pathToClientConnectionInterceptor, pathToServerConnectionInterceptor);
-        }
-        return new TelemetrySupportProvider();
+    WebsocketTelemetryProvider build() {
+        return new WebsocketTelemetryProvider(pathToClientSendingInterceptor, pathToServerSendingInterceptor,
+                pathToClientErrorInterceptor, pathToServerErrorInterceptor, serverEndpointDecorator,
+                clientEndpointDecorator, pathToClientConnectionInterceptor, pathToServerConnectionInterceptor);
     }
 
 }
