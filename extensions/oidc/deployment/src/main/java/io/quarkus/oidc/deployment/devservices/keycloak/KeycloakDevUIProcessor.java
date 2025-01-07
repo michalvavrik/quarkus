@@ -84,8 +84,7 @@ public class KeycloakDevUIProcessor extends AbstractDevUIProcessor {
 
     @Record(ExecutionTime.RUNTIME_INIT)
     @BuildStep(onlyIf = IsDevelopment.class)
-    void invokeEndpoint(BuildProducer<RouteBuildItem> routeProducer,
-            OidcDevUiRecorder recorder,
+    void invokeEndpoint(BuildProducer<RouteBuildItem> routeProducer, OidcDevUiRecorder recorder,
             NonApplicationRootPathBuildItem nonApplicationRootPathBuildItem) {
         routeProducer.produce(nonApplicationRootPathBuildItem.routeBuilder()
                 .nestedRoute("io.quarkus.quarkus-oidc", "readSessionCookie")
@@ -94,6 +93,10 @@ public class KeycloakDevUIProcessor extends AbstractDevUIProcessor {
         routeProducer.produce(nonApplicationRootPathBuildItem.routeBuilder()
                 .nestedRoute("io.quarkus.quarkus-oidc", "logout")
                 .handler(recorder.logoutHandler())
+                .build());
+        routeProducer.produce(nonApplicationRootPathBuildItem.routeBuilder()
+                .nestedRoute("io.quarkus.quarkus-oidc", "login")
+                .handler(recorder.loginHandler())
                 .build());
     }
 }

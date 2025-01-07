@@ -21,10 +21,10 @@ import io.quarkus.devservices.oidc.OidcDevServicesConfigBuildItem;
 import io.quarkus.devui.spi.JsonRPCProvidersBuildItem;
 import io.quarkus.devui.spi.page.CardPageBuildItem;
 import io.quarkus.oidc.OidcTenantConfig;
-import io.quarkus.oidc.OidcTenantConfig.ApplicationType;
 import io.quarkus.oidc.OidcTenantConfig.Provider;
 import io.quarkus.oidc.common.runtime.OidcConstants;
 import io.quarkus.oidc.deployment.OidcBuildTimeConfig;
+import io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType;
 import io.quarkus.oidc.runtime.devui.OidcDevJsonRpcService;
 import io.quarkus.oidc.runtime.devui.OidcDevServicesUtils;
 import io.quarkus.oidc.runtime.devui.OidcDevUiRecorder;
@@ -74,7 +74,8 @@ public class OidcDevUIProcessor extends AbstractDevUIProcessor {
             return;
         }
         final OidcTenantConfig providerConfig = getProviderConfig();
-        final String authServerUrl = oidcDevServicesConfigBuildItem.isPresent()
+        final boolean oidcDevServicesEnabled = oidcDevServicesConfigBuildItem.isPresent();
+        final String authServerUrl = oidcDevServicesEnabled
                 ? oidcDevServicesConfigBuildItem.get().getConfig().get(AUTH_SERVER_URL_CONFIG_KEY)
                 : getAuthServerUrl(providerConfig);
         if (authServerUrl != null) {
@@ -220,15 +221,17 @@ public class OidcDevUIProcessor extends AbstractDevUIProcessor {
         Optional<ApplicationType> appType = ConfigProvider.getConfig().getOptionalValue(APP_TYPE_CONFIG_KEY,
                 ApplicationType.class);
         if (appType.isEmpty() && providerConfig != null) {
-            appType = providerConfig.applicationType;
+            appType = providerConfig.applicationType();
         }
         return appType.isPresent() ? appType.get().name().toLowerCase() : SERVICE_APP_TYPE;
     }
 
     private static OidcTenantConfig getProviderConfig() {
         try {
-            Provider p = ConfigProvider.getConfig().getValue(OIDC_PROVIDER_CONFIG_KEY, Provider.class);
-            return KnownOidcProviders.provider(p);
+            return ConfigProvider.getConfig()
+                    .getOptionalValue(OIDC_PROVIDER_CONFIG_KEY, Provider.class)
+                    .map(KnownOidcProviders::provider)
+                    .orElse(null);
         } catch (Exception ex) {
             return null;
         }

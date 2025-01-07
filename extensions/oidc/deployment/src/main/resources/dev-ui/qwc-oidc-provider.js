@@ -1,20 +1,19 @@
-import { QwcHotReloadElement, html, css} from 'qwc-hot-reload-element';
+import {css, html, QwcHotReloadElement} from 'qwc-hot-reload-element';
 import {classMap} from 'lit/directives/class-map.js';
 import {unsafeHTML} from 'lit/directives/unsafe-html.js';
 import {JsonRpc} from 'jsonrpc';
-import { LitState } from 'lit-element-state';
+import {LitState} from 'lit-element-state';
 import '@vaadin/button';
 import '@vaadin/details';
 import '@vaadin/horizontal-layout';
+import '@vaadin/checkbox';
 import '@vaadin/icon';
 import '@vaadin/message-list';
 import '@vaadin/password-field';
 import '@vaadin/split-layout';
-import { notifier } from 'notifier';
-import { Router } from '@vaadin/router';
-import {
-    devRoot
-} from 'build-time-data';
+import {notifier} from 'notifier';
+import {Router} from '@vaadin/router';
+import {devRoot} from 'build-time-data';
 
 /**
  * This keeps state of OIDC properties that can potentially change on hot reload.
@@ -49,7 +48,8 @@ class OidcPropertiesState extends LitState {
             idToken: null,
             userName: null,
             propertiesStateId: null,
-            testServiceResponses: null
+            testServiceResponses: null,
+            servicePathRequired: true
         };
     }
 
@@ -78,7 +78,13 @@ class OidcPropertiesState extends LitState {
             propertiesState.authExtraParams = response.result.authExtraParams;
             propertiesState.httpPort = response.result.httpPort;
             propertiesState.oidcProviderName = response.result.oidcProviderName;
-            propertiesState.oidcApplicationType = response.result.oidcApplicationType;
+            if (propertiesState.oidcApplicationType !== response.result.oidcApplicationType
+                && response.result.oidcApplicationType?.toUpperCase() === 'WEB_APP') {
+                // default OIDC application type has changed and this is a web app
+                // reset checkbox to default
+                propertiesState.servicePathRequired = false
+            }
+            propertiesState.oidcApplicationType = response.result.oidcApplicationType?.toUpperCase();
             propertiesState.oidcGrantType = response.result.oidcGrantType;
             propertiesState.swaggerIsAvailable = response.result.swaggerIsAvailable;
             propertiesState.graphqlIsAvailable = response.result.graphqlIsAvailable;
@@ -250,13 +256,12 @@ export class QwcOidcProvider extends QwcHotReloadElement {
         _selectedClientId: {state: false, type: String},
         _selectedClientSecret: {state: false, type: String},
         _servicePath: {state: false, type: String},
-        _devRoot: {state: false, type: String}
+        _devRoot: {state: false, type: String},
     };
 
     constructor() {
         super();
         this._devRoot = (devRoot?.replaceAll('/', '%2F') ?? '') + 'dev-ui'; // e.g. /q/dev-ui
-
         this._selectedRealm = null;
         this._servicePath = '/';
         this._selectedClientId = null;
@@ -302,6 +307,7 @@ export class QwcOidcProvider extends QwcHotReloadElement {
         propertiesState.addObserver(this.conditionalUpdatePropertiesStateObserver, 'idToken');
         propertiesState.addObserver(this.conditionalUpdatePropertiesStateObserver, 'testServiceResponses');
         propertiesState.addObserver(this.conditionalUpdatePropertiesStateObserver, 'accessToken');
+        propertiesState.addObserver(this.conditionalUpdatePropertiesStateObserver, 'servicePathRequired');
 
         super.connectedCallback();
         QwcOidcProvider._loadProperties(this.jsonRpc)
@@ -375,6 +381,16 @@ export class QwcOidcProvider extends QwcHotReloadElement {
         return html`
             <vaadin-vertical-layout theme="spacing padding" class="height-4xl container" 
                                     ?hidden="${propertiesState.hideImplLoggedOut}">
+                <vaadin-checkbox class="margin-left-auto frm-field" theme="small"
+                                 @change="${(event) => {
+                                     const checked = event?.target?.checked ?? false
+                                     if (propertiesState.servicePathRequired !== checked) {
+                                         propertiesState.servicePathRequired = checked;
+                                     }
+                                 }}"
+                                 ?checked=${propertiesState.servicePathRequired}
+                                 label="Go to request path">
+                </vaadin-checkbox>
                 ${servicePathForm}
                 <vaadin-vertical-layout class="margin-left-auto frm-field">
                     <vaadin-button theme="primary success" class="full-width"
@@ -388,7 +404,12 @@ export class QwcOidcProvider extends QwcHotReloadElement {
     }
 
     _signInToService() {
-        window.open("http://localhost:" + propertiesState.httpPort + this._servicePath);
+        if (propertiesState.servicePathRequired) {
+            window.open("http://localhost:" + propertiesState.httpPort + this._servicePath);
+        } else {
+            const port = propertiesState.httpPort ?? 8080;
+            window.location.href = 'http://localhost:' + port + '/q/io.quarkus.quarkus-oidc/login?oidc-provider-redirect-uri=' + this._getEncodedPath();
+        }
     }
 
     static _isServiceOrHybridApp() {
@@ -795,7 +816,7 @@ export class QwcOidcProvider extends QwcHotReloadElement {
 
     _servicePathForm() {
         return html`
-            <vaadin-form-layout class="txt-field-form full-width">
+            <vaadin-form-layout class="txt-field-form full-width" ?hidden="${!propertiesState.servicePathRequired && propertiesState.hideImplicitLoggedIn}">
                 <vaadin-form-item class="full-width">
                     <label slot="label">Service path</label>
                     <vaadin-text-field class="frm-field"
@@ -905,8 +926,8 @@ export class QwcOidcProvider extends QwcHotReloadElement {
     _getEncodedPath() {
         // this is the last part of this path: /q/dev-ui/io.quarkus.quarkus-oidc/keycloak-provider -> keycloak-provider
         const subPath = window.location.pathname.substring(window.location.pathname.lastIndexOf('/') + 1);
-        return "http%3A%2F%2Flocalhost%3A" + propertiesState.httpPort + this._devRoot
-            + "%2Fio.quarkus.quarkus-oidc%2F" + subPath;
+        return "http%3A%2F%2Flocalhost%3A" + propertiesState.httpPort + this._devRoot + "%2Fio.quarkus.quarkus-oidc%2F"
+            + subPath;
     }
 
     _getClientId() {
@@ -1001,6 +1022,10 @@ export class QwcOidcProvider extends QwcHotReloadElement {
         return '';
     }
 
+    static _isWebApp() {
+        return propertiesState?.oidcApplicationType === 'WEB_APP'
+    }
+
     static _updateQueryParamsProperties(jsonRpc, onUpdateDone) {
         if (QwcOidcProvider._areTokensInUrl()) {
             // logged in
@@ -1024,7 +1049,7 @@ export class QwcOidcProvider extends QwcHotReloadElement {
             const code = QwcOidcProvider._getQueryParameter('code');
             const state = QwcOidcProvider._getQueryParameter('state');
             QwcOidcProvider._exchangeCodeForTokens(code, state, jsonRpc, onUpdateDone);
-        } else if (propertiesState.oidcApplicationType === 'web-app') {
+        } else if (QwcOidcProvider._isWebApp()) {
             QwcOidcProvider._checkSessionCookie(jsonRpc, () => {
                 // logged in
                 propertiesState.hideImplLoggedOut = true;

@@ -47,4 +47,8 @@ public class OidcDevUiRecorder {
     public Handler<RoutingContext> logoutHandler() {
         return new OidcDevSessionLogoutHandler();
     }
+
+    public Handler<RoutingContext> loginHandler() {
+        return new OidcDevSessionLoginHandler();
+    }
 }
