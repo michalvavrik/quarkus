@@ -380,6 +380,7 @@ This document refers to the `http://localhost:8080/q/dev-ui` Dev UI URL in sever
 If you customize `quarkus.http.root-path` or `quarkus.http.non-application-root-path` properties, then replace `q` accordingly.
 For more information, see the https://quarkus.io/blog/path-resolution-in-quarkus/[Path resolution in Quarkus] blog post.
 
+[[dev-services-for-oidc]]
 == Dev Services for OIDC
 
 When you work with Keycloak in production, <<dev-services-for-keycloak>> provides the best dev mode experience.
@@ -420,6 +421,44 @@ Another option is log in as a custom user with the username and roles of your ch
 image::dev-ui-oidc-dev-svc-login-for-custom-users.png[alt=Dev Services for OIDC custom user login,role="center"]
 
 Whichever user you choose, no password is required.
+
+=== Bearer token authentication testing with `OidcTestClient`
+
+Quarkus provides easy way to retrieve access token from the started OIDC server:
+
+[source, java]
+----
+package org.acme;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.CoreMatchers.is;
+
+import org.junit.jupiter.api.Test;
+
+import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.oidc.client.OidcTestClient;
+
+@QuarkusTest <1>
+public class GreetingResourceTest {
+
+    OidcTestClient oidcTestClient;
+
+    @Test
+    public void testHelloEndpoint() {
+        String accessToken = oidcTestClient.getAccessToken("alice", "alice");
+        given()
+          .auth().oauth2(accessToken)
+          .when().get("/hello")
+          .then()
+             .statusCode(200)
+             .body(is("Hello, Alice"));
+    }
+
+}
+----
+<1> The `OidcTestClient` can be used in the `@QuarkusTest` or `@QuarkusIntegrationTest`.
+
+For information how to use the `OidcTestClient` for testing, please refer to the xref:security-oidc-bearer-token-authentication-tutorial.adoc#integration-testing-oidc-test-client[OidcTestClient] section of the OIDC Bearer token authentication guide.
 
 == References
 

@@ -805,6 +805,8 @@ For example, you have the following configuration:
 %test.quarkus.oidc.credentials.secret=secret
 ----
 
+TIP: The `OidcTestClient` can also be used to test xref:security-openid-connect-dev-services.adoc#dev-services-for-oidc[Dev Services for OIDC], in which case no configuration is necessary.
+
 To start, add the same dependency, `quarkus-test-oidc-server`, as described in the <<bearer-token-integration-testing-wiremock>> section.
 
 Next, write the test code as follows:
@@ -813,7 +815,6 @@ Next, write the test code as follows:
 ----
 package org.acme;
 
-import org.junit.jupiter.api.AfterAll;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
 
@@ -827,12 +828,7 @@ import io.quarkus.test.oidc.client.OidcTestClient;
 @QuarkusTest
 public class GreetingResourceTest {
 
-    static OidcTestClient oidcTestClient = new OidcTestClient();
-
-    @AfterAll
-    public static void close() {
-        oidcTestClient.close();
-    }
+    OidcTestClient oidcTestClient; <1>
 
     @Test
     public void testHelloEndpoint() {
@@ -851,6 +847,7 @@ public class GreetingResourceTest {
     }
 }
 ----
+<1> Quarkus injects the `OidcTestClient` before the `testHelloEndpoint` is executed.
 
 This test code acquires a token by using a `password` grant from the test `Auth0` domain, which has registered an application with the client id `test-auth0-client`, and created the user `alice` with password `alice`.
 For a test like this to work, the test `Auth0` application must have the `password` grant enabled.

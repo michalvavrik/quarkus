@@ -991,7 +991,6 @@ import static org.hamcrest.CoreMatchers.is;
 
 import java.util.Map;
 
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.test.junit.QuarkusTest;
@@ -1000,12 +999,7 @@ import io.quarkus.test.oidc.client.OidcTestClient;
 @QuarkusTest
 public class GreetingResourceTest {
 
-    static OidcTestClient oidcTestClient = new OidcTestClient();
-
-    @AfterAll
-    public static void close() {
-        client.close();
-    }
+    OidcTestClient oidcTestClient; <1>
 
     @Test
     public void testHelloEndpoint() {
@@ -1018,13 +1012,14 @@ public class GreetingResourceTest {
     }
 
     private String getAccessToken(String name, String secret) {
-        return oidcTestClient.getAccessToken(name, secret, <1>
+        return oidcTestClient.getAccessToken(name, secret, <2>
             Map.of("audience", "https://quarkus-auth0",
 	           "scope", "openid profile"));
     }
 }
 ----
-<1> `OidcTestClient` is used to acquire an access token, using one of the registered user's name and password, as well as the `audience` and `scope` parameters.
+<1> Quarkus injects the `OidcTestClient` before the `testHelloEndpoint` is executed.
+<2> `OidcTestClient` is used to acquire an access token, using one of the registered user's name and password, as well as the `audience` and `scope` parameters.
 
 `OidcTestClient` will itself find out the `Auth0` token endpoint address, client id and secret.
 

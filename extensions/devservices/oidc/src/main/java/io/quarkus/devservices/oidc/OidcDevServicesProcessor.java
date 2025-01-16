@@ -192,9 +192,6 @@ public class OidcDevServicesProcessor {
         router.get("/logout").handler(OidcDevServicesProcessor::logout);
         router.get("/userinfo").handler(OidcDevServicesProcessor::userInfo);
 
-        // can be used for testing of bearer token authentication
-        router.get("/testing/generate/access-token").handler(OidcDevServicesProcessor::generateAccessToken);
-
         KeyPairGenerator kpg;
         try {
             kpg = KeyPairGenerator.getInstance("RSA");
