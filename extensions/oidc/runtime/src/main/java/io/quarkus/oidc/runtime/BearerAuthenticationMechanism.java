@@ -46,7 +46,7 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
         if (oidcTenantConfig.token().binding().certificate()) {
             Certificate cert = getCertificate(context);
             if (!(cert instanceof X509Certificate)) {
-                LOG.warn("Access token must be bound to X509 client certiifcate");
+                LOG.warn("Access token must be bound to X509 client certificate");
                 throw new AuthenticationFailedException();
             }
             context.put(OidcConstants.X509_SHA256_THUMBPRINT,

@@ -126,7 +126,7 @@ public class QuarkusIdentityProviderManagerImpl implements IdentityProviderManag
             AuthenticationRequest request) {
         if (pos == providers.size()) {
             //we failed to authentication
-            log.debug("Authentication failed as providers would authenticate the request");
+            log.debug("Authentication failed as no provider would authenticate the request");
             return Uni.createFrom().failure(new AuthenticationFailedException());
         }
         return getProvider(pos, request, providers)

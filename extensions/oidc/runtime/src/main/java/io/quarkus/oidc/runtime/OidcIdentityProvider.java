@@ -1,5 +1,6 @@
 package io.quarkus.oidc.runtime;
 
+import static io.quarkus.oidc.runtime.OidcUtils.createAuthFailedException;
 import static io.quarkus.oidc.runtime.OidcUtils.validateAndCreateIdentity;
 import static io.quarkus.vertx.http.runtime.security.HttpSecurityUtils.getRoutingContextAttribute;
 
@@ -158,7 +159,10 @@ public class OidcIdentityProvider implements IdentityProvider<TokenAuthenticatio
                     public Uni<SecurityIdentity> apply(TokenVerificationResult codeAccessToken, Throwable t) {
                         if (t != null) {
                             requestData.put(OidcUtils.CODE_ACCESS_TOKEN_FAILURE, t);
-                            return Uni.createFrom().failure(new AuthenticationFailedException(t));
+                            System.out.println("///////////////// ???????????? code access token failure !!!!!!!!!! 1");
+                            AuthenticationFailedException exception = createAuthFailedException(t, request,
+                                    resolvedContext.getOidcProviderClient());
+                            return Uni.createFrom().failure(exception);
                         }
 
                         if (codeAccessToken != null) {
@@ -265,8 +269,11 @@ public class OidcIdentityProvider implements IdentityProvider<TokenAuthenticatio
                                             Throwable t) {
                                         if (t != null) {
                                             requestData.put(OidcUtils.CODE_ACCESS_TOKEN_FAILURE, t);
-                                            return Uni.createFrom().failure(t instanceof AuthenticationFailedException ? t
-                                                    : new AuthenticationFailedException(t));
+                                            System.out.println(
+                                                    "///////////////// ???????????? code access token failure !!!!!!!!!! 2");
+                                            AuthenticationFailedException exception = createAuthFailedException(t, request,
+                                                    resolvedContext.getOidcProviderClient());
+                                            return Uni.createFrom().failure(exception);
                                         }
                                         if (codeAccessTokenResult != null) {
                                             if (tokenAutoRefreshPrepared(codeAccessTokenResult, requestData,

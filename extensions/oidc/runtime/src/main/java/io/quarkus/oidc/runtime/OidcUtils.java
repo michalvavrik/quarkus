@@ -78,6 +78,8 @@ import io.vertx.ext.web.RoutingContext;
 public final class OidcUtils {
     private static final Logger LOG = Logger.getLogger(OidcUtils.class);
 
+    public static final String TOKEN_AUTHENTICATION_REQUEST_KEY = "io.quarkus.oidc.token-authentication-request";
+    public static final String PROVIDER_CLIENT_KEY = "io.quarkus.oidc.provider-client";
     public static final String STATE_COOKIE_RESTORE_PATH = "restore-path";
     public static final String CONFIG_METADATA_ATTRIBUTE = "configuration-metadata";
     public static final String USER_INFO_ATTRIBUTE = "userinfo";
@@ -816,5 +818,17 @@ public final class OidcUtils {
         }
         String remainder = ct.substring(APPLICATION_JWT.length()).trim();
         return remainder.indexOf(';') == 0;
+    }
+
+    public static AuthenticationFailedException createAuthFailedException(Throwable cause, TokenAuthenticationRequest request,
+            OidcProviderClient client) {
+        Map<String, Object> attributes = Map.of(TOKEN_AUTHENTICATION_REQUEST_KEY, request, PROVIDER_CLIENT_KEY, client);
+        if (cause instanceof AuthenticationFailedException authenticationFailedException) {
+            if (authenticationFailedException.getAttribute(PROVIDER_CLIENT_KEY) != null) {
+                return authenticationFailedException;
+            }
+            return new AuthenticationFailedException(cause.getMessage(), cause.getCause(), attributes);
+        }
+        return new AuthenticationFailedException(cause, attributes);
     }
 }
