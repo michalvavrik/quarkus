@@ -143,6 +143,7 @@ class VertxHttpProcessor {
                 frameworkEndpoints.add(route.getAbsolutePath());
             }
         }
+        System.out.println("aint no reason bro1");
         return new FrameworkEndpointsBuildItem(frameworkEndpoints);
     }
 
