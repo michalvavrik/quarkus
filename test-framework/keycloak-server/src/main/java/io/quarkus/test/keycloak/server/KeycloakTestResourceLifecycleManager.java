@@ -71,6 +71,7 @@ public class KeycloakTestResourceLifecycleManager implements QuarkusTestResource
         realm.setClients(new ArrayList<>());
         realm.setAccessTokenLifespan(3);
         realm.setSsoSessionMaxLifespan(3);
+        realm.setRequiredActions(List.of());
 
         RolesRepresentation roles = new RolesRepresentation();
         List<RoleRepresentation> realmRoles = new ArrayList<>();
@@ -136,6 +137,8 @@ public class KeycloakTestResourceLifecycleManager implements QuarkusTestResource
         user.setCredentials(new ArrayList<>());
         user.setRealmRoles(realmRoles);
         user.setEmail(username + "@gmail.com");
+        user.setEmailVerified(true);
+        user.setRequiredActions(List.of());
 
         CredentialRepresentation credential = new CredentialRepresentation();
 
