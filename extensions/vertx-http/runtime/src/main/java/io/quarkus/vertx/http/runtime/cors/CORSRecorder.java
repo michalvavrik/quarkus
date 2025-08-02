@@ -15,7 +15,7 @@ public class CORSRecorder {
     }
 
     public Handler<RoutingContext> corsHandler() {
-        if (httpConfig.getValue().corsEnabled()) {
+        if (httpConfig.getValue().cors().enabled()) {
             return new CORSFilter(httpConfig.getValue().cors());
         }
         return null;
