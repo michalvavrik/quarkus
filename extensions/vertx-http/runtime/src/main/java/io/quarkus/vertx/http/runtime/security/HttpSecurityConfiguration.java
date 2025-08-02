@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+import io.quarkus.vertx.http.runtime.cors.CORSConfig;
 import jakarta.enterprise.event.Event;
 import jakarta.enterprise.inject.Instance;
 
@@ -51,11 +52,12 @@ public final class HttpSecurityConfiguration {
     private final List<HttpAuthenticationMechanism> additionalMechanisms;
     private final VertxHttpConfig httpConfig;
     private final VertxHttpBuildTimeConfig httpBuildTimeConfig;
+    private final CORSConfig corsConfig;
 
     private HttpSecurityConfiguration(RolesMapping rolesMapping, List<HttpPermissionCarrier> httpPermissions,
             Optional<Boolean> basicAuthEnabled, boolean formAuthEnabled, String formPostLocation,
             List<HttpAuthenticationMechanism> additionalMechanisms, VertxHttpConfig httpConfig,
-            VertxHttpBuildTimeConfig httpBuildTimeConfig) {
+            VertxHttpBuildTimeConfig httpBuildTimeConfig, CORSConfig corsConfig) {
         this.rolesMapping = rolesMapping;
         this.httpPermissions = httpPermissions;
         this.basicAuthEnabled = basicAuthEnabled;
@@ -64,6 +66,7 @@ public final class HttpSecurityConfiguration {
         this.additionalMechanisms = additionalMechanisms;
         this.httpConfig = httpConfig;
         this.httpBuildTimeConfig = httpBuildTimeConfig;
+        this.corsConfig = corsConfig;
     }
 
     record Policy(String name, HttpSecurityPolicy instance) {
@@ -227,8 +230,11 @@ public final class HttpSecurityConfiguration {
                 }
             }
 
+            CORSConfig corsConfig = vertxHttpConfig.cors(); // FIXME: programmatic value???
+
             instance = new HttpSecurityConfiguration(httpSecurity.getRolesMapping(), httpSecurity.getHttpPermissions(),
-                    basicAuthEnabled, formAuthEnabled, formPostLocation, mechanisms, httpConfig, httpBuildTimeConfig);
+                    basicAuthEnabled, formAuthEnabled, formPostLocation, mechanisms, vertxHttpConfig,
+                    vertxHttpBuildTimeConfig, corsConfig);
             HttpServerTlsConfig.setConfiguration(
                     new ProgrammaticTlsConfig(httpSecurity.getClientAuth(), httpSecurity.getHttpServerTlsConfigName()));
         }
@@ -413,6 +419,10 @@ public final class HttpSecurityConfiguration {
 
     String formPostLocation() {
         return formPostLocation;
+    }
+
+    CORSConfig getCorsConfig() {
+        return corsConfig;
     }
 
     /**

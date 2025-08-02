@@ -15,6 +15,8 @@ import java.util.concurrent.SubmissionPublisher;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
+import io.quarkus.vertx.http.deployment.HttpSecurityProcessor.HttpSecurityConfigSetupCompleteBuildItem;
+import io.quarkus.vertx.http.runtime.cors.CORSConfig;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
@@ -148,8 +150,9 @@ class VertxHttpProcessor {
 
     @BuildStep
     @Record(ExecutionTime.RUNTIME_INIT)
-    FilterBuildItem cors(CORSRecorder recorder) {
-        return new FilterBuildItem(recorder.corsHandler(), SecurityHandlerPriorities.CORS);
+    FilterBuildItem cors(CORSRecorder recorder, Optional<HttpSecurityConfigSetupCompleteBuildItem> httpSecurityConfigSetupCompleteBuildItem) {
+        RuntimeValue<CORSConfig> programmaticCorsConfig = httpSecurityConfigSetupCompleteBuildItem.map(i -> i.programmaticCorsConfig).orElse(null);
+        return new FilterBuildItem(recorder.corsHandler(programmaticCorsConfig), SecurityHandlerPriorities.CORS);
     }
 
     @BuildStep

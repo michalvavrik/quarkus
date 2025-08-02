@@ -24,6 +24,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import io.quarkus.vertx.http.runtime.cors.CORSConfig;
 import jakarta.enterprise.inject.spi.CDI;
 
 import org.jboss.logging.Logger;
@@ -185,10 +186,11 @@ public class HttpSecurityRecorder {
         };
     }
 
-    public void prepareHttpSecurityConfiguration(ShutdownContext shutdownContext) {
+    public RuntimeValue<CORSConfig> prepareHttpSecurityConfiguration(ShutdownContext shutdownContext) {
         // this is done so that we prepare and validate HTTP Security config before the first incoming request
-        HttpSecurityConfiguration.get(httpConfig.getValue(), httpBuildTimeConfig);
+        var config = HttpSecurityConfiguration.get(httpConfig.getValue(), httpBuildTimeConfig);
         shutdownContext.addShutdownTask(HttpSecurityConfiguration::clear);
+        return new RuntimeValue<>(config.getCorsConfig());
     }
 
     public Supplier<FormAuthenticationMechanism> createFormAuthMechanism() {
