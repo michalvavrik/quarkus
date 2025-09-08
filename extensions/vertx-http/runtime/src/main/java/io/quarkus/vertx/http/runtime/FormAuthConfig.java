@@ -135,4 +135,49 @@ public interface FormAuthConfig {
      */
     @WithDefault("/j_security_check")
     String postLocation();
+
+    /**
+     * Form authentication token configuration.
+     */
+    FormAuthenticationToken authenticationToken();
+
+    /**
+     * Form authentication token configuration.
+     */
+    interface FormAuthenticationToken {
+
+        /**
+         * If the form authentication token feature is enabled.
+         */
+        @WithDefault("false")
+        boolean enabled();
+
+        /**
+         * Quarkus will redirect to this path once the authentication token has been successfully generated.
+         * When this configuration property is not set, Quarkus will respond to successful authentication token requests
+         * with the HTTP status `204 No Content`.
+         */
+        @WithDefault("/authentication-token.html")
+        Optional<String> redirectPath();
+
+        /**
+         * The form authentication token form field name.
+         */
+        @WithDefault("j_token")
+        String formParameterName();
+
+        /**
+         * The authentication token expiration time. By default, the authentication token expires in 3 minutes.
+         * It is essential to keep the expiration time short as it is not possible to invalidate the token once
+         * it is used once to authenticate the user.
+         */
+        @WithDefault("PT3M")
+        Duration expiresIn();
+
+        /**
+         * The cookie used to store requested authentication token.
+         */
+        @WithDefault("quarkus-token-request")
+        String cookieName();
+    }
 }
