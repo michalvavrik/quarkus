@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -50,6 +51,7 @@ import org.jboss.resteasy.reactive.server.util.ScoreSystem;
 import org.jboss.resteasy.reactive.server.vertx.ResteasyReactiveVertxHandler;
 import org.jboss.resteasy.reactive.spi.BeanFactory;
 import org.jboss.resteasy.reactive.spi.ThreadSetupAction;
+import org.jetbrains.annotations.NotNull;
 
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ClientProxy;
@@ -80,7 +82,9 @@ import io.quarkus.vertx.http.runtime.devmode.RouteMethodDescription;
 import io.quarkus.vertx.http.runtime.security.HttpSecurityRecorder.DefaultAuthFailureHandler;
 import io.quarkus.vertx.http.runtime.security.QuarkusHttpUser;
 import io.quarkus.virtual.threads.VirtualThreadsRecorder;
+import io.smallrye.common.vertx.VertxContext;
 import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
 import io.vertx.ext.web.RoutingContext;
 
 @Recorder
@@ -92,7 +96,28 @@ public class ResteasyReactiveRecorder extends ResteasyReactiveCommonRecorder imp
     public static final Supplier<Executor> EXECUTOR_SUPPLIER = new Supplier<>() {
         @Override
         public Executor get() {
-            return ExecutorRecorder.getCurrent();
+            return new Executor() {
+                @Override
+                public void execute(@NotNull Runnable command) {
+                    if (!BlockingOperationControl.isBlockingAllowed() && VertxContext.isOnDuplicatedContext()) {
+                        var ctx = Vertx.currentContext();
+                        ctx.runOnContext(new Handler<Void>() {
+                            @Override
+                            public void handle(Void unused) {
+                                ctx.executeBlocking(new Callable<Object>() {
+                                    @Override
+                                    public Object call() throws Exception {
+                                        command.run();
+                                        return null;
+                                    }
+                                });
+                            }
+                        });
+                    } else {
+                        ExecutorRecorder.getCurrent().execute(command);
+                    }
+                }
+            };
         }
     };
 
