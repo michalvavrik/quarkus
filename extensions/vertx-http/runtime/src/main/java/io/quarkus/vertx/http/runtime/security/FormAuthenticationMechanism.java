@@ -202,10 +202,34 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
     }
 
     protected void handleRedirectBack(final RoutingContext exchange) {
+        handleRedirectBack(exchange, locationCookie, cookieSameSite, landingPage);
+    }
+
+    /**
+     * @deprecated as this method no longer fulfil its function, override {@link #handleRedirectBack} instead
+     */
+    @Deprecated(forRemoval = true)
+    protected void verifyRedirectBackLocation(String requestURIString, String redirectUriString) {
+        verifyRedirectBackToLocation(requestURIString, redirectUriString);
+    }
+
+    private static void verifyRedirectBackToLocation(String requestURIString, String redirectUriString) {
+        URI requestUri = URI.create(requestURIString);
+        URI redirectUri = URI.create(redirectUriString);
+        if (!requestUri.getAuthority().equals(redirectUri.getAuthority())
+                || !requestUri.getScheme().equals(redirectUri.getScheme())) {
+            log.errorf("Location cookie value %s does not match the current request URI %s's scheme, host or port",
+                    redirectUriString,
+                    requestURIString);
+            throw new AuthenticationCompletionException();
+        }
+    }
+
+    static void handleRedirectBack(RoutingContext exchange, String locationCookie, CookieSameSite cookieSameSite, String landingPage) {
         Cookie redirect = exchange.request().getCookie(locationCookie);
         String location;
         if (redirect != null) {
-            verifyRedirectBackLocation(exchange.request().absoluteURI(), redirect.getValue());
+            verifyRedirectBackToLocation(exchange.request().absoluteURI(), redirect.getValue());
             redirect.setSecure(exchange.request().isSSL());
             redirect.setSameSite(cookieSameSite);
             location = redirect.getValue();
@@ -222,18 +246,6 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         exchange.response().setStatusCode(302);
         exchange.response().headers().add(HttpHeaderNames.LOCATION, location);
         exchange.response().end();
-    }
-
-    protected void verifyRedirectBackLocation(String requestURIString, String redirectUriString) {
-        URI requestUri = URI.create(requestURIString);
-        URI redirectUri = URI.create(redirectUriString);
-        if (!requestUri.getAuthority().equals(redirectUri.getAuthority())
-                || !requestUri.getScheme().equals(redirectUri.getScheme())) {
-            log.errorf("Location cookie value %s does not match the current request URI %s's scheme, host or port",
-                    redirectUriString,
-                    requestURIString);
-            throw new AuthenticationCompletionException();
-        }
     }
 
     protected void storeInitialLocation(final RoutingContext exchange) {
