@@ -252,7 +252,7 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
                 </div>
 
                 <div class="mainMenuBarTitle" @dblclick="${this._toggleSplit}">
-                    ${this._selectedWorkspaceItem?.name?.split('/').pop()}
+                    ${this._selectedWorkspaceItem?.name?.split(QwcWorkspace.guessPathSeparator()).pop()}
                 </div>
 
                 <div class="mainMenuBarActions">
@@ -618,7 +618,15 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
     }
     
     _onFileSelect(event) {
-        this._selectWorkspaceItem(this._workspaceItems.get(event.detail.file));
+
+        // TODO: drop this once the 'qui-directory-tree' component uses OS-specific file path separators
+        const fileSeparator = QwcWorkspace.guessPathSeparator()
+        let filePath = event.detail.file
+        if (fileSeparator !== '/') {
+            filePath = filePath.split('/').join(fileSeparator)
+        }
+
+        this._selectWorkspaceItem(this._workspaceItems.get(filePath));
     }
     
     _clearSelectedWorkspaceItem(){
@@ -747,7 +755,7 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
     _convertDirectoryStructureToTree() {
         const root = [];
         this._workspaceItems.forEach((value, key) => {
-            const parts = value.name.split('/');
+            const parts = value.name.split(QwcWorkspace.guessPathSeparator());
             let currentLevel = root;
 
             parts.forEach((part, index) => {
@@ -771,6 +779,15 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
         });
 
         return root;
+    }
+
+    static guessPathSeparator() {
+        const userAgent = navigator?.userAgent;
+        if (/Windows/i.test(userAgent)) {
+            return '\\';
+        }
+
+        return '/';
     }
 }
 customElements.define('qwc-workspace', QwcWorkspace);
