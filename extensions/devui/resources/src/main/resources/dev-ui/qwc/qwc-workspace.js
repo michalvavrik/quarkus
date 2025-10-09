@@ -252,7 +252,7 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
                 </div>
 
                 <div class="mainMenuBarTitle" @dblclick="${this._toggleSplit}">
-                    ${this._selectedWorkspaceItem?.name?.split('/').pop()}
+                    ${this._selectedWorkspaceItem?.name?.split(QwcWorkspace.guessPathSeparator()).pop()}
                 </div>
 
                 <div class="mainMenuBarActions">
@@ -747,7 +747,7 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
     _convertDirectoryStructureToTree() {
         const root = [];
         this._workspaceItems.forEach((value, key) => {
-            const parts = value.name.split('/');
+            const parts = value.name.split(QwcWorkspace.guessPathSeparator());
             let currentLevel = root;
 
             parts.forEach((part, index) => {
@@ -771,6 +771,15 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
         });
 
         return root;
+    }
+
+    static guessPathSeparator() {
+        const userAgent = navigator?.userAgent;
+        if (/Windows/i.test(userAgent)) {
+            return '\\';
+        }
+
+        return '/';
     }
 }
 customElements.define('qwc-workspace', QwcWorkspace);
