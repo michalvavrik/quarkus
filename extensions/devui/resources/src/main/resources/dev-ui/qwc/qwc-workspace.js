@@ -192,10 +192,18 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
                 directoryTree.selectFile(this._selectedWorkspaceItem.name);
                 this._selectWorkspaceItem(this._selectedWorkspaceItem);
             } else {
-                directoryTree.selectFile([...this._workspaceItems.values()][0].name);
-                this._selectWorkspaceItem([...this._workspaceItems.values()][0]);
+                const selectedItem = QwcWorkspace.getFirstJavaFile([...this._workspaceItems.values()]);
+                directoryTree.selectFile(selectedItem.name);
+                this._selectWorkspaceItem(selectedItem);
             }
         }
+    }
+
+    static getFirstJavaFile(workspaceItems) {
+        const javaFileNode = workspaceItems.find(node => {
+            return node.name && node.name.endsWith('.java');
+        });
+        return javaFileNode || workspaceItems[0];
     }
 
     render() { 
@@ -252,7 +260,7 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
                 </div>
 
                 <div class="mainMenuBarTitle" @dblclick="${this._toggleSplit}">
-                    ${this._selectedWorkspaceItem?.name?.split('/').pop()}
+                    ${this._selectedWorkspaceItem?.name?.split(QwcWorkspace.guessPathSeparator()).pop()}
                 </div>
 
                 <div class="mainMenuBarActions">
@@ -618,7 +626,15 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
     }
     
     _onFileSelect(event) {
-        this._selectWorkspaceItem(this._workspaceItems.get(event.detail.file));
+
+        // TODO: drop this once the 'qui-directory-tree' component uses OS-specific file path separators
+        const fileSeparator = QwcWorkspace.guessPathSeparator()
+        let filePath = event.detail.file
+        if (fileSeparator !== '/') {
+            filePath = filePath.split('/').join(fileSeparator)
+        }
+
+        this._selectWorkspaceItem(this._workspaceItems.get(filePath));
     }
     
     _clearSelectedWorkspaceItem(){
@@ -689,7 +705,7 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
     _loadWorkspaceItems(){
         this.jsonRpc.getWorkspaceItems().then(jsonRpcResponse => {
             if (Array.isArray(jsonRpcResponse.result)) {
-                this._workspaceItems = new Map(jsonRpcResponse.result.map(obj => [obj.name, obj]));                
+                this._workspaceItems = new Map(jsonRpcResponse.result.map(obj => [obj.name, obj]));
             } else {
                 console.error("Expected an array but got:", jsonRpcResponse.result);
             }
@@ -747,7 +763,7 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
     _convertDirectoryStructureToTree() {
         const root = [];
         this._workspaceItems.forEach((value, key) => {
-            const parts = value.name.split('/');
+            const parts = value.name.split(QwcWorkspace.guessPathSeparator());
             let currentLevel = root;
 
             parts.forEach((part, index) => {
@@ -770,7 +786,23 @@ export class QwcWorkspace extends observeState(QwcHotReloadElement) {
             });
         });
 
+        // folder goes first so that we have same deterministic behavior on Windows and Linux
+        root.sort((a, b) => {
+            const aIsFolder = a.type === 'folder' ? 0 : 1;
+            const bIsFolder = b.type === 'folder' ? 0 : 1;
+            return aIsFolder - bIsFolder;
+        });
+
         return root;
+    }
+
+    static guessPathSeparator() {
+        const userAgent = navigator?.userAgent;
+        if (/Windows/i.test(userAgent)) {
+            return '\\';
+        }
+
+        return '/';
     }
 }
 customElements.define('qwc-workspace', QwcWorkspace);
