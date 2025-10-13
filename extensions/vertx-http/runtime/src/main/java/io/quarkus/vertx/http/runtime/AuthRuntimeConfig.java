@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import io.quarkus.runtime.annotations.ConfigDocMapKey;
+import io.quarkus.vertx.http.runtime.security.FormAuthenticationToken;
 import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
 
@@ -76,6 +77,11 @@ public interface AuthRuntimeConfig {
      * Form Auth config
      */
     FormAuthConfig form();
+
+    /**
+     * Configuration for the form-based token authentication mechanism.
+     */
+    FormAuthenticationToken formToken();
 
     /**
      * Require that all registered HTTP authentication mechanisms must attempt to verify the request credentials.
