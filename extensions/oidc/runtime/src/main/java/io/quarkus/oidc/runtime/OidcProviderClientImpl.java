@@ -83,21 +83,19 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
 
     private OidcProvider oidcProvider;
 
-    public OidcProviderClientImpl(WebClient client,
-            Vertx vertx,
-            OidcConfigurationMetadata metadata,
-            OidcTenantConfig oidcConfig,
+    private OidcProviderClientImpl(WebClient client, Vertx vertx, OidcConfigurationMetadata metadata,
+            OidcTenantConfig oidcConfig, String clientSecretBasicAuthScheme, Key clientJwtKey,
             Map<OidcEndpoint.Type, List<OidcRequestFilter>> requestFilters,
             Map<OidcEndpoint.Type, List<OidcResponseFilter>> responseFilters) {
         this.client = client;
         this.vertx = vertx;
         this.metadata = metadata;
         this.oidcConfig = oidcConfig;
-        this.clientSecretBasicAuthScheme = OidcCommonUtils.initClientSecretBasicAuth(oidcConfig);
+        this.clientSecretBasicAuthScheme = clientSecretBasicAuthScheme;
         this.jwtBearerAuthentication = oidcConfig.credentials().jwt()
                 .source() == OidcClientCommonConfig.Credentials.Jwt.Source.BEARER;
         this.clientAssertionProvider = this.jwtBearerAuthentication ? createClientAssertionProvider(vertx, oidcConfig) : null;
-        this.clientJwtKey = jwtBearerAuthentication ? null : OidcCommonUtils.initClientJwtKey(oidcConfig, true);
+        this.clientJwtKey = clientJwtKey;
         this.introspectionBasicAuthScheme = initIntrospectionBasicAuthScheme(oidcConfig);
         this.requestFilters = requestFilters;
         this.responseFilters = responseFilters;
@@ -307,7 +305,7 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
             MultiMap formBody, TokenOperation op, OidcEndpoint.Type endpointType) {
         HttpRequest<Buffer> request = client.postAbs(uri);
 
-        Buffer buffer = null;
+        final Uni<Buffer> bufferUni;
 
         if (!clientSecretQueryAuthentication) {
             request.putHeader(CONTENT_TYPE_HEADER, APPLICATION_X_WWW_FORM_URLENCODED);
@@ -318,8 +316,10 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
                 if (oidcConfig.clientId().isPresent() && oidcConfig.introspectionCredentials().includeClientId()) {
                     formBody.set(OidcConstants.CLIENT_ID, oidcConfig.clientId().get());
                 }
+                bufferUni = Uni.createFrom().item(OidcCommonUtils.encodeForm(formBody));
             } else if (clientSecretBasicAuthScheme != null) {
                 request.putHeader(AUTHORIZATION_HEADER, clientSecretBasicAuthScheme);
+                bufferUni = Uni.createFrom().item(OidcCommonUtils.encodeForm(formBody));
             } else if (jwtBearerAuthentication) {
                 final String clientAssertion = clientAssertionProvider.getClientAssertion();
                 if (clientAssertion == null) {
@@ -329,6 +329,7 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
                 }
                 formBody.add(OidcConstants.CLIENT_ASSERTION, clientAssertion);
                 formBody.add(OidcConstants.CLIENT_ASSERTION_TYPE, OidcConstants.JWT_BEARER_CLIENT_ASSERTION_TYPE);
+                bufferUni = Uni.createFrom().item(OidcCommonUtils.encodeForm(formBody));
             } else if (clientJwtKey != null) {
                 String jwt = OidcCommonUtils.signJwtWithKey(oidcConfig, metadata.getTokenUri(), clientJwtKey);
                 if (OidcCommonUtils.isClientSecretPostJwtAuthRequired(oidcConfig.credentials())) {
@@ -338,21 +339,27 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
                     formBody.add(OidcConstants.CLIENT_ASSERTION_TYPE, OidcConstants.JWT_BEARER_CLIENT_ASSERTION_TYPE);
                     formBody.add(OidcConstants.CLIENT_ASSERTION, jwt);
                 }
+                bufferUni = Uni.createFrom().item(OidcCommonUtils.encodeForm(formBody));
             } else if (OidcCommonUtils.isClientSecretPostAuthRequired(oidcConfig.credentials())) {
                 formBody.add(OidcConstants.CLIENT_ID, oidcConfig.clientId().get());
-                formBody.add(OidcConstants.CLIENT_SECRET, OidcCommonUtils.clientSecret(oidcConfig.credentials()));
+                bufferUni = OidcCommonUtils.clientSecret(oidcConfig.credentials())
+                        .map(cs -> formBody.add(OidcConstants.CLIENT_SECRET, cs))
+                        .map(OidcCommonUtils::encodeForm);
             } else {
                 formBody.add(OidcConstants.CLIENT_ID, oidcConfig.clientId().get());
+                bufferUni = Uni.createFrom().item(OidcCommonUtils.encodeForm(formBody));
             }
-            buffer = OidcCommonUtils.encodeForm(formBody);
         } else {
-            formBody.add(OidcConstants.CLIENT_ID, oidcConfig.clientId().get());
-            formBody.add(OidcConstants.CLIENT_SECRET, OidcCommonUtils.clientSecret(oidcConfig.credentials()));
-            for (Map.Entry<String, String> entry : formBody) {
-                request.addQueryParam(entry.getKey(), OidcCommonUtils.urlEncode(entry.getValue()));
-            }
             request.putHeader(ACCEPT_HEADER, APPLICATION_JSON);
-            buffer = Buffer.buffer();
+            bufferUni = OidcCommonUtils.clientSecret(oidcConfig.credentials())
+                    .invoke(clientSecret -> {
+                        formBody.add(OidcConstants.CLIENT_ID, oidcConfig.clientId().get());
+                        formBody.add(OidcConstants.CLIENT_SECRET, clientSecret);
+                        for (Map.Entry<String, String> entry : formBody) {
+                            request.addQueryParam(entry.getKey(), OidcCommonUtils.urlEncode(entry.getValue()));
+                        }
+                    })
+                    .replaceWith(Buffer::buffer);
         }
 
         if (oidcConfig.codeGrant().headers() != null) {
@@ -360,18 +367,22 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
                 request.putHeader(headerEntry.getKey(), headerEntry.getValue());
             }
         }
-        if (LOG.isDebugEnabled()) {
-            LOG.debugf("%s token: url : %s, headers: %s, request params: %s", op.operation(), request.uri(), request.headers(),
-                    formBody);
-        }
         // Retry up to three times with a one-second delay between the retries if the connection is closed.
 
-        Uni<HttpResponse<Buffer>> response = filterHttpRequest(requestProps, endpointType, request, buffer)
-                .sendBuffer(OidcCommonUtils.getRequestBuffer(requestProps, buffer))
-                .onFailure(SocketException.class)
-                .retry()
-                .atMost(oidcConfig.connectionRetryCount()).onFailure().transform(Throwable::getCause);
-        return response.onItem();
+        return bufferUni
+                .flatMap(buffer -> {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debugf("%s token: url : %s, headers: %s, request params: %s", op.operation(), request.uri(),
+                                request.headers(),
+                                formBody);
+                    }
+                    return filterHttpRequest(requestProps, endpointType, request, buffer)
+                            .sendBuffer(OidcCommonUtils.getRequestBuffer(requestProps, buffer))
+                            .onFailure(SocketException.class)
+                            .retry()
+                            .atMost(oidcConfig.connectionRetryCount()).onFailure().transform(Throwable::getCause);
+                })
+                .onItem();
     }
 
     private AuthorizationCodeTokens getAuthorizationCodeTokens(OidcRequestContextProperties requestProps,
@@ -497,5 +508,22 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
 
     static boolean isIntrospection(TokenOperation op) {
         return op == TokenOperation.INTROSPECT;
+    }
+
+    static Uni<OidcProviderClientImpl> of(WebClient client, Vertx vertx, OidcConfigurationMetadata metadata,
+            OidcTenantConfig oidcConfig,
+            Map<OidcEndpoint.Type, List<OidcRequestFilter>> requestFilters,
+            Map<OidcEndpoint.Type, List<OidcResponseFilter>> responseFilters) {
+        if (oidcConfig.credentials().jwt().source() == OidcClientCommonConfig.Credentials.Jwt.Source.BEARER) {
+            return OidcCommonUtils.initClientSecretBasicAuth(oidcConfig).map(c -> new OidcProviderClientImpl(client, vertx,
+                    metadata, oidcConfig, c, null, requestFilters, responseFilters));
+        } else {
+            return Uni.combine().all()
+                    .unis(OidcCommonUtils.initClientJwtKey(oidcConfig, true),
+                            OidcCommonUtils.initClientSecretBasicAuth(oidcConfig))
+                    .with((clientJwtKey, clientSecretBasicAuthScheme) -> new OidcProviderClientImpl(client, vertx, metadata,
+                            oidcConfig, clientSecretBasicAuthScheme, clientJwtKey, requestFilters, responseFilters))
+                    .onFailure().invoke(t -> LOG.error("Failed to create OidcProviderClientImpl", t));
+        }
     }
 }
