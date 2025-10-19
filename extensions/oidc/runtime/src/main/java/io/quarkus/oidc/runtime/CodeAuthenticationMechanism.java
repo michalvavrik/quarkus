@@ -75,6 +75,7 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
     static final String HTTP_SCHEME = "http";
 
     private static final String INTERNAL_IDTOKEN_HEADER = "internal";
+    private static final String INTERNAL_IDTOKEN_KEY = "internal-idtoken";
     private static final Logger LOG = Logger.getLogger(CodeAuthenticationMechanism.class);
 
     private final BlockingTaskRunner<String> createTokenStateRequestContext;
@@ -831,26 +832,26 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
         Uni<AuthorizationCodeTokens> codeFlowTokensUni = getCodeFlowTokensUni(context, configContext, code,
                 stateBean != null ? stateBean.getCodeVerifier() : null);
 
-        return codeFlowTokensUni
-                .onItemOrFailure()
-                .transformToUni(new BiFunction<AuthorizationCodeTokens, Throwable, Uni<? extends SecurityIdentity>>() {
+        return codeFlowTokensUni.onItemOrFailure()
+                .transformToUni(new BiFunction<AuthorizationCodeTokens, Throwable, Uni<? extends AuthorizationCodeTokens>>() {
                     @Override
-                    public Uni<SecurityIdentity> apply(final AuthorizationCodeTokens tokens, final Throwable tOuter) {
+                    public Uni<AuthorizationCodeTokens> apply(final AuthorizationCodeTokens tokens, final Throwable tOuter) {
 
                         if (tOuter != null) {
                             LOG.errorf("Exception during the code to token exchange: %s", tOuter.getMessage());
                             return Uni.createFrom().failure(new AuthenticationCompletionException(tOuter));
                         }
 
-                        final boolean internalIdToken;
                         if (tokens.getIdToken() == null) {
                             if (isIdTokenRequired(configContext)) {
                                 LOG.errorf("ID token is not available in the authorization code grant response");
                                 return Uni.createFrom().failure(new AuthenticationCompletionException());
                             } else if (tokens.getAccessToken() != null) {
-                                tokens.setIdToken(generateInternalIdToken(configContext, null, null,
-                                        tokens.getAccessTokenExpiresIn()));
-                                internalIdToken = true;
+                                return generateInternalIdToken(configContext, null, null, tokens.getAccessTokenExpiresIn())
+                                        .invoke(generatedToken -> {
+                                            tokens.setIdToken(generatedToken);
+                                            context.put(INTERNAL_IDTOKEN_KEY, true);
+                                        }).replaceWith(tokens);
                             } else {
                                 LOG.errorf(
                                         "Neither ID token nor access tokens are available in the authorization code grant response."
@@ -861,8 +862,15 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
                             if (!prepareNonceForVerification(context, configContext.oidcConfig(), stateBean)) {
                                 return Uni.createFrom().failure(new AuthenticationCompletionException());
                             }
-                            internalIdToken = false;
                         }
+
+                        return Uni.createFrom().item(tokens);
+                    }
+                })
+                .flatMap(new Function<AuthorizationCodeTokens, Uni<? extends SecurityIdentity>>() {
+                    @Override
+                    public Uni<SecurityIdentity> apply(final AuthorizationCodeTokens tokens) {
+                        final boolean internalIdToken = context.get(INTERNAL_IDTOKEN_KEY, false);
 
                         context.put(NEW_AUTHENTICATION, Boolean.TRUE);
                         context.put(OidcConstants.ACCESS_TOKEN_VALUE, tokens.getAccessToken());
@@ -874,15 +882,19 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
                         LOG.debug("Authorization code has been exchanged, verifying ID token");
                         return authenticate(identityProviderManager, context,
                                 new IdTokenCredential(idToken, internalIdToken))
+                                .flatMap(identity -> {
+                                    if (internalIdToken
+                                            && OidcUtils.cacheUserInfoInIdToken(resolver, configContext.oidcConfig())) {
+                                        return generateInternalIdToken(configContext,
+                                                identity.getAttribute(OidcUtils.USER_INFO_ATTRIBUTE), null,
+                                                tokens.getAccessTokenExpiresIn())
+                                                .invoke(tokens::setIdToken).replaceWith(identity);
+                                    }
+                                    return Uni.createFrom().item(identity);
+                                })
                                 .call(new Function<SecurityIdentity, Uni<?>>() {
                                     @Override
                                     public Uni<Void> apply(SecurityIdentity identity) {
-                                        if (internalIdToken
-                                                && OidcUtils.cacheUserInfoInIdToken(resolver, configContext.oidcConfig())) {
-                                            tokens.setIdToken(generateInternalIdToken(configContext,
-                                                    identity.getAttribute(OidcUtils.USER_INFO_ATTRIBUTE), null,
-                                                    tokens.getAccessTokenExpiresIn()));
-                                        }
                                         return processSuccessfulAuthentication(context, configContext,
                                                 tokens, idToken, identity);
                                     }
@@ -1006,7 +1018,7 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
         return null;
     }
 
-    private String generateInternalIdToken(TenantConfigContext context, UserInfo userInfo, String currentIdToken,
+    private Uni<String> generateInternalIdToken(TenantConfigContext context, UserInfo userInfo, String currentIdToken,
             Long accessTokenExpiresInSecs) {
         JwtClaimsBuilder builder = Jwt.claims();
         if (currentIdToken != null) {
@@ -1031,19 +1043,22 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
         builder.audience(context.oidcConfig().clientId().get());
 
         JwtSignatureBuilder sigBuilder = builder.jws().header(INTERNAL_IDTOKEN_HEADER, true);
-        String clientOrJwtSecret = OidcCommonUtils.getClientOrJwtSecret(context.oidcConfig().credentials());
-        if (clientOrJwtSecret != null) {
-            LOG.debug("Signing internal ID token with a configured client secret");
-            return sigBuilder.sign(KeyUtils.createSecretKeyFromSecret(clientOrJwtSecret));
-        } else if (context.provider().client.getClientJwtKey() instanceof PrivateKey) {
-            LOG.debug("Signing internal ID token with a configured JWT private key");
-            return sigBuilder
-                    .sign(OidcUtils.createSecretKeyFromDigest(((PrivateKey) context.provider().client.getClientJwtKey())
-                            .getEncoded()));
-        } else {
-            LOG.debug("Signing internal ID token with a generated secret key");
-            return sigBuilder.sign(context.getInternalIdTokenSigningKey());
-        }
+        return OidcCommonUtils.getClientOrJwtSecret(context.oidcConfig().credentials())
+                .map(clientOrJwtSecret -> {
+                    if (clientOrJwtSecret != null) {
+                        LOG.debug("Signing internal ID token with a configured client secret");
+                        return sigBuilder.sign(KeyUtils.createSecretKeyFromSecret(clientOrJwtSecret));
+                    } else if (context.provider().client.getClientJwtKey() instanceof PrivateKey) {
+                        LOG.debug("Signing internal ID token with a configured JWT private key");
+                        return sigBuilder
+                                .sign(OidcUtils
+                                        .createSecretKeyFromDigest(((PrivateKey) context.provider().client.getClientJwtKey())
+                                                .getEncoded()));
+                    } else {
+                        LOG.debug("Signing internal ID token with a generated secret key");
+                        return sigBuilder.sign(context.getInternalIdTokenSigningKey());
+                    }
+                });
     }
 
     private Uni<Void> processSuccessfulAuthentication(RoutingContext context,
@@ -1365,35 +1380,30 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
 
     private Uni<AuthorizationCodeTokens> refreshTokensUni(TenantConfigContext configContext,
             String currentIdToken, String refreshToken, boolean autoRefresh) {
-        return configContext.provider().refreshTokens(refreshToken).onItem()
-                .transform(new Function<AuthorizationCodeTokens, AuthorizationCodeTokens>() {
-                    @Override
-                    public AuthorizationCodeTokens apply(AuthorizationCodeTokens tokens) {
+        return configContext.provider().refreshTokens(refreshToken).flatMap(tokens -> {
 
-                        if (tokens.getRefreshToken() == null) {
-                            tokens.setRefreshToken(refreshToken);
-                        }
+            if (tokens.getRefreshToken() == null) {
+                tokens.setRefreshToken(refreshToken);
+            }
 
-                        if (tokens.getIdToken() == null) {
-                            if (isIdTokenRequired(configContext) || !isInternalIdToken(currentIdToken, configContext)) {
-                                if (!autoRefresh) {
-                                    LOG.debugf(
-                                            "ID token is not returned in the refresh token grant response, re-authentication is required");
-                                    throw new AuthenticationFailedException(tokenMap(currentIdToken));
-                                } else {
-                                    // Auto-refresh is triggered while current ID token is still valid, continue using it.
-                                    tokens.setIdToken(currentIdToken);
-                                }
-                            } else {
-                                tokens.setIdToken(generateInternalIdToken(configContext, null, currentIdToken,
-                                        tokens.getAccessTokenExpiresIn()));
-                            }
-                        }
-
-                        return tokens;
+            if (tokens.getIdToken() == null) {
+                if (isIdTokenRequired(configContext) || !isInternalIdToken(currentIdToken, configContext)) {
+                    if (!autoRefresh) {
+                        LOG.debugf(
+                                "ID token is not returned in the refresh token grant response, re-authentication is required");
+                        throw new AuthenticationFailedException(tokenMap(currentIdToken));
+                    } else {
+                        // Auto-refresh is triggered while current ID token is still valid, continue using it.
+                        tokens.setIdToken(currentIdToken);
                     }
+                } else {
+                    return generateInternalIdToken(configContext, null, currentIdToken, tokens.getAccessTokenExpiresIn())
+                            .invoke(tokens::setIdToken).replaceWith(tokens);
+                }
+            }
 
-                });
+            return Uni.createFrom().item(tokens);
+        });
     }
 
     private Uni<AuthorizationCodeTokens> getCodeFlowTokensUni(RoutingContext context, TenantConfigContext configContext,
