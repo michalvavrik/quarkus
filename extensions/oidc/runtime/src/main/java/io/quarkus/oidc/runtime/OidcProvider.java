@@ -169,11 +169,18 @@ public class OidcProvider implements Closeable {
                 : null;
     }
 
-    public TokenVerificationResult verifySelfSignedJwtToken(String token, Key generatedInternalSignatureKey)
-            throws InvalidJwtException {
-        return verifyJwtTokenInternal(token, true, false, null, SYMMETRIC_ALGORITHM_CONSTRAINTS,
-                new InternalSignatureKeyResolver(generatedInternalSignatureKey),
-                true, oidcConfig.token().issuedAtRequired());
+    public Uni<TokenVerificationResult> verifySelfSignedJwtToken(String token, Key generatedInternalSignatureKey) {
+        return InternalSignatureKeyResolver.of(generatedInternalSignatureKey, oidcConfig, client)
+                .flatMap(verificationKeyResolver -> {
+                    try {
+                        var verificationResult = verifyJwtTokenInternal(token, true, false, null,
+                                SYMMETRIC_ALGORITHM_CONSTRAINTS,
+                                verificationKeyResolver, true, oidcConfig.token().issuedAtRequired());
+                        return Uni.createFrom().item(verificationResult);
+                    } catch (InvalidJwtException e) {
+                        return Uni.createFrom().failure(e);
+                    }
+                });
     }
 
     public TokenVerificationResult verifyJwtToken(String token, boolean enforceAudienceVerification, boolean subjectRequired,
@@ -655,12 +662,7 @@ public class OidcProvider implements Closeable {
 
     }
 
-    private class InternalSignatureKeyResolver implements VerificationKeyResolver {
-        final Key internalSignatureKey;
-
-        public InternalSignatureKeyResolver(Key generatedInternalSignatureKey) {
-            this.internalSignatureKey = initKey(generatedInternalSignatureKey);
-        }
+    private record InternalSignatureKeyResolver(Key internalSignatureKey) implements VerificationKeyResolver {
 
         @Override
         public Key resolveKey(JsonWebSignature jws, List<JsonWebStructure> nestingContext)
@@ -668,8 +670,13 @@ public class OidcProvider implements Closeable {
             return internalSignatureKey;
         }
 
-        private Key initKey(Key generatedInternalSignatureKey) {
-            String clientSecret = OidcCommonUtils.getClientOrJwtSecret(oidcConfig.credentials());
+        private static Uni<VerificationKeyResolver> of(Key key, OidcTenantConfig config, OidcProviderClientImpl client) {
+            return OidcCommonUtils.getClientOrJwtSecret(config.credentials())
+                    .map(clientSecret -> initKey(key, client, clientSecret))
+                    .map(InternalSignatureKeyResolver::new);
+        }
+
+        private static Key initKey(Key generatedInternalSignatureKey, OidcProviderClientImpl client, String clientSecret) {
             if (clientSecret != null) {
                 LOG.debug("Verifying internal ID token with a configured client secret");
                 return KeyUtils.createSecretKeyFromSecret(clientSecret);
