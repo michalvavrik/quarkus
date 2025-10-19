@@ -8,6 +8,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 
 import jakarta.enterprise.context.Dependent;
 import jakarta.enterprise.inject.Instance;
@@ -32,6 +33,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.WebSocket;
 import io.vertx.core.http.WebSocketClient;
+import io.vertx.core.http.WebSocketClientOptions;
 import io.vertx.core.http.WebSocketConnectOptions;
 import io.vertx.core.impl.ContextImpl;
 import io.vertx.core.impl.VertxImpl;
@@ -165,6 +167,11 @@ public class WebSocketConnectorImpl<CLIENT> extends WebSocketConnectorBase<WebSo
 
             return connection;
         });
+    }
+
+    @Override
+    public WebSocketConnector<CLIENT> customizeOptions(BiConsumer<WebSocketConnectOptions, WebSocketClientOptions> customizer) {
+        return customizeConnectorBaseOptions(customizer);
     }
 
     String getEndpointClass(InjectionPoint injectionPoint) {
