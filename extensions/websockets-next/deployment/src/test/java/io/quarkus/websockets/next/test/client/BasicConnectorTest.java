@@ -144,6 +144,11 @@ public class BasicConnectorTest {
         })).rootCause().isInstanceOf(UnknownHostException.class).hasMessageContaining("robert");
     }
 
+    @Test
+    void testBaseUriValidation() {
+        assertThrows(IllegalArgumentException.class, () -> connector.baseUri("localhost:8080"));
+    }
+
     private WebSocketClientConnection createConnection2(CountDownLatch conn2Latch,
             BiConsumer<WebSocketConnectOptions, WebSocketClientOptions> customizer) {
         return BasicWebSocketConnector
