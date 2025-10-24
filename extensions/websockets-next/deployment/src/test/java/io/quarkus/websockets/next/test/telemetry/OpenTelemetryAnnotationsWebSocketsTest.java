@@ -1,0 +1,326 @@
+package io.quarkus.websockets.next.test.telemetry;
+
+import static io.opentelemetry.semconv.UrlAttributes.URL_PATH;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.net.URI;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
+
+import jakarta.inject.Inject;
+
+import org.awaitility.Awaitility;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.shrinkwrap.api.asset.StringAsset;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
+import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.quarkus.builder.Version;
+import io.quarkus.maven.dependency.Dependency;
+import io.quarkus.test.QuarkusUnitTest;
+import io.quarkus.test.common.http.TestHTTPResource;
+import io.quarkus.websockets.next.OnClose;
+import io.quarkus.websockets.next.OnOpen;
+import io.quarkus.websockets.next.OnTextMessage;
+import io.quarkus.websockets.next.WebSocket;
+import io.quarkus.websockets.next.WebSocketClient;
+import io.quarkus.websockets.next.WebSocketConnection;
+import io.quarkus.websockets.next.WebSocketConnector;
+import io.quarkus.websockets.next.deployment.WebSocketConstants;
+import io.quarkus.websockets.next.test.utils.WSClient;
+import io.vertx.core.Vertx;
+import io.vertx.core.http.WebSocketConnectOptions;
+
+public class OpenTelemetryAnnotationsWebSocketsTest {
+
+    private static final String CUSTOM_SPAN_BOUNCE_ECHO = "custom.bounce.echo";
+
+    @RegisterExtension
+    public static final QuarkusUnitTest test = new QuarkusUnitTest()
+            .withApplicationRoot(root -> root
+                    .addClasses(OtelBounceEndpoint.class, WSClient.class, InMemorySpanExporterProducer.class,
+                            OtelBounceClient.class)
+                    .addAsResource(new StringAsset("""
+                            quarkus.otel.bsp.export.timeout=1s
+                            quarkus.otel.bsp.schedule.delay=50
+                            """), "application.properties"))
+            .setForcedDependencies(
+                    List.of(Dependency.of("io.quarkus", "quarkus-opentelemetry-deployment", Version.getVersion())));
+
+    @TestHTTPResource("bounce")
+    URI bounceUri;
+
+    @TestHTTPResource("/")
+    URI baseUri;
+
+    @Inject
+    Vertx vertx;
+
+    @Inject
+    InMemorySpanExporter spanExporter;
+
+    @Inject
+    WebSocketConnector<OtelBounceClient> connector;
+
+    @BeforeEach
+    public void resetSpans() {
+        spanExporter.reset();
+        OtelBounceEndpoint.connectionId = null;
+        OtelBounceEndpoint.endpointId = null;
+        OtelBounceEndpoint.MESSAGES.clear();
+        OtelBounceClient.MESSAGES.clear();
+        OtelBounceClient.CLOSED_LATCH = new CountDownLatch(1);
+        OtelBounceEndpoint.CLOSED_LATCH = new CountDownLatch(1);
+    }
+
+    @Test
+    public void testHardCodedSpanAttributeNameIsCorrect() {
+        assertEquals(SpanAttribute.class.getName(), WebSocketConstants.OPEN_TELEMETRY_SPAN_ATTRIBUTE,
+                () -> SpanAttribute.class.getName() + " annotation has changed, please update hardcoded constant in the "
+                        + WebSocketConstants.class.getName());
+    }
+
+    @Test
+    public void testServerEndpointTracesOnly() {
+        assertEquals(0, spanExporter.getFinishedSpanItems().size());
+        try (WSClient client = new WSClient(vertx)) {
+            client.connect(new WebSocketConnectOptions(), bounceUri);
+            var response = client.sendAndAwaitReply("How U Livin'").toString();
+            assertEquals("How U Livin'", response);
+        }
+        waitForTracesToArrive(4);
+
+        // out-of-the-box instrumentation - server traces
+        var initialRequestSpan = getSpanByName("GET /bounce", SpanKind.SERVER);
+        var connectionOpenedSpan = getSpanByName("OPEN " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
+        assertEquals(initialRequestSpan.getSpanId(), connectionOpenedSpan.getLinks().get(0).getSpanContext().getSpanId());
+        var connectionClosedSpan = getSpanByName("CLOSE " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
+        assertEquals(OtelBounceEndpoint.connectionId, getConnectionIdAttrVal(connectionClosedSpan));
+        assertEquals(OtelBounceEndpoint.endpointId, getEndpointIdAttrVal(connectionClosedSpan));
+        assertEquals(1, connectionClosedSpan.getLinks().size());
+        assertEquals(connectionOpenedSpan.getSpanId(), connectionClosedSpan.getLinks().get(0).getSpanContext().getSpanId());
+
+        // custom span added as the server endpoint `@OnTextMessage` method is annotated with the @WithSpan
+        var customBounceServerSpan = getSpanByName(CUSTOM_SPAN_BOUNCE_ECHO, SpanKind.SERVER);
+        assertEquals("serverEcho", customBounceServerSpan.getAttributes().get(AttributeKey.stringKey("code.function")));
+        var customNamespaceAttr = customBounceServerSpan.getAttributes().get(AttributeKey.stringKey("code.namespace"));
+        assertThat(customNamespaceAttr).contains("OtelBounceEndpoint");
+        assertEquals("How U Livin'",
+                customBounceServerSpan.getAttributes().get(AttributeKey.stringKey("server-message-callback-param")));
+    }
+
+    @Test
+    public void testClientAndServerEndpointTraces() throws InterruptedException {
+        var clientConn = connector.baseUri(baseUri).connectAndAwait();
+        clientConn.sendTextAndAwait("Make It Bun Dem");
+
+        // assert client and server called
+        Awaitility.await().untilAsserted(() -> {
+            assertEquals(1, OtelBounceEndpoint.MESSAGES.size());
+            assertEquals("Make It Bun Dem", OtelBounceEndpoint.MESSAGES.get(0));
+            assertEquals(1, OtelBounceClient.MESSAGES.size());
+            assertEquals("Make It Bun Dem", OtelBounceClient.MESSAGES.get(0));
+        });
+
+        clientConn.closeAndAwait();
+        // assert connection closed and client/server were notified
+        assertTrue(OtelBounceClient.CLOSED_LATCH.await(5, TimeUnit.SECONDS));
+        assertTrue(OtelBounceEndpoint.CLOSED_LATCH.await(5, TimeUnit.SECONDS));
+
+        waitForTracesToArrive(7);
+
+        // out-of-the-box instrumentation - server traces
+        var initialRequestSpan = getSpanByName("GET /bounce", SpanKind.SERVER);
+        var connectionOpenedSpan = getSpanByName("OPEN " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
+        assertEquals(initialRequestSpan.getSpanId(), connectionOpenedSpan.getLinks().get(0).getSpanContext().getSpanId());
+        var connectionClosedSpan = getSpanByName("CLOSE " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
+        assertEquals(OtelBounceEndpoint.connectionId, getConnectionIdAttrVal(connectionClosedSpan));
+        assertEquals(OtelBounceEndpoint.endpointId, getEndpointIdAttrVal(connectionClosedSpan));
+        assertEquals(1, connectionClosedSpan.getLinks().size());
+        assertEquals(connectionOpenedSpan.getSpanId(), connectionClosedSpan.getLinks().get(0).getSpanContext().getSpanId());
+
+        // custom span added as the server endpoint `@OnTextMessage` method is annotated with the @WithSpan
+        var customBounceServerSpan = getSpanByName(CUSTOM_SPAN_BOUNCE_ECHO, SpanKind.SERVER);
+        assertEquals("serverEcho", customBounceServerSpan.getAttributes().get(AttributeKey.stringKey("code.function")));
+        var customNamespaceAttr = customBounceServerSpan.getAttributes().get(AttributeKey.stringKey("code.namespace"));
+        assertThat(customNamespaceAttr).contains("OtelBounceEndpoint");
+        assertEquals("Make It Bun Dem",
+                customBounceServerSpan.getAttributes().get(AttributeKey.stringKey("server-message-callback-param")));
+
+        // out-of-the-box instrumentation - client traces
+        connectionOpenedSpan = getSpanByName("OPEN " + bounceUri.getPath(), SpanKind.CLIENT);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
+        assertTrue(connectionOpenedSpan.getLinks().isEmpty());
+        connectionClosedSpan = getSpanByName("CLOSE " + bounceUri.getPath(), SpanKind.CLIENT);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
+        assertNotNull(getConnectionIdAttrVal(connectionClosedSpan));
+        assertNotNull(getClientIdAttrVal(connectionClosedSpan));
+        assertEquals(1, connectionClosedSpan.getLinks().size());
+        assertEquals(connectionOpenedSpan.getSpanId(), connectionClosedSpan.getLinks().get(0).getSpanContext().getSpanId());
+
+        // custom span added as the client endpoint `@OnTextMessage` method is annotated with the @WithSpan
+        var customBounceClientSpan = getSpanByName(CUSTOM_SPAN_BOUNCE_ECHO, SpanKind.CLIENT);
+        assertEquals("clientEcho", customBounceClientSpan.getAttributes().get(AttributeKey.stringKey("code.function")));
+        customNamespaceAttr = customBounceClientSpan.getAttributes().get(AttributeKey.stringKey("code.namespace"));
+        assertThat(customNamespaceAttr).contains("OtelBounceClient");
+    }
+
+    @Test
+    public void testServerTracesWhenErrorOnMessage() {
+        assertEquals(0, spanExporter.getFinishedSpanItems().size());
+        try (WSClient client = new WSClient(vertx)) {
+            client.connect(new WebSocketConnectOptions(), bounceUri);
+            var response = client.sendAndAwaitReply("It's Alright, Ma").toString();
+            assertEquals("It's Alright, Ma", response);
+            response = client.sendAndAwaitReply("I'm Only Bleeding").toString();
+            assertEquals("I'm Only Bleeding", response);
+
+            client.sendAndAwait("throw-exception");
+            Awaitility.await().atMost(Duration.ofSeconds(5)).until(client::isClosed);
+            assertEquals(WebSocketCloseStatus.INTERNAL_SERVER_ERROR.code(), client.closeStatusCode());
+        }
+        waitForTracesToArrive(6); // FIXME: test me! 3
+
+        // out-of-the-box instrumentation - server traces
+        var initialRequestSpan = getSpanByName("GET /bounce", SpanKind.SERVER);
+        var connectionOpenedSpan = getSpanByName("OPEN " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionOpenedSpan));
+        assertEquals(initialRequestSpan.getSpanId(), connectionOpenedSpan.getLinks().get(0).getSpanContext().getSpanId());
+        var connectionClosedSpan = getSpanByName("CLOSE " + bounceUri.getPath(), SpanKind.SERVER);
+        assertEquals(bounceUri.getPath(), getUriAttrVal(connectionClosedSpan));
+        assertEquals(OtelBounceEndpoint.connectionId, getConnectionIdAttrVal(connectionClosedSpan));
+        assertEquals(OtelBounceEndpoint.endpointId, getEndpointIdAttrVal(connectionClosedSpan));
+        assertEquals(1, connectionClosedSpan.getLinks().size());
+        assertEquals(connectionOpenedSpan.getSpanId(), connectionClosedSpan.getLinks().get(0).getSpanContext().getSpanId());
+        // custom span added as the server endpoint `@OnTextMessage` method is annotated with the @WithSpan
+        assertThat(getSpansByName(CUSTOM_SPAN_BOUNCE_ECHO, SpanKind.SERVER).toList())
+                .hasSize(3)
+                .allMatch(span -> "serverEcho".equals(span.getAttributes().get(AttributeKey.stringKey("code.function"))))
+                .allMatch(span -> {
+                    var callbackParam = span.getAttributes().get(AttributeKey.stringKey("server-message-callback-param"));
+                    return List.of("throw-exception", "I'm Only Bleeding", "It's Alright, Ma").contains(callbackParam);
+                })
+                .allMatch(span -> {
+                    String codeNamespace = span.getAttributes().get(AttributeKey.stringKey("code.namespace"));
+                    return codeNamespace != null && codeNamespace.contains("OtelBounceEndpoint");
+                });
+    }
+
+    private String getConnectionIdAttrVal(SpanData connectionOpenedSpan) {
+        return connectionOpenedSpan
+                .getAttributes()
+                .get(AttributeKey.stringKey("connection.id"));
+    }
+
+    private String getClientIdAttrVal(SpanData connectionOpenedSpan) {
+        return connectionOpenedSpan
+                .getAttributes()
+                .get(AttributeKey.stringKey("connection.client.id"));
+    }
+
+    private String getUriAttrVal(SpanData connectionOpenedSpan) {
+        return connectionOpenedSpan.getAttributes().get(URL_PATH);
+    }
+
+    private String getEndpointIdAttrVal(SpanData connectionOpenedSpan) {
+        return connectionOpenedSpan
+                .getAttributes()
+                .get(AttributeKey.stringKey("connection.endpoint.id"));
+    }
+
+    private void waitForTracesToArrive(int expectedTracesCount) {
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> assertEquals(expectedTracesCount, spanExporter.getFinishedSpanItems().size()));
+    }
+
+    private SpanData getSpanByName(String name, SpanKind kind) {
+        return getSpansByName(name, kind)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Expected span name '" + name + "' and kind '" + kind + "' not found: "
+                                + spanExporter.getFinishedSpanItems()));
+    }
+
+    private Stream<SpanData> getSpansByName(String name, SpanKind kind) {
+        return spanExporter.getFinishedSpanItems()
+                .stream()
+                .filter(sd -> name.equals(sd.getName()))
+                .filter(sd -> sd.getKind() == kind);
+    }
+
+    @WebSocket(path = "/bounce", endpointId = "bounce-server-endpoint-id")
+    public static class OtelBounceEndpoint {
+
+        public static final List<String> MESSAGES = new CopyOnWriteArrayList<>();
+        public static CountDownLatch CLOSED_LATCH = new CountDownLatch(1);
+        public static volatile String connectionId = null;
+        public static volatile String endpointId = null;
+
+        @ConfigProperty(name = "bounce-endpoint.prefix-responses", defaultValue = "false")
+        boolean prefixResponses;
+
+        @WithSpan(value = CUSTOM_SPAN_BOUNCE_ECHO, kind = SpanKind.SERVER)
+        @OnTextMessage
+        public String serverEcho(@SpanAttribute("server-message-callback-param") String message) {
+            if (prefixResponses) {
+                message = "echo 0: " + message;
+            }
+            MESSAGES.add(message);
+            if (message.equals("throw-exception")) {
+                throw new RuntimeException("Failing 'serverEcho' to test behavior when an exception was thrown");
+            }
+            return message;
+        }
+
+        @OnOpen
+        void open(WebSocketConnection connection) {
+            connectionId = connection.id();
+            endpointId = connection.endpointId();
+        }
+
+        @OnClose
+        void onClose() {
+            CLOSED_LATCH.countDown();
+        }
+
+    }
+
+    @WebSocketClient(path = "/bounce", clientId = "bounce-client-id")
+    public static class OtelBounceClient {
+
+        public static List<String> MESSAGES = new CopyOnWriteArrayList<>();
+        public static CountDownLatch CLOSED_LATCH = new CountDownLatch(1);
+
+        @WithSpan(value = CUSTOM_SPAN_BOUNCE_ECHO, kind = SpanKind.CLIENT)
+        @OnTextMessage
+        void clientEcho(String message) {
+            MESSAGES.add(message);
+        }
+
+        @OnClose
+        void onClose() {
+            CLOSED_LATCH.countDown();
+        }
+
+    }
+}
