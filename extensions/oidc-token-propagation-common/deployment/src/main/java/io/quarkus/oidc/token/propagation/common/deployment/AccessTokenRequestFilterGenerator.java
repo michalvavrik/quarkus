@@ -4,6 +4,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import jakarta.annotation.Priority;
 import jakarta.inject.Singleton;
@@ -19,14 +20,14 @@ public final class AccessTokenRequestFilterGenerator {
 
     private static final int AUTHENTICATION = 1000;
 
-    private record ClientNameAndExchangeToken(String clientName, boolean exchangeTokenActivated) {
+    private record RequestFilterKey(String clientName, boolean exchangeTokenActivated, Set<String> methodNames) {
     }
 
     private final BuildProducer<UnremovableBeanBuildItem> unremovableBeansProducer;
     private final BuildProducer<ReflectiveClassBuildItem> reflectiveClassProducer;
     private final BuildProducer<GeneratedBeanBuildItem> generatedBeanProducer;
     private final Class<?> requestFilterClass;
-    private final Map<ClientNameAndExchangeToken, String> cache = new HashMap<>();
+    private final Map<RequestFilterKey, String> cache = new HashMap<>();
 
     public AccessTokenRequestFilterGenerator(BuildProducer<UnremovableBeanBuildItem> unremovableBeansProducer,
             BuildProducer<ReflectiveClassBuildItem> reflectiveClassProducer,
@@ -39,7 +40,8 @@ public final class AccessTokenRequestFilterGenerator {
 
     public String generateClass(AccessTokenInstanceBuildItem instance) {
         return cache.computeIfAbsent(
-                new ClientNameAndExchangeToken(instance.getClientName(), instance.exchangeTokenActivated()), i -> {
+                new RequestFilterKey(instance.getClientName(), instance.exchangeTokenActivated(), instance.getMethodNames()),
+                i -> {
                     var adaptor = new GeneratedBeanGizmoAdaptor(generatedBeanProducer);
                     String className = createUniqueClassName(i);
                     try (ClassCreator classCreator = ClassCreator.builder()
@@ -74,7 +76,7 @@ public final class AccessTokenRequestFilterGenerator {
                 });
     }
 
-    private String createUniqueClassName(ClientNameAndExchangeToken i) {
+    private String createUniqueClassName(RequestFilterKey i) {
         return "%s_%sClient_%sTokenExchange".formatted(requestFilterClass.getName(), clientName(i.clientName()),
                 exchangeTokenName(i.exchangeTokenActivated()));
     }

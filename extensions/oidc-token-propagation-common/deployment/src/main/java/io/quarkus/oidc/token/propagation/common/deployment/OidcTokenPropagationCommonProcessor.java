@@ -1,6 +1,7 @@
 package io.quarkus.oidc.token.propagation.common.deployment;
 
 import java.util.List;
+import java.util.Set;
 
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.DotName;
@@ -26,8 +27,12 @@ public class OidcTokenPropagationCommonProcessor {
                 return instance.value("exchangeTokenClient") != null;
             }
 
+            private Set<String> methodNames() {
+                return Set.of(); // FIXME: impl. me!
+            }
+
             private AccessTokenInstanceBuildItem build() {
-                return new AccessTokenInstanceBuildItem(toClientName(), toExchangeToken(), instance.target());
+                return new AccessTokenInstanceBuildItem(toClientName(), toExchangeToken(), instance.target(), methodNames());
             }
         }
         var accessTokenAnnotations = index.getIndex().getAnnotations(ACCESS_TOKEN);
