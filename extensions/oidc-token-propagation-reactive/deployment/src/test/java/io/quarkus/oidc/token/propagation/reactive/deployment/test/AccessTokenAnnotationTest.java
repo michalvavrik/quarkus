@@ -38,7 +38,8 @@ public class AccessTokenAnnotationTest {
             .withApplicationRoot((jar) -> jar
                     .addClasses(DefaultClientDefaultExchange.class, DefaultClientEnabledExchange.class,
                             NamedClientDefaultExchange.class, MultiProviderFrontendResource.class, ProtectedResource.class,
-                            CustomAccessTokenRequestFilter.class)
+                            CustomAccessTokenRequestFilter.class, NamedClientDefaultExchange_OnMethod.class,
+                            DefaultClientEnabledExchange_OnMethod.class, DefaultClientDefaultExchange_OnMethod.class)
                     .addAsResource(
                             new StringAsset(
                                     """
@@ -74,16 +75,19 @@ public class AccessTokenAnnotationTest {
     @Test
     public void testDefaultClientEnabledTokenExchange() {
         testRestClientTokenPropagation(true, "defaultClientEnabledExchange");
+        testRestClientTokenPropagation(true, "defaultClientEnabledExchange_OnMethod");
     }
 
     @Test
     public void testDefaultClientDefaultTokenExchange() {
         testRestClientTokenPropagation(false, "defaultClientDefaultExchange");
+        testRestClientTokenPropagation(false, "defaultClientDefaultExchange_OnMethod");
     }
 
     @Test
     public void testNamedClientDefaultTokenExchange() {
         testRestClientTokenPropagation(true, "namedClientDefaultExchange");
+        testRestClientTokenPropagation(true, "namedClientDefaultExchange_OnMethod");
     }
 
     private void testRestClientTokenPropagation(boolean exchangeEnabled, String clientKey) {
@@ -124,6 +128,30 @@ public class AccessTokenAnnotationTest {
         String getUserName();
     }
 
+    @RegisterRestClient(baseUri = "http://localhost:8081/protected")
+    @Path("/")
+    public interface DefaultClientDefaultExchange_OnMethod {
+        @AccessToken
+        @GET
+        String getUserName();
+    }
+
+    @RegisterRestClient(baseUri = "http://localhost:8081/protected")
+    @Path("/")
+    public interface DefaultClientEnabledExchange_OnMethod {
+        @AccessToken(exchangeTokenClient = "Default")
+        @GET
+        String getUserName();
+    }
+
+    @RegisterRestClient(baseUri = "http://localhost:8081/protected")
+    @Path("/")
+    public interface NamedClientDefaultExchange_OnMethod {
+        @AccessToken(exchangeTokenClient = "named")
+        @GET
+        String getUserName();
+    }
+
     // tests no AmbiguousResolutionException is raised
     @Singleton
     @Unremovable
@@ -143,6 +171,18 @@ public class AccessTokenAnnotationTest {
         @Inject
         @RestClient
         NamedClientDefaultExchange namedClientDefaultExchange;
+
+        @Inject
+        @RestClient
+        DefaultClientDefaultExchange_OnMethod defaultClientDefaultExchange_OnMethod;
+
+        @Inject
+        @RestClient
+        DefaultClientEnabledExchange_OnMethod defaultClientEnabledExchange_OnMethod;
+
+        @Inject
+        @RestClient
+        NamedClientDefaultExchange_OnMethod namedClientDefaultExchange_OnMethod;
 
         @Inject
         JsonWebToken jwt;
@@ -190,6 +230,9 @@ public class AccessTokenAnnotationTest {
                 case "defaultClientDefaultExchange" -> defaultClientDefaultExchange.getUserName();
                 case "defaultClientEnabledExchange" -> defaultClientEnabledExchange.getUserName();
                 case "namedClientDefaultExchange" -> namedClientDefaultExchange.getUserName();
+                case "defaultClientDefaultExchange_OnMethod" -> defaultClientDefaultExchange_OnMethod.getUserName();
+                case "defaultClientEnabledExchange_OnMethod" -> defaultClientEnabledExchange_OnMethod.getUserName();
+                case "namedClientDefaultExchange_OnMethod" -> namedClientDefaultExchange_OnMethod.getUserName();
                 default -> throw new IllegalArgumentException("Unknown client key");
             };
         }
