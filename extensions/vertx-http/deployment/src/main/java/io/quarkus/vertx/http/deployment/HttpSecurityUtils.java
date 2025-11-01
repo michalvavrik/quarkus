@@ -3,6 +3,8 @@ package io.quarkus.vertx.http.deployment;
 import java.util.Collection;
 import java.util.Optional;
 
+import io.quarkus.security.spi.SecurityTransformerHelper;
+import io.quarkus.security.spi.SecurityTransformerHelperBuildItem;
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
@@ -11,6 +13,11 @@ import org.jboss.jandex.MethodInfo;
 import io.quarkus.security.spi.SecurityTransformerUtils;
 import io.quarkus.vertx.http.security.AuthorizationPolicy;
 
+/**
+ * @deprecated this transformer does not reflect annotation transformations, use the {@link SecurityTransformerHelper}
+ * helper produced by the {@link SecurityTransformerHelperBuildItem} build item
+ */
+@Deprecated(since = "3.30", forRemoval = true)
 public final class HttpSecurityUtils {
 
     static final DotName AUTHORIZATION_POLICY = DotName.createSimple(AuthorizationPolicy.class);
