@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,6 +41,8 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import jakarta.annotation.security.DenyAll;
+import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Dependent;
 import jakarta.inject.Singleton;
@@ -104,6 +107,8 @@ import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.StartupEvent;
 import io.quarkus.runtime.configuration.ConfigurationException;
+import io.quarkus.security.Authenticated;
+import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.security.deployment.PermissionSecurityChecks.PermissionSecurityChecksBuilder;
 import io.quarkus.security.identity.SecurityIdentityAugmentor;
 import io.quarkus.security.runtime.IdentityProviderManagerCreator;
@@ -135,6 +140,8 @@ import io.quarkus.security.spi.DefaultSecurityCheckBuildItem;
 import io.quarkus.security.spi.PermissionsAllowedMetaAnnotationBuildItem;
 import io.quarkus.security.spi.RegisterClassSecurityCheckBuildItem;
 import io.quarkus.security.spi.RolesAllowedConfigExpResolverBuildItem;
+import io.quarkus.security.spi.SecurityTransformerHelper.AuthorizationType;
+import io.quarkus.security.spi.SecurityTransformerHelperBuildItem;
 import io.quarkus.security.spi.SecurityTransformerUtils;
 import io.quarkus.security.spi.runtime.AuthorizationController;
 import io.quarkus.security.spi.runtime.BlockingSecurityExecutor;
@@ -147,8 +154,29 @@ public class SecurityProcessor {
 
     private static final Logger log = Logger.getLogger(SecurityProcessor.class);
     private static final DotName STARTUP_EVENT_NAME = DotName.createSimple(StartupEvent.class.getName());
+    private static final Set<DotName> SECURITY_CHECK_ANNOTATIONS = Set.of(DotName.createSimple(RolesAllowed.class.getName()),
+            DotName.createSimple(PermissionsAllowed.class.getName()),
+            DotName.createSimple(PermissionsAllowed.List.class.getName()),
+            DotName.createSimple(Authenticated.class.getName()),
+            DotName.createSimple(DenyAll.class.getName()),
+            DotName.createSimple(PermitAll.class.getName()));
 
     SecurityConfig security;
+
+    @BuildStep
+    SecurityTransformerHelperBuildItem createSecurityTransformerHelperBuildItem(
+            List<AdditionalSecurityAnnotationBuildItem> additionalSecurityAnnotationBuildItems) {
+        Collection<AnnotationTransformation> transformations = Set.of(); // FIXME: impl. me!
+        Collection<MethodInfo> additionalSecuredMethods = Set.of(); // FIXME: impl. me!
+
+        Map<AuthorizationType, Set<DotName>> authorizationTypeToSecurityAnnotations = new EnumMap<>(AuthorizationType.class);
+        authorizationTypeToSecurityAnnotations.put(AuthorizationType.SECURITY_CHECK, new HashSet<>(SECURITY_CHECK_ANNOTATIONS));
+        additionalSecurityAnnotationBuildItems.forEach(i -> authorizationTypeToSecurityAnnotations
+                .computeIfAbsent(i.getAuthorizationType(), k -> new HashSet<>()).add(i.getSecurityAnnotationName()));
+
+        return new SecurityTransformerHelperBuildItem(transformations, authorizationTypeToSecurityAnnotations,
+                additionalSecuredMethods);
+    }
 
     /**
      * Create JCAProviderBuildItems for any configured provider names
