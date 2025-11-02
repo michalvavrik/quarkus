@@ -12,8 +12,8 @@ import static io.quarkus.security.deployment.PermissionSecurityChecks.BLOCKING;
 import static io.quarkus.security.deployment.PermissionSecurityChecks.PERMISSION_CHECKER_NAME;
 import static io.quarkus.security.deployment.PermissionSecurityChecks.PermissionSecurityChecksBuilder.movePermFromMetaAnnToMetaTarget;
 import static io.quarkus.security.runtime.SecurityProviderUtils.findProviderIndex;
-import static io.quarkus.security.spi.SecurityTransformerUtils.findFirstStandardSecurityAnnotation;
-import static io.quarkus.security.spi.SecurityTransformerUtils.hasSecurityAnnotation;
+import static io.quarkus.security.spi.SecurityTransformerHelper.AuthorizationType.SECURITY_CHECK;
+import static io.quarkus.security.spi.SecurityTransformerHelperBuildItem.createSecurityTransformerHelper;
 
 import java.io.IOException;
 import java.lang.reflect.Modifier;
@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,6 +41,8 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import jakarta.annotation.security.DenyAll;
+import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Dependent;
 import jakarta.inject.Singleton;
@@ -78,6 +81,7 @@ import io.quarkus.deployment.annotations.Consume;
 import io.quarkus.deployment.annotations.ExecutionTime;
 import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.ApplicationClassPredicateBuildItem;
+import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedClassBuildItem;
 import io.quarkus.deployment.builditem.GeneratedNativeImageClassBuildItem;
@@ -104,6 +108,8 @@ import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.StartupEvent;
 import io.quarkus.runtime.configuration.ConfigurationException;
+import io.quarkus.security.Authenticated;
+import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.security.deployment.PermissionSecurityChecks.PermissionSecurityChecksBuilder;
 import io.quarkus.security.identity.SecurityIdentityAugmentor;
 import io.quarkus.security.runtime.IdentityProviderManagerCreator;
@@ -135,7 +141,9 @@ import io.quarkus.security.spi.DefaultSecurityCheckBuildItem;
 import io.quarkus.security.spi.PermissionsAllowedMetaAnnotationBuildItem;
 import io.quarkus.security.spi.RegisterClassSecurityCheckBuildItem;
 import io.quarkus.security.spi.RolesAllowedConfigExpResolverBuildItem;
-import io.quarkus.security.spi.SecurityTransformerUtils;
+import io.quarkus.security.spi.SecurityTransformerHelper;
+import io.quarkus.security.spi.SecurityTransformerHelper.AuthorizationType;
+import io.quarkus.security.spi.SecurityTransformerHelperBuildItem;
 import io.quarkus.security.spi.runtime.AuthorizationController;
 import io.quarkus.security.spi.runtime.BlockingSecurityExecutor;
 import io.quarkus.security.spi.runtime.DevModeDisabledAuthorizationController;
@@ -147,8 +155,29 @@ public class SecurityProcessor {
 
     private static final Logger log = Logger.getLogger(SecurityProcessor.class);
     private static final DotName STARTUP_EVENT_NAME = DotName.createSimple(StartupEvent.class.getName());
+    private static final Set<DotName> SECURITY_CHECK_ANNOTATIONS = Set.of(DotName.createSimple(RolesAllowed.class.getName()),
+            DotName.createSimple(PermissionsAllowed.class.getName()),
+            DotName.createSimple(PermissionsAllowed.List.class.getName()),
+            DotName.createSimple(Authenticated.class.getName()),
+            DotName.createSimple(DenyAll.class.getName()),
+            DotName.createSimple(PermitAll.class.getName()));
 
     SecurityConfig security;
+
+    @BuildStep
+    SecurityTransformerHelperBuildItem createSecurityTransformerHelperBuildItem(
+            List<AdditionalSecurityAnnotationBuildItem> additionalSecurityAnnotationBuildItems) {
+        Collection<AnnotationTransformation> transformations = Set.of(); // FIXME: impl. me!
+        Predicate<ClassInfo> isInterfaceWithTransformations = ignored -> false;
+
+        Map<AuthorizationType, Set<DotName>> authorizationTypeToSecurityAnnotations = new EnumMap<>(AuthorizationType.class);
+        authorizationTypeToSecurityAnnotations.put(SECURITY_CHECK, new HashSet<>(SECURITY_CHECK_ANNOTATIONS));
+        additionalSecurityAnnotationBuildItems.forEach(i -> authorizationTypeToSecurityAnnotations
+                .computeIfAbsent(i.getAuthorizationType(), k -> new HashSet<>()).add(i.getSecurityAnnotationName()));
+
+        return new SecurityTransformerHelperBuildItem(transformations, authorizationTypeToSecurityAnnotations,
+                isInterfaceWithTransformations);
+    }
 
     /**
      * Create JCAProviderBuildItems for any configured provider names
@@ -540,11 +569,15 @@ public class SecurityProcessor {
      */
     @BuildStep
     void transformSecurityAnnotations(BuildProducer<AnnotationsTransformerBuildItem> transformers,
-            List<AdditionalSecuredMethodsBuildItem> additionalSecuredMethods) {
+            List<AdditionalSecuredMethodsBuildItem> additionalSecuredMethods,
+            Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem,
+            CombinedIndexBuildItem combinedIndexBuildItem) {
         if (security.denyUnannotatedMembers()) {
+            SecurityTransformerHelper securityTransformerHelper = createSecurityTransformerHelper(
+                    combinedIndexBuildItem.getIndex(), securityTransformerHelperBuildItem);
             transformers.produce(new AnnotationsTransformerBuildItem(AnnotationTransformation
                     .forClasses()
-                    .whenClass(new DenyUnannotatedPredicate())
+                    .whenClass(new DenyUnannotatedPredicate(securityTransformerHelper))
                     .transform(ctx -> ctx.add(DenyAll.class))));
         }
         if (!additionalSecuredMethods.isEmpty()) {
@@ -739,10 +772,13 @@ public class SecurityProcessor {
             List<AdditionalSecurityCheckBuildItem> additionalSecurityChecks,
             PermissionSecurityChecksBuilderBuildItem permissionSecurityChecksBuilderBuildItem,
             BuildProducer<GeneratedClassBuildItem> generatedClassesProducer,
-            BuildProducer<ReflectiveClassBuildItem> reflectiveClassesProducer) {
+            BuildProducer<ReflectiveClassBuildItem> reflectiveClassesProducer,
+            Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem) {
         var hasAdditionalSecAnn = hasAdditionalSecurityAnnotation(additionalSecurityAnnotationItems.stream()
                 .map(AdditionalSecurityAnnotationBuildItem::getSecurityAnnotationName).collect(Collectors.toSet()));
         classPredicate.produce(new ApplicationClassPredicateBuildItem(new SecurityCheckStorageAppPredicate()));
+        SecurityTransformerHelper securityTransformerHelper = createSecurityTransformerHelper(beanArchiveBuildItem.getIndex(),
+                securityTransformerHelperBuildItem);
 
         final Map<MethodDescription, AdditionalSecured> additionalSecured = new HashMap<>();
         for (AdditionalSecuredMethodsBuildItem securedMethods : additionalSecuredMethods) {
@@ -758,7 +794,7 @@ public class SecurityProcessor {
                 reflectiveClassBuildItemBuildProducer, rolesAllowedConfigExpResolverBuildItems,
                 registerClassSecurityCheckBuildItems, classSecurityCheckStorageProducer, hasAdditionalSecAnn,
                 additionalSecurityAnnotationItems, permissionSecurityChecksBuilderBuildItem.instance,
-                generatedClassesProducer, reflectiveClassesProducer);
+                generatedClassesProducer, reflectiveClassesProducer, securityTransformerHelper);
         for (AdditionalSecurityCheckBuildItem additionalSecurityCheck : additionalSecurityChecks) {
             securityChecks.put(additionalSecurityCheck.getMethodInfo(),
                     additionalSecurityCheck.getSecurityCheck());
@@ -848,7 +884,8 @@ public class SecurityProcessor {
             List<AdditionalSecurityAnnotationBuildItem> additionalSecurityAnnotationItems,
             PermissionSecurityChecksBuilder permissionCheckBuilder,
             BuildProducer<GeneratedClassBuildItem> generatedClassesProducer,
-            BuildProducer<ReflectiveClassBuildItem> reflectiveClassesProducer) {
+            BuildProducer<ReflectiveClassBuildItem> reflectiveClassesProducer,
+            SecurityTransformerHelper securityTransformerHelper) {
         Map<MethodInfo, AnnotationInstance> methodToInstanceCollector = new HashMap<>();
         Map<ClassInfo, AnnotationInstance> classAnnotations = new HashMap<>();
         Map<MethodInfo, SecurityCheck> result = new HashMap<>();
@@ -915,10 +952,11 @@ public class SecurityProcessor {
                         .stream()
                         .filter(ai -> ai.target().kind() == AnnotationTarget.Kind.CLASS)
                         .map(ai -> ai.target().asClass())
-                        .filter(SecurityTransformerUtils::hasSecurityAnnotation)
+                        .filter(ai -> securityTransformerHelper.hasSecurityAnnotation(ai, SECURITY_CHECK))
                         .findFirst()
                         .ifPresent(ci -> {
-                            var securityAnnotation = findFirstStandardSecurityAnnotation(ci).get().name();
+                            var securityAnnotation = securityTransformerHelper.findFirstSecurityAnnotation(ci, SECURITY_CHECK)
+                                    .get().name();
                             throw new RuntimeException("""
                                     Class '%s' is annotated with '%s' and '%s' security annotations,
                                     however security annotations cannot be combined.
@@ -1146,8 +1184,11 @@ public class SecurityProcessor {
     void validateStartUpObserversNotSecured(SynthesisFinishedBuildItem synthesisFinished,
             ValidationPhaseBuildItem validationPhase,
             BeanArchiveIndexBuildItem beanArchiveIndexBuildItem,
-            BuildProducer<ValidationErrorBuildItem> validationErrorProducer) {
+            BuildProducer<ValidationErrorBuildItem> validationErrorProducer,
+            Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem) {
         AnnotationStore annotationStore = validationPhase.getContext().get(BuildExtension.Key.ANNOTATION_STORE);
+        SecurityTransformerHelper securityTransformerHelper = createSecurityTransformerHelper(
+                beanArchiveIndexBuildItem.getIndex(), securityTransformerHelperBuildItem);
         synthesisFinished
                 .getObservers()
                 .stream()
@@ -1156,11 +1197,11 @@ public class SecurityProcessor {
                 .map(ObserverInfo::getObserverMethod)
                 .filter(Objects::nonNull) // synthetic observer method created for @Startup is null and not secured
                 .forEach(mi -> {
-                    if (hasSecurityAnnotation(annotationStore.getAnnotations(mi))
-                            || hasClassLevelStandardSecurityAnnotation(mi, annotationStore)) {
+                    if (securityTransformerHelper.isSecurityAnnotation(annotationStore.getAnnotations(mi))
+                            || hasClassLevelStandardSecurityAnnotation(mi, annotationStore, securityTransformerHelper)) {
                         var declaringClass = mi.declaringClass();
-                        findFirstStandardSecurityAnnotation(annotationStore.getAnnotations(mi))
-                                .or(() -> findFirstStandardSecurityAnnotation(
+                        securityTransformerHelper.findFirstSecurityAnnotation(annotationStore.getAnnotations(mi))
+                                .or(() -> securityTransformerHelper.findFirstSecurityAnnotation(
                                         annotationStore.getAnnotations(declaringClass)))
                                 .map(AnnotationInstance::name)
                                 .filter(name -> !name.equals(PERMIT_ALL))
@@ -1178,9 +1219,12 @@ public class SecurityProcessor {
     @BuildStep
     void gatherClassSecurityChecks(BuildProducer<RegisterClassSecurityCheckBuildItem> producer,
             BeanArchiveIndexBuildItem indexBuildItem, PermissionsAllowedMetaAnnotationBuildItem permsMetaAnnotationsItem,
-            List<ClassSecurityAnnotationBuildItem> classAnnotationItems) {
+            List<ClassSecurityAnnotationBuildItem> classAnnotationItems,
+            Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem) {
         if (!classAnnotationItems.isEmpty()) {
             var index = indexBuildItem.getIndex();
+            SecurityTransformerHelper securityTransformerHelper = createSecurityTransformerHelper(index,
+                    securityTransformerHelperBuildItem);
             classAnnotationItems
                     .stream()
                     .map(ClassSecurityAnnotationBuildItem::getClassAnnotation)
@@ -1188,18 +1232,20 @@ public class SecurityProcessor {
                     .flatMap(Collection::stream)
                     .filter(ai -> ai.target().kind() == AnnotationTarget.Kind.CLASS)
                     .map(ai -> ai.target().asClass())
-                    .filter(cl -> SecurityTransformerUtils.hasSecurityAnnotation(cl)
+                    .filter(cl -> securityTransformerHelper.hasSecurityAnnotation(cl, SECURITY_CHECK)
                             || permsMetaAnnotationsItem.hasPermissionsAllowed(cl))
-                    .map(c -> new RegisterClassSecurityCheckBuildItem(c.name(), findFirstStandardSecurityAnnotation(c)
-                            .or(() -> permsMetaAnnotationsItem.findPermissionsAllowedInstance(c))
-                            .get()))
+                    .map(c -> new RegisterClassSecurityCheckBuildItem(c.name(),
+                            securityTransformerHelper.findFirstSecurityAnnotation(c, SECURITY_CHECK)
+                                    .or(() -> permsMetaAnnotationsItem.findPermissionsAllowedInstance(c))
+                                    .get()))
                     .forEach(producer::produce);
         }
     }
 
-    private static boolean hasClassLevelStandardSecurityAnnotation(MethodInfo method, AnnotationStore annotationStore) {
+    private static boolean hasClassLevelStandardSecurityAnnotation(MethodInfo method, AnnotationStore annotationStore,
+            SecurityTransformerHelper securityTransformerHelper) {
         return applyClassLevenInterceptor(method, annotationStore)
-                && hasSecurityAnnotation(annotationStore.getAnnotations(method.declaringClass()));
+                && securityTransformerHelper.isSecurityAnnotation(annotationStore.getAnnotations(method.declaringClass()));
     }
 
     private static boolean applyClassLevenInterceptor(MethodInfo method, AnnotationStore store) {
