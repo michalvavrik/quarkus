@@ -59,6 +59,7 @@ import io.quarkus.security.runtime.QuarkusPermission;
 import io.quarkus.security.runtime.SecurityCheckRecorder;
 import io.quarkus.security.runtime.interceptor.PermissionsAllowedInterceptor;
 import io.quarkus.security.spi.PermissionsAllowedMetaAnnotationBuildItem;
+import io.quarkus.security.spi.SecurityTransformerHelper;
 import io.quarkus.security.spi.runtime.SecurityCheck;
 import io.smallrye.common.annotation.Blocking;
 
@@ -92,9 +93,10 @@ interface PermissionSecurityChecks {
         private volatile SecurityCheckRecorder recorder;
         private volatile PermissionConverterGenerator paramConverterGenerator;
 
-        PermissionSecurityChecksBuilder(IndexView index, PermissionsAllowedMetaAnnotationBuildItem metaAnnotationItem) {
+        PermissionSecurityChecksBuilder(IndexView index, PermissionsAllowedMetaAnnotationBuildItem metaAnnotationItem,
+                SecurityTransformerHelper securityTransformerHelper) {
             this.index = index;
-            var instances = getPermissionsAllowedInstances(index, metaAnnotationItem);
+            var instances = getPermissionsAllowedInstances(index, metaAnnotationItem, securityTransformerHelper);
             // make sure we process annotations on methods first
             instances.sort(new Comparator<AnnotationInstance>() {
                 @Override
@@ -525,7 +527,7 @@ interface PermissionSecurityChecks {
         }
 
         private static ArrayList<AnnotationInstance> getPermissionsAllowedInstances(IndexView index,
-                PermissionsAllowedMetaAnnotationBuildItem item) {
+                PermissionsAllowedMetaAnnotationBuildItem item, SecurityTransformerHelper securityTransformerHelper) {
             var instances = getPermissionsAllowedInstances(index);
             if (!item.getTransitiveInstances().isEmpty()) {
                 instances.addAll(item.getTransitiveInstances());

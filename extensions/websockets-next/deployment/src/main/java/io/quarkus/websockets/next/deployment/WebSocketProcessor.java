@@ -3,6 +3,8 @@ package io.quarkus.websockets.next.deployment;
 import static io.quarkus.arc.processor.DotNames.EVENT;
 import static io.quarkus.deployment.annotations.ExecutionTime.RUNTIME_INIT;
 import static io.quarkus.deployment.annotations.ExecutionTime.STATIC_INIT;
+import static io.quarkus.security.spi.SecurityTransformerHelper.AuthorizationType.SECURITY_CHECK;
+import static io.quarkus.security.spi.SecurityTransformerHelperBuildItem.createSecurityTransformerHelper;
 import static io.quarkus.vertx.http.deployment.EagerSecurityInterceptorClassesBuildItem.collectInterceptedClasses;
 import static org.jboss.jandex.gizmo2.Jandex2Gizmo.classDescOf;
 import static org.jboss.jandex.gizmo2.Jandex2Gizmo.methodDescOf;
@@ -106,7 +108,8 @@ import io.quarkus.security.identity.IdentityProviderManager;
 import io.quarkus.security.spi.ClassSecurityAnnotationBuildItem;
 import io.quarkus.security.spi.ClassSecurityCheckStorageBuildItem;
 import io.quarkus.security.spi.PermissionsAllowedMetaAnnotationBuildItem;
-import io.quarkus.security.spi.SecurityTransformerUtils;
+import io.quarkus.security.spi.SecurityTransformerHelper;
+import io.quarkus.security.spi.SecurityTransformerHelperBuildItem;
 import io.quarkus.security.spi.runtime.AuthorizationFailureEvent;
 import io.quarkus.security.spi.runtime.AuthorizationSuccessEvent;
 import io.quarkus.security.spi.runtime.SecurityCheck;
@@ -521,8 +524,12 @@ public class WebSocketProcessor {
             ValidationPhaseBuildItem validationPhase, BuildProducer<RouteBuildItem> routes,
             Optional<PermissionsAllowedMetaAnnotationBuildItem> metaPermissionsAllowed,
             EndpointSecurityChecksBuildItem endpointSecurityChecks, Capabilities capabilities,
-            CombinedIndexBuildItem indexBuildItem) {
+            CombinedIndexBuildItem indexBuildItem,
+            Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem) {
         boolean securityEnabled = capabilities.isPresent(Capability.SECURITY);
+        SecurityTransformerHelper securityTransformerHelper = securityEnabled
+                ? createSecurityTransformerHelper(indexBuildItem.getIndex(), securityTransformerHelperBuildItem)
+                : null;
         for (GeneratedEndpointBuildItem endpoint : generatedEndpoints.stream().filter(GeneratedEndpointBuildItem::isServer)
                 .toList()) {
             boolean httpUpgradeSecured = endpointSecurityChecks.endpointIdToSecurityCheck.containsKey(endpoint.endpointId)
@@ -535,11 +542,11 @@ public class WebSocketProcessor {
                     .handler(recorder.createEndpointHandler(endpoint.generatedClassName, endpoint.endpointId,
                             activateContext(config.activateRequestContext(), BuiltinScope.REQUEST.getInfo(),
                                     endpoint.endpointId, endpoints, validationPhase.getBeanResolver(), metaPermissionsAllowed,
-                                    securityEnabled, httpUpgradeSecured),
+                                    securityEnabled, httpUpgradeSecured, securityTransformerHelper),
                             activateContext(config.activateSessionContext(),
                                     new ScopeInfo(DotName.createSimple(SessionScoped.class), true), endpoint.endpointId,
                                     endpoints, validationPhase.getBeanResolver(), metaPermissionsAllowed, securityEnabled,
-                                    httpUpgradeSecured),
+                                    httpUpgradeSecured, securityTransformerHelper),
                             endpoint.path));
             routes.produce(builder.build());
         }
@@ -548,11 +555,11 @@ public class WebSocketProcessor {
     private boolean activateContext(WebSocketsServerBuildConfig.ContextActivation activation, ScopeInfo scope,
             String endpointId, List<WebSocketEndpointBuildItem> endpoints, BeanResolver beanResolver,
             Optional<PermissionsAllowedMetaAnnotationBuildItem> metaPermissionsAllowed,
-            boolean securityEnabled, boolean httpUpgradeSecured) {
+            boolean securityEnabled, boolean httpUpgradeSecured, SecurityTransformerHelper securityTransformerHelper) {
         return switch (activation) {
             case ALWAYS -> true;
             case AUTO -> needsContext(findEndpoint(endpointId, endpoints).bean, scope, new HashSet<>(), beanResolver,
-                    metaPermissionsAllowed, securityEnabled, httpUpgradeSecured);
+                    metaPermissionsAllowed, securityEnabled, httpUpgradeSecured, securityTransformerHelper);
             default -> throw new IllegalArgumentException("Unexpected value: " + activation);
         };
     }
@@ -568,7 +575,7 @@ public class WebSocketProcessor {
 
     private boolean needsContext(BeanInfo bean, ScopeInfo scope, Set<String> processedBeans, BeanResolver beanResolver,
             Optional<PermissionsAllowedMetaAnnotationBuildItem> metaPermissionsAllowed, boolean securityEnabled,
-            boolean httpUpgradeSecured) {
+            boolean httpUpgradeSecured, SecurityTransformerHelper securityTransformerHelper) {
         if (processedBeans.add(bean.getIdentifier())) {
 
             if (scope.equals(bean.getScope())) {
@@ -578,7 +585,7 @@ public class WebSocketProcessor {
                     && bean.isClassBean()
                     && bean.hasAroundInvokeInterceptors()
                     && hasSecurityAnnNotOnHttpUpgrade(bean.getTarget().get().asClass(), metaPermissionsAllowed,
-                            httpUpgradeSecured)) {
+                            httpUpgradeSecured, securityTransformerHelper)) {
                 // The given scope is RequestScoped, the bean is class-based, has an aroundInvoke interceptor associated and is annotated with a security annotation
                 return true;
             }
@@ -586,7 +593,7 @@ public class WebSocketProcessor {
                 BeanInfo dependency = injectionPoint.getResolvedBean();
                 if (dependency != null) {
                     if (needsContext(dependency, scope, processedBeans, beanResolver, metaPermissionsAllowed, securityEnabled,
-                            false)) {
+                            false, securityTransformerHelper)) {
                         return true;
                     }
                 } else {
@@ -608,7 +615,7 @@ public class WebSocketProcessor {
                         // For programmatic lookup and @All List<> we need to resolve the beans manually
                         for (BeanInfo lookupDependency : beanResolver.resolveBeans(requiredType, qualifiers)) {
                             if (needsContext(lookupDependency, scope, processedBeans, beanResolver, metaPermissionsAllowed,
-                                    securityEnabled, false)) {
+                                    securityEnabled, false, securityTransformerHelper)) {
                                 return true;
                             }
                         }
@@ -620,18 +627,31 @@ public class WebSocketProcessor {
     }
 
     private static boolean hasSecurityAnnNotOnHttpUpgrade(ClassInfo classInfo,
-            Optional<PermissionsAllowedMetaAnnotationBuildItem> metaPermissionsAllowed, boolean httpUpgradeSecured) {
+            Optional<PermissionsAllowedMetaAnnotationBuildItem> metaPermissionsAllowed, boolean httpUpgradeSecured,
+            SecurityTransformerHelper securityTransformerHelper) {
         final List<AnnotationInstance> annotations;
         if (httpUpgradeSecured) {
             // this is endpoint class and HTTP upgrade is secured, so we only need active CDI request context for methods
+            for (MethodInfo method : classInfo.methods()) {
+                if (securityTransformerHelper.hasSecurityAnnotation(method, SECURITY_CHECK)) {
+                    return true;
+                }
+            }
             annotations = classInfo.annotations().stream()
                     .filter(ai -> ai.target() != null && ai.target().kind() == AnnotationTarget.Kind.METHOD).toList();
         } else {
             // class and method annotations
+            if (securityTransformerHelper.hasSecurityAnnotation(classInfo, SECURITY_CHECK)) {
+                return true;
+            }
+            for (MethodInfo method : classInfo.methods()) {
+                if (securityTransformerHelper.hasSecurityAnnotation(method, SECURITY_CHECK)) {
+                    return true;
+                }
+            }
             annotations = classInfo.annotations();
         }
-        return SecurityTransformerUtils.hasSecurityAnnotation(annotations)
-                || metaPermissionsAllowed.get().hasPermissionsAllowed(annotations);
+        return metaPermissionsAllowed.get().hasPermissionsAllowed(annotations);
     }
 
     @BuildStep
@@ -734,22 +754,28 @@ public class WebSocketProcessor {
 
     @BuildStep
     void preventRepeatedSecurityChecksForHttpUpgrade(Capabilities capabilities, CombinedIndexBuildItem indexBuildItem,
-            BuildProducer<AnnotationsTransformerBuildItem> producer) {
+            BuildProducer<AnnotationsTransformerBuildItem> producer,
+            Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem) {
         if (capabilities.isPresent(Capability.SECURITY) && identityUpdateNotSupported(indexBuildItem.getIndex())) {
+            SecurityTransformerHelper securityTransformerHelper = createSecurityTransformerHelper(indexBuildItem.getIndex(),
+                    securityTransformerHelperBuildItem);
             producer.produce(new AnnotationsTransformerBuildItem(AnnotationTransformation
                     .forClasses()
                     .whenAnyMatch(WebSocketDotNames.WEB_SOCKET)
-                    .transform(ctx -> ctx.remove(SecurityTransformerUtils::isStandardSecurityAnnotation))));
+                    .transform(ctx -> ctx.remove(ai -> securityTransformerHelper.isSecurityAnnotation(ai, SECURITY_CHECK)))));
         }
     }
 
     @BuildStep
     EndpointSecurityChecksBuildItem collectEndpointSecurityChecks(BeanArchiveIndexBuildItem indexItem,
             List<WebSocketEndpointBuildItem> endpoints, Optional<ClassSecurityCheckStorageBuildItem> storageItem,
-            Capabilities capabilities) {
+            Capabilities capabilities, Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem) {
         final Map<String, SecurityCheck> endpointIdToSecurityCheck;
         if (capabilities.isPresent(Capability.SECURITY) && storageItem.isPresent()) {
-            endpointIdToSecurityCheck = collectEndpointSecurityChecks(endpoints, storageItem.get(), indexItem.getIndex());
+            SecurityTransformerHelper securityTransformerHelper = createSecurityTransformerHelper(indexItem.getIndex(),
+                    securityTransformerHelperBuildItem);
+            endpointIdToSecurityCheck = collectEndpointSecurityChecks(endpoints, storageItem.get(), indexItem.getIndex(),
+                    securityTransformerHelper);
         } else {
             endpointIdToSecurityCheck = Map.of();
         }
@@ -876,13 +902,13 @@ public class WebSocketProcessor {
     }
 
     private static Map<String, SecurityCheck> collectEndpointSecurityChecks(List<WebSocketEndpointBuildItem> endpoints,
-            ClassSecurityCheckStorageBuildItem storage, IndexView index) {
+            ClassSecurityCheckStorageBuildItem storage, IndexView index, SecurityTransformerHelper securityTransformerHelper) {
         return endpoints
                 .stream().<Map.Entry<String, SecurityCheck>> mapMulti((endpoint, consumer) -> {
                     var beanName = endpoint.beanClassName();
                     if (storage.getSecurityCheck(beanName) instanceof SecurityCheck check) {
                         consumer.accept(Map.entry(endpoint.id, check));
-                    } else if (SecurityTransformerUtils.hasSecurityAnnotation(index.getClassByName(beanName))) {
+                    } else if (securityTransformerHelper.hasSecurityAnnotation(index.getClassByName(beanName))) {
                         throw new IllegalStateException("WebSocket endpoint '%s' requires ".formatted(beanName)
                                 + "secured HTTP upgrade but Quarkus did not configure security check "
                                 + "correctly. Please open issue in Quarkus project");
