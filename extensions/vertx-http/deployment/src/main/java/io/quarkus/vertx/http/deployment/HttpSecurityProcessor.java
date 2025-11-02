@@ -3,6 +3,7 @@ package io.quarkus.vertx.http.deployment;
 import static io.quarkus.arc.processor.DotNames.APPLICATION_SCOPED;
 import static io.quarkus.arc.processor.DotNames.SINGLETON;
 import static io.quarkus.security.spi.ClassSecurityAnnotationBuildItem.useClassLevelSecurity;
+import static io.quarkus.security.spi.SecurityTransformerHelperBuildItem.createSecurityTransformerHelper;
 import static io.quarkus.vertx.http.deployment.HttpAuthMechanismAnnotationBuildItem.isExcludedAnnotationTarget;
 import static io.quarkus.vertx.http.deployment.HttpSecurityUtils.AUTHORIZATION_POLICY;
 import static io.quarkus.vertx.http.runtime.security.HttpAuthenticator.BASIC_AUTH_ANNOTATION_DETECTED;
@@ -80,6 +81,8 @@ import io.quarkus.security.spi.AdditionalSecurityConstrainerEventPropsBuildItem;
 import io.quarkus.security.spi.ClassSecurityAnnotationBuildItem;
 import io.quarkus.security.spi.CurrentIdentityAssociationClassBuildItem;
 import io.quarkus.security.spi.RegisterClassSecurityCheckBuildItem;
+import io.quarkus.security.spi.SecurityTransformerHelper;
+import io.quarkus.security.spi.SecurityTransformerHelperBuildItem;
 import io.quarkus.security.spi.runtime.MethodDescription;
 import io.quarkus.tls.deployment.spi.TlsRegistryBuildItem;
 import io.quarkus.vertx.core.deployment.IgnoredContextLocalDataKeysBuildItem;
@@ -354,10 +357,13 @@ public class HttpSecurityProcessor {
             BuildProducer<RegisterClassSecurityCheckBuildItem> registerClassSecurityCheckProducer,
             List<ClassSecurityAnnotationBuildItem> classSecurityAnnotations,
             List<HttpAuthMechanismAnnotationBuildItem> additionalHttpAuthMechAnnotations,
-            CombinedIndexBuildItem combinedIndexBuildItem) {
+            CombinedIndexBuildItem combinedIndexBuildItem,
+            Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem) {
         if (capabilities.isMissing(Capability.SECURITY)) {
             return;
         }
+        SecurityTransformerHelper securityTransformerHelper = createSecurityTransformerHelper(combinedIndexBuildItem.getIndex(),
+                securityTransformerHelperBuildItem);
 
         // methods annotated with @HttpAuthenticationMechanism that we should additionally secure;
         // when there is no other RBAC annotation applied
