@@ -3,6 +3,9 @@ package io.quarkus.resteasy.reactive.server.deployment;
 import static io.quarkus.resteasy.reactive.common.deployment.QuarkusResteasyReactiveDotNames.HTTP_SERVER_REQUEST;
 import static io.quarkus.resteasy.reactive.common.deployment.QuarkusResteasyReactiveDotNames.HTTP_SERVER_RESPONSE;
 import static io.quarkus.resteasy.reactive.common.deployment.QuarkusResteasyReactiveDotNames.ROUTING_CONTEXT;
+import static io.quarkus.security.spi.SecurityTransformerHelper.AuthorizationType.AUTHORIZATION_POLICY;
+import static io.quarkus.security.spi.SecurityTransformerHelper.AuthorizationType.SECURITY_CHECK;
+import static io.quarkus.security.spi.SecurityTransformerHelperBuildItem.createSecurityTransformerHelper;
 import static io.quarkus.vertx.http.deployment.EagerSecurityInterceptorMethodsBuildItem.collectInterceptedMethods;
 import static java.util.stream.Collectors.toList;
 import static org.jboss.resteasy.reactive.common.processor.ResteasyReactiveDotNames.DATE_FORMAT;
@@ -218,11 +221,11 @@ import io.quarkus.security.AuthenticationFailedException;
 import io.quarkus.security.AuthenticationRedirectException;
 import io.quarkus.security.ForbiddenException;
 import io.quarkus.security.spi.PermissionsAllowedMetaAnnotationBuildItem;
-import io.quarkus.security.spi.SecurityTransformerUtils;
+import io.quarkus.security.spi.SecurityTransformerHelper;
+import io.quarkus.security.spi.SecurityTransformerHelperBuildItem;
 import io.quarkus.vertx.http.deployment.AuthorizationPolicyInstancesBuildItem;
 import io.quarkus.vertx.http.deployment.EagerSecurityInterceptorMethodsBuildItem;
 import io.quarkus.vertx.http.deployment.FilterBuildItem;
-import io.quarkus.vertx.http.deployment.HttpSecurityUtils;
 import io.quarkus.vertx.http.deployment.RouteBuildItem;
 import io.quarkus.vertx.http.runtime.RouteConstants;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
@@ -1765,10 +1768,13 @@ public class ResteasyReactiveProcessor {
     MethodScannerBuildItem integrateEagerSecurity(Capabilities capabilities, CombinedIndexBuildItem indexBuildItem,
             Optional<AuthorizationPolicyInstancesBuildItem> authorizationPolicyInstancesItemOpt,
             List<EagerSecurityInterceptorMethodsBuildItem> eagerSecurityInterceptors, JaxRsSecurityConfig securityConfig,
-            Optional<PermissionsAllowedMetaAnnotationBuildItem> permsAllowedMetaAnnotationItemOptional) {
+            Optional<PermissionsAllowedMetaAnnotationBuildItem> permsAllowedMetaAnnotationItemOptional,
+            Optional<SecurityTransformerHelperBuildItem> securityTransformerHelperBuildItem) {
         if (!capabilities.isPresent(Capability.SECURITY)) {
             return null;
         }
+        SecurityTransformerHelper securityTransformerHelper = createSecurityTransformerHelper(indexBuildItem.getIndex(),
+                securityTransformerHelperBuildItem);
         var authZPolicyInstancesItem = authorizationPolicyInstancesItemOpt.get();
         var permsAllowedMetaAnnotationItem = permsAllowedMetaAnnotationItemOptional.get();
 
@@ -1787,17 +1793,19 @@ public class ResteasyReactiveProcessor {
                     boolean isMethodIntercepted = interceptedMethods.containsKey(endpointImpl);
                     if (isMethodIntercepted) {
                         return createEagerSecCustomizerWithInterceptor(interceptedMethods, endpointImpl, method, endpointImpl,
-                                withDefaultSecurityCheck, applyAuthorizationPolicy, permsAllowedMetaAnnotationItem);
+                                withDefaultSecurityCheck, applyAuthorizationPolicy, permsAllowedMetaAnnotationItem,
+                                securityTransformerHelper);
                     } else {
                         isMethodIntercepted = interceptedMethods.containsKey(method);
                         if (isMethodIntercepted && !endpointImpl.equals(method)) {
                             return createEagerSecCustomizerWithInterceptor(interceptedMethods, method, method, endpointImpl,
-                                    withDefaultSecurityCheck, applyAuthorizationPolicy, permsAllowedMetaAnnotationItem);
+                                    withDefaultSecurityCheck, applyAuthorizationPolicy, permsAllowedMetaAnnotationItem,
+                                    securityTransformerHelper);
                         }
                     }
                 }
                 return List.of(newEagerSecurityHandlerCustomizerInstance(method, endpointImpl, withDefaultSecurityCheck,
-                        applyAuthorizationPolicy, permsAllowedMetaAnnotationItem));
+                        applyAuthorizationPolicy, permsAllowedMetaAnnotationItem, securityTransformerHelper));
             }
         });
     }
@@ -1810,7 +1818,8 @@ public class ResteasyReactiveProcessor {
     private static List<HandlerChainCustomizer> createEagerSecCustomizerWithInterceptor(
             Map<MethodInfo, Boolean> interceptedMethods, MethodInfo method, MethodInfo originalMethod, MethodInfo endpointImpl,
             boolean withDefaultSecurityCheck, boolean applyAuthorizationPolicy,
-            PermissionsAllowedMetaAnnotationBuildItem permsAllowedMetaAnnotationItem) {
+            PermissionsAllowedMetaAnnotationBuildItem permsAllowedMetaAnnotationItem,
+            SecurityTransformerHelper securityTransformerHelper) {
         var requiresSecurityCheck = interceptedMethods.get(method);
         final HandlerChainCustomizer eagerSecCustomizer;
         if (requiresSecurityCheck && !applyAuthorizationPolicy) {
@@ -1818,20 +1827,23 @@ public class ResteasyReactiveProcessor {
             eagerSecCustomizer = new HttpPermissionsAndSecurityChecksCustomizer();
         } else {
             eagerSecCustomizer = newEagerSecurityHandlerCustomizerInstance(originalMethod, endpointImpl,
-                    withDefaultSecurityCheck, applyAuthorizationPolicy, permsAllowedMetaAnnotationItem);
+                    withDefaultSecurityCheck, applyAuthorizationPolicy, permsAllowedMetaAnnotationItem,
+                    securityTransformerHelper);
         }
         return List.of(EagerSecurityInterceptorHandler.Customizer.newInstance(), eagerSecCustomizer);
     }
 
     private static HandlerChainCustomizer newEagerSecurityHandlerCustomizerInstance(MethodInfo method, MethodInfo endpointImpl,
             boolean withDefaultSecurityCheck, boolean applyAuthorizationPolicy,
-            PermissionsAllowedMetaAnnotationBuildItem permsAllowedMetaAnnotationItem) {
+            PermissionsAllowedMetaAnnotationBuildItem permsAllowedMetaAnnotationItem,
+            SecurityTransformerHelper securityTransformerHelper) {
         if (applyAuthorizationPolicy) {
             // @AuthorizationPolicy and possibly authorization using configuration
             return new AuthZPolicyCustomizer();
         }
         if (withDefaultSecurityCheck
-                || consumesStandardSecurityAnnotations(method, endpointImpl, permsAllowedMetaAnnotationItem)) {
+                || consumesStandardSecurityAnnotations(method, endpointImpl, permsAllowedMetaAnnotationItem,
+                        securityTransformerHelper)) {
             // standard security annotation and possibly authorization using configuration
             return new HttpPermissionsAndSecurityChecksCustomizer();
         }
@@ -1904,25 +1916,27 @@ public class ResteasyReactiveProcessor {
     }
 
     private static boolean consumesStandardSecurityAnnotations(MethodInfo methodInfo, MethodInfo endpointImpl,
-            PermissionsAllowedMetaAnnotationBuildItem permsAllowedMetaAnnotationItem) {
+            PermissionsAllowedMetaAnnotationBuildItem permsAllowedMetaAnnotationItem,
+            SecurityTransformerHelper securityTransformerHelper) {
         // invoked method
-        if (consumesStandardSecurityAnnotations(endpointImpl, permsAllowedMetaAnnotationItem)) {
+        if (consumesStandardSecurityAnnotations(endpointImpl, permsAllowedMetaAnnotationItem, securityTransformerHelper)) {
             return true;
         }
 
         // fallback to original behavior
         return !endpointImpl.equals(methodInfo)
-                && consumesStandardSecurityAnnotations(methodInfo, permsAllowedMetaAnnotationItem);
+                && consumesStandardSecurityAnnotations(methodInfo, permsAllowedMetaAnnotationItem, securityTransformerHelper);
     }
 
     private static boolean consumesStandardSecurityAnnotations(MethodInfo methodInfo,
-            PermissionsAllowedMetaAnnotationBuildItem permsAllowedMetaAnnotationItem) {
-        boolean hasMethodLevelSecurityAnnotation = SecurityTransformerUtils.hasSecurityAnnotation(methodInfo)
+            PermissionsAllowedMetaAnnotationBuildItem permsAllowedMetaAnnotationItem,
+            SecurityTransformerHelper securityTransformerHelper) {
+        boolean hasMethodLevelSecurityAnnotation = securityTransformerHelper.hasSecurityAnnotation(methodInfo, SECURITY_CHECK)
                 || permsAllowedMetaAnnotationItem.hasPermissionsAllowed(methodInfo);
         if (hasMethodLevelSecurityAnnotation) {
             return true;
         }
-        if (HttpSecurityUtils.hasAuthorizationPolicyAnnotation(methodInfo)) {
+        if (securityTransformerHelper.hasSecurityAnnotation(methodInfo, AUTHORIZATION_POLICY)) {
             // security annotations cannot be combined
             // and the most specific wins, so if we have both class-level security check
             // and the method-level @AuthorizationPolicy, the policy wins as it is more specific
@@ -1931,7 +1945,7 @@ public class ResteasyReactiveProcessor {
             // on a method level thanks to validation
             return false;
         }
-        return SecurityTransformerUtils.hasSecurityAnnotation(methodInfo.declaringClass())
+        return securityTransformerHelper.hasSecurityAnnotation(methodInfo.declaringClass(), SECURITY_CHECK)
                 || permsAllowedMetaAnnotationItem.hasPermissionsAllowed(methodInfo.declaringClass());
     }
 
