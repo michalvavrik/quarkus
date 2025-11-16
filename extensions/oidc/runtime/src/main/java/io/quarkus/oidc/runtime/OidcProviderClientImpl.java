@@ -75,6 +75,8 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
     private final String clientSecretBasicAuthScheme;
     private final String introspectionBasicAuthScheme;
     private final Key clientJwtKey;
+    private final String clientSecret;
+    private final String jwtSecret;
     private final boolean jwtBearerAuthentication;
     private final ClientAssertionProvider clientAssertionProvider;
     private final Map<OidcEndpoint.Type, List<OidcRequestFilter>> requestFilters;
@@ -83,25 +85,25 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
 
     private OidcProvider oidcProvider;
 
-    public OidcProviderClientImpl(WebClient client,
-            Vertx vertx,
-            OidcConfigurationMetadata metadata,
-            OidcTenantConfig oidcConfig,
+    private OidcProviderClientImpl(WebClient client, Vertx vertx, OidcConfigurationMetadata metadata,
+            OidcTenantConfig oidcConfig, ClientCredentials clientCredentials,
             Map<OidcEndpoint.Type, List<OidcRequestFilter>> requestFilters,
             Map<OidcEndpoint.Type, List<OidcResponseFilter>> responseFilters) {
         this.client = client;
         this.vertx = vertx;
         this.metadata = metadata;
         this.oidcConfig = oidcConfig;
-        this.clientSecretBasicAuthScheme = OidcCommonUtils.initClientSecretBasicAuth(oidcConfig);
+        this.clientSecretBasicAuthScheme = clientCredentials.clientSecretBasicAuthScheme;
         this.jwtBearerAuthentication = oidcConfig.credentials().jwt()
                 .source() == OidcClientCommonConfig.Credentials.Jwt.Source.BEARER;
         this.clientAssertionProvider = this.jwtBearerAuthentication ? createClientAssertionProvider(vertx, oidcConfig) : null;
-        this.clientJwtKey = jwtBearerAuthentication ? null : OidcCommonUtils.initClientJwtKey(oidcConfig, true);
+        this.clientJwtKey = jwtBearerAuthentication ? null : clientCredentials.clientJwtKey;
         this.introspectionBasicAuthScheme = initIntrospectionBasicAuthScheme(oidcConfig);
         this.requestFilters = requestFilters;
         this.responseFilters = responseFilters;
         this.clientSecretQueryAuthentication = oidcConfig.credentials().clientSecret().method().orElse(null) == Method.QUERY;
+        this.clientSecret = clientCredentials.clientSecret;
+        this.jwtSecret = clientCredentials.jwtSecret;
     }
 
     private static ClientAssertionProvider createClientAssertionProvider(Vertx vertx, OidcTenantConfig oidcConfig) {
@@ -340,14 +342,14 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
                 }
             } else if (OidcCommonUtils.isClientSecretPostAuthRequired(oidcConfig.credentials())) {
                 formBody.add(OidcConstants.CLIENT_ID, oidcConfig.clientId().get());
-                formBody.add(OidcConstants.CLIENT_SECRET, OidcCommonUtils.clientSecret(oidcConfig.credentials()));
+                formBody.add(OidcConstants.CLIENT_SECRET, clientSecret);
             } else {
                 formBody.add(OidcConstants.CLIENT_ID, oidcConfig.clientId().get());
             }
             buffer = OidcCommonUtils.encodeForm(formBody);
         } else {
             formBody.add(OidcConstants.CLIENT_ID, oidcConfig.clientId().get());
-            formBody.add(OidcConstants.CLIENT_SECRET, OidcCommonUtils.clientSecret(oidcConfig.credentials()));
+            formBody.add(OidcConstants.CLIENT_SECRET, clientSecret);
             for (Map.Entry<String, String> entry : formBody) {
                 request.addQueryParam(entry.getKey(), OidcCommonUtils.urlEncode(entry.getValue()));
             }
@@ -451,6 +453,10 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         return clientJwtKey;
     }
 
+    String getClientSecret() {
+        return clientSecret;
+    }
+
     private HttpRequest<Buffer> filterHttpRequest(OidcRequestContextProperties requestProps, OidcEndpoint.Type endpointType,
             HttpRequest<Buffer> request, Buffer body) {
         if (!requestFilters.isEmpty()) {
@@ -497,5 +503,49 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
 
     static boolean isIntrospection(TokenOperation op) {
         return op == TokenOperation.INTROSPECT;
+    }
+
+    static Uni<OidcProviderClientImpl> of(WebClient client, Vertx vertx, OidcConfigurationMetadata metadata,
+            OidcTenantConfig oidcConfig,
+            Map<OidcEndpoint.Type, List<OidcRequestFilter>> requestFilters,
+            Map<OidcEndpoint.Type, List<OidcResponseFilter>> responseFilters) {
+        return OidcCommonUtils.clientSecret(oidcConfig.credentials())
+                .onItem().ifNotNull()
+                .transform(clientSecret -> new ClientCredentials(clientSecret,
+                        OidcCommonUtils.initClientSecretBasicAuth(oidcConfig, clientSecret)))
+                .onItem().ifNull().switchTo(() -> OidcCommonUtils.initClientJwtKey(oidcConfig, true)
+                        .onItem().ifNotNull().transform(ClientCredentials::new)
+                        .onItem().ifNull()
+                        .switchTo(() -> OidcCommonUtils.jwtSecret(oidcConfig.credentials()).map(ClientCredentials::new)))
+                .onFailure().invoke(t -> LOG.error("Failed to create OidcProviderClientImpl", t))
+                .map(clientCredentials -> new OidcProviderClientImpl(client, vertx, metadata, oidcConfig,
+                        clientCredentials, requestFilters, responseFilters));
+    }
+
+    String getClientOrJwtSecret() {
+        if (clientSecret != null) {
+            return clientSecret;
+        } else if (jwtSecret != null) {
+            LOG.debug("Client secret is not configured, returning configured 'client_jwt_secret' secret");
+            return jwtSecret;
+        }
+        LOG.debug("Client secret and the 'client_jwt_secret' secret are not configured");
+        return null;
+    }
+
+    private record ClientCredentials(Key clientJwtKey, String clientSecret, String jwtSecret,
+            String clientSecretBasicAuthScheme) {
+
+        private ClientCredentials(Key clientJwtKey) {
+            this(clientJwtKey, null, null, null);
+        }
+
+        private ClientCredentials(String jwtSecret) {
+            this(null, null, jwtSecret, null);
+        }
+
+        private ClientCredentials(String clientSecret, String clientSecretBasicAuthScheme) {
+            this(null, clientSecret, null, clientSecretBasicAuthScheme);
+        }
     }
 }
