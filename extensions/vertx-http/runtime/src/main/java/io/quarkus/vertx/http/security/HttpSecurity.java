@@ -7,7 +7,9 @@ import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
+import io.quarkus.security.identity.IdentityProvider;
 import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.identity.SecurityIdentityAugmentor;
 import io.quarkus.tls.TlsConfiguration;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.cors.CORSConfig;
@@ -126,6 +128,39 @@ public interface HttpSecurity {
      * @return HttpSecurity
      */
     HttpSecurity mechanism(HttpAuthenticationMechanism mechanism);
+
+    /**
+     * Registers given {@link HttpAuthenticationMechanism} in addition to all other global authentication mechanisms.
+     *
+     * @param mechanism {@link HttpAuthenticationMechanism}
+     * @param identityProviders {@link IdentityProvider}s that should be used for authentication instead
+     *        {@link IdentityProvider}s registered as CDI beans
+     * @return HttpSecurity
+     */
+    HttpSecurity mechanism(HttpAuthenticationMechanism mechanism, IdentityProvider<?>... identityProviders);
+
+    /**
+     * Registers given {@link HttpAuthenticationMechanism} in addition to all other global authentication mechanisms.
+     *
+     * @param mechanism {@link HttpAuthenticationMechanism}
+     * @param identityAugmentors {@link SecurityIdentityAugmentor}s that should be used to augment {@link SecurityIdentity}
+     *        instead of the augmentors registered as CDI beans
+     * @return HttpSecurity
+     */
+    HttpSecurity mechanism(HttpAuthenticationMechanism mechanism, SecurityIdentityAugmentor... identityAugmentors);
+
+    /**
+     * Registers given {@link HttpAuthenticationMechanism} in addition to all other global authentication mechanisms.
+     *
+     * @param mechanism {@link HttpAuthenticationMechanism}
+     * @param identityProvider {@link IdentityProvider} that should be used for authentication instead {@link IdentityProvider}s
+     *        registered as CDI beans
+     * @param identityAugmentors {@link SecurityIdentityAugmentor}s that should be used to augment {@link SecurityIdentity}
+     *        instead of the augmentors registered as CDI beans
+     * @return HttpSecurity
+     */
+    HttpSecurity mechanism(HttpAuthenticationMechanism mechanism, IdentityProvider<?> identityProvider,
+            SecurityIdentityAugmentor... identityAugmentors);
 
     /**
      * Registers the Basic authentication mechanism in addition to all other global authentication mechanisms.
@@ -393,4 +428,5 @@ public interface HttpSecurity {
          */
         HttpSecurity policy(BiPredicate<SecurityIdentity, RoutingContext> predicate);
     }
+
 }
