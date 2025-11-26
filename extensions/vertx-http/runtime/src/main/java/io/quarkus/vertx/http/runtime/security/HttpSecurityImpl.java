@@ -14,11 +14,14 @@ import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import jakarta.enterprise.inject.spi.CDI;
+
 import org.jboss.logging.Logger;
 
 import io.quarkus.arc.Arc;
 import io.quarkus.security.StringPermission;
 import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.spi.runtime.IdentityProviderManagerBuilder;
 import io.quarkus.tls.TlsConfiguration;
 import io.quarkus.tls.TlsConfigurationRegistry;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
@@ -643,5 +646,9 @@ final class HttpSecurityImpl implements HttpSecurity {
 
     CSRF getCsrf() {
         return csrf;
+    }
+
+    private static IdentityProviderManagerBuilder getIdentityProviderManagerBuilder() {
+        return CDI.current().select(IdentityProviderManagerBuilder.class).get();
     }
 }
