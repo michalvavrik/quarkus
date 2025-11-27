@@ -31,6 +31,7 @@ import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.cors.CORSConfig;
 import io.quarkus.vertx.http.runtime.options.HttpServerTlsConfig;
+import io.quarkus.vertx.http.runtime.security.HttpSecurityImpl.DelegatingHttpAuthenticationMechanism;
 import io.quarkus.vertx.http.runtime.security.annotation.BasicAuthentication;
 import io.quarkus.vertx.http.security.CSRF;
 import io.quarkus.vertx.http.security.HttpSecurity;
@@ -213,7 +214,9 @@ public final class HttpSecurityConfiguration {
             if (basicAuthEnabled.isEmpty() || !basicAuthEnabled.get()) {
                 for (HttpAuthenticationMechanism mechanism : mechanisms) {
                     // not using instance of as we are not considering subclasses
-                    if (mechanism.getClass() == BasicAuthenticationMechanism.class) {
+                    if (mechanism.getClass() == BasicAuthenticationMechanism.class
+                            || (mechanism instanceof DelegatingHttpAuthenticationMechanism delegatingMechanism
+                                    && delegatingMechanism.delegate().getClass() == BasicAuthenticationMechanism.class)) {
                         basicAuthEnabled = Optional.of(Boolean.TRUE);
                         break;
                     }
@@ -228,6 +231,11 @@ public final class HttpSecurityConfiguration {
                     if (mechanism.getClass() == FormAuthenticationMechanism.class) {
                         formAuthEnabled = true;
                         formPostLocation = ((FormAuthenticationMechanism) mechanism).getPostLocation();
+                        break;
+                    } else if (mechanism instanceof DelegatingHttpAuthenticationMechanism delegatingMechanism
+                            && delegatingMechanism.delegate().getClass() == FormAuthenticationMechanism.class) {
+                        formAuthEnabled = true;
+                        formPostLocation = ((FormAuthenticationMechanism) delegatingMechanism.delegate()).getPostLocation();
                         break;
                     }
                 }
