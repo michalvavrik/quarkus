@@ -3,6 +3,7 @@ package io.quarkus.vertx.http.runtime.security;
 import java.security.Permission;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -18,7 +19,12 @@ import org.jboss.logging.Logger;
 
 import io.quarkus.arc.Arc;
 import io.quarkus.security.StringPermission;
+import io.quarkus.security.identity.IdentityProvider;
+import io.quarkus.security.identity.IdentityProviderManager;
 import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.identity.SecurityIdentityAugmentor;
+import io.quarkus.security.identity.request.AuthenticationRequest;
+import io.quarkus.security.spi.runtime.IdentityProviderManagerBuilder;
 import io.quarkus.tls.TlsConfiguration;
 import io.quarkus.tls.TlsConfigurationRegistry;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
@@ -116,20 +122,26 @@ final class HttpSecurityImpl implements HttpSecurity {
     @Override
     public HttpSecurity mechanism(HttpAuthenticationMechanism mechanism) {
         Objects.requireNonNull(mechanism);
-        if (mechanism.getClass() == FormAuthenticationMechanism.class) {
+        final HttpAuthenticationMechanism validatedMechanism;
+        if (mechanism instanceof DelegatingHttpAuthenticationMechanism delegatingMechanism) {
+            validatedMechanism = delegatingMechanism.delegate;
+        } else {
+            validatedMechanism = mechanism;
+        }
+        if (validatedMechanism.getClass() == FormAuthenticationMechanism.class) {
             final FormAuthConfig defaults = HttpSecurityUtils.getDefaultAuthConfig().auth().form();
             final FormAuthConfig actualConfig = vertxHttpConfig.auth().form();
             if (!actualConfig.equals(defaults)) {
                 throw new IllegalArgumentException("Cannot configure form-based authentication programmatically "
                         + "because it has already been configured in the 'application.properties' file");
             }
-        } else if (mechanism.getClass() == BasicAuthenticationMechanism.class) {
+        } else if (validatedMechanism.getClass() == BasicAuthenticationMechanism.class) {
             String actualRealm = vertxHttpConfig.auth().realm().orElse(null);
             if (actualRealm != null) {
                 throw new IllegalArgumentException("Cannot configure basic authentication programmatically because "
                         + "the authentication realm has already been configured in the 'application.properties' file");
             }
-        } else if (mechanism.getClass() == MtlsAuthenticationMechanism.class) {
+        } else if (validatedMechanism.getClass() == MtlsAuthenticationMechanism.class) {
             boolean mTlsEnabled = !ClientAuth.NONE.equals(clientAuth);
             if (mTlsEnabled) {
                 // current we do not allow "merging" (or overriding) of the configuration provided in application.properties
@@ -139,7 +151,7 @@ final class HttpSecurityImpl implements HttpSecurity {
                 throw new IllegalArgumentException("TLS client authentication has already been enabled with this API or"
                         + " with the 'quarkus.http.ssl.client-auth' configuration property");
             }
-            var mTLS = ((MtlsAuthenticationMechanism) mechanism);
+            var mTLS = ((MtlsAuthenticationMechanism) validatedMechanism);
             clientAuth = mTLS.getTlsClientAuth();
             if (mTLS.getHttpServerTlsConfigName().isPresent()) {
                 if (httpServerTlsConfigName.isPresent()) {
@@ -164,6 +176,27 @@ final class HttpSecurityImpl implements HttpSecurity {
     }
 
     @Override
+    public HttpSecurity mechanism(HttpAuthenticationMechanism mechanism, Collection<IdentityProvider<?>> identityProviders,
+            SecurityIdentityAugmentor... identityAugmentors) {
+        final Collection<SecurityIdentityAugmentor> securityIdentityAugmentors;
+        if (identityAugmentors == null || identityAugmentors.length == 0) {
+            if (identityProviders == null || identityProviders.isEmpty()) {
+                return mechanism(mechanism);
+            }
+            securityIdentityAugmentors = null;
+        } else {
+            securityIdentityAugmentors = List.of(identityAugmentors);
+        }
+        final Collection<IdentityProvider<?>> identityProvidersList;
+        if (identityProviders == null || identityProviders.isEmpty()) {
+            identityProvidersList = null;
+        } else {
+            identityProvidersList = List.copyOf(identityProviders);
+        }
+        return mechanism(createMechanism(mechanism, identityProvidersList, securityIdentityAugmentors));
+    }
+
+    @Override
     public HttpSecurity basic() {
         return mechanism(Basic.create());
     }
@@ -171,6 +204,11 @@ final class HttpSecurityImpl implements HttpSecurity {
     @Override
     public HttpSecurity basic(String authenticationRealm) {
         return mechanism(Basic.realm(authenticationRealm));
+    }
+
+    @Override
+    public HttpSecurity basic(Collection<IdentityProvider<?>> identityProviders) {
+        return mechanism(Basic.create(), identityProviders);
     }
 
     @Override
@@ -385,7 +423,7 @@ final class HttpSecurityImpl implements HttpSecurity {
         }
 
         private void requireAuthenticationByDefault() {
-            // if someone selects authentication mechanism and doesn't configure
+            // if someone selects authentication delegate and doesn't configure
             // authorization policy, it is reasonable to expect they require authentication
             // similarly to what we do with @BasicAuthentication etc.
             if (authorizationPolicy == null) {
@@ -451,7 +489,7 @@ final class HttpSecurityImpl implements HttpSecurity {
             validateAuthenticationNotSetYet();
             requireAuthenticationByDefault();
             if (mechanism == null || mechanism.isBlank()) {
-                throw new IllegalArgumentException("Authentication mechanism must not be null or blank");
+                throw new IllegalArgumentException("Authentication delegate must not be null or blank");
             }
             this.authMechanism = new HttpSecurityConfiguration.AuthenticationMechanism(mechanism, null);
             return this;
@@ -643,5 +681,59 @@ final class HttpSecurityImpl implements HttpSecurity {
 
     CSRF getCsrf() {
         return csrf;
+    }
+
+    private static HttpAuthenticationMechanism createMechanism(HttpAuthenticationMechanism mechanism,
+            Collection<IdentityProvider<?>> identityProviders, Collection<SecurityIdentityAugmentor> identityAugmentors) {
+        if (identityProviders == null && identityAugmentors == null) {
+            return mechanism;
+        }
+        IdentityProviderManager customIdentityProviderManager = Arc.container().instance(IdentityProviderManagerBuilder.class)
+                .get().build(identityProviders, identityAugmentors);
+        return new DelegatingHttpAuthenticationMechanism(mechanism, customIdentityProviderManager);
+    }
+
+    private record DelegatingHttpAuthenticationMechanism(HttpAuthenticationMechanism delegate,
+            IdentityProviderManager customIdentityProviderManager) implements HttpAuthenticationMechanism {
+        @Override
+        public Uni<SecurityIdentity> authenticate(RoutingContext context, IdentityProviderManager ignored) {
+            return delegate.authenticate(context, customIdentityProviderManager);
+        }
+
+        @Override
+        public Uni<ChallengeData> getChallenge(RoutingContext context) {
+            return delegate.getChallenge(context);
+        }
+
+        @Override
+        public Set<Class<? extends AuthenticationRequest>> getCredentialTypes() {
+            return delegate.getCredentialTypes();
+        }
+
+        @Override
+        public Uni<Boolean> sendChallenge(RoutingContext context) {
+            return delegate.sendChallenge(context);
+        }
+
+        @Override
+        public Uni<HttpCredentialTransport> getCredentialTransport(RoutingContext context) {
+            return delegate.getCredentialTransport(context);
+        }
+
+        @Override
+        public int getPriority() {
+            return delegate.getPriority();
+        }
+    }
+
+    static Class<? extends HttpAuthenticationMechanism> getMechanismClass(HttpAuthenticationMechanism mechanism) {
+        return unwrapMechanism(mechanism).getClass();
+    }
+
+    static HttpAuthenticationMechanism unwrapMechanism(HttpAuthenticationMechanism mechanism) {
+        if (mechanism instanceof DelegatingHttpAuthenticationMechanism delegatingMechanism) {
+            return delegatingMechanism.delegate();
+        }
+        return mechanism;
     }
 }
