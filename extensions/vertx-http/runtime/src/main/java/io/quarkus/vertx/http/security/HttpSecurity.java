@@ -1,13 +1,16 @@
 package io.quarkus.vertx.http.security;
 
 import java.security.Permission;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
+import io.quarkus.security.identity.IdentityProvider;
 import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.identity.SecurityIdentityAugmentor;
 import io.quarkus.tls.TlsConfiguration;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.cors.CORSConfig;
@@ -123,9 +126,25 @@ public interface HttpSecurity {
      * Registers given {@link HttpAuthenticationMechanism} in addition to all other global authentication mechanisms.
      *
      * @param mechanism {@link HttpAuthenticationMechanism}
+     * @param identityAugmentors {@link SecurityIdentityAugmentor}s that should be used to augment {@link SecurityIdentity}
+     *        instead of the augmentors registered as CDI beans; this parameter is optional
      * @return HttpSecurity
      */
-    HttpSecurity mechanism(HttpAuthenticationMechanism mechanism);
+    HttpSecurity mechanism(HttpAuthenticationMechanism mechanism, SecurityIdentityAugmentor... identityAugmentors);
+
+    /**
+     * Registers given {@link HttpAuthenticationMechanism} in addition to all other global authentication mechanisms.
+     *
+     * @param mechanism {@link HttpAuthenticationMechanism}
+     * @param identityProviders {@link IdentityProvider}s that should be used for authentication instead
+     *        {@link IdentityProvider}s
+     *        registered as CDI beans; this parameter is nullable
+     * @param identityAugmentors {@link SecurityIdentityAugmentor}s that should be used to augment {@link SecurityIdentity}
+     *        instead of the augmentors registered as CDI beans; this parameter is optional
+     * @return HttpSecurity
+     */
+    HttpSecurity mechanism(HttpAuthenticationMechanism mechanism, Collection<IdentityProvider<?>> identityProviders,
+            SecurityIdentityAugmentor... identityAugmentors);
 
     /**
      * Registers the Basic authentication mechanism in addition to all other global authentication mechanisms.
@@ -247,14 +266,14 @@ public interface HttpSecurity {
         /**
          * HTTP request must be authenticated using basic authentication mechanism configured
          * in the 'application.properties' file or the mechanism created with the {@link Basic} API and registered
-         * against the {@link HttpSecurity#mechanism(HttpAuthenticationMechanism)}.
+         * against the {@link HttpSecurity#mechanism(HttpAuthenticationMechanism, SecurityIdentityAugmentor...)}.
          */
         HttpPermission basic();
 
         /**
          * HTTP request must be authenticated using form-based authentication mechanism configured
          * in the 'application.properties' file or the mechanism created with the {@link Form} API and registered
-         * against the {@link HttpSecurity#mechanism(HttpAuthenticationMechanism)}.
+         * against the {@link HttpSecurity#mechanism(HttpAuthenticationMechanism, SecurityIdentityAugmentor...)}.
          */
         HttpPermission form();
 
@@ -393,4 +412,5 @@ public interface HttpSecurity {
          */
         HttpSecurity policy(BiPredicate<SecurityIdentity, RoutingContext> predicate);
     }
+
 }
