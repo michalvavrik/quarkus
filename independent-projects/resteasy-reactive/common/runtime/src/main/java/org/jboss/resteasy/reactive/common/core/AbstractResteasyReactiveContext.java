@@ -247,6 +247,7 @@ public abstract class AbstractResteasyReactiveContext<T extends AbstractResteasy
             return;
         }
         if (isRequestScopeManagementRequired()) {
+            onPreRequestScopeActivation();
             if (requestContext.isRequestContextActive()) {
                 // req. context is already active, just reuse existing one
                 currentRequestScope = requestContext.currentState();
@@ -273,6 +274,10 @@ public abstract class AbstractResteasyReactiveContext<T extends AbstractResteasy
     }
 
     protected abstract void handleRequestScopeActivation();
+
+    protected void onPreRequestScopeActivation() {
+        // by default do nothing
+    }
 
     /**
      * Restarts handler chain processing on a chain that does not target a specific resource
