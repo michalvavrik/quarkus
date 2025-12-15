@@ -72,7 +72,7 @@ public class CORSFilter implements Handler<RoutingContext> {
     }
 
     public static boolean isConfiguredWithWildcard(Optional<List<String>> optionalList) {
-        if (optionalList == null || !optionalList.isPresent()) {
+        if (optionalList == null || optionalList.isEmpty()) {
             return true;
         }
 
@@ -97,7 +97,7 @@ public class CORSFilter implements Handler<RoutingContext> {
      * @return a list of compiled regular expressions. If none configured, and empty list is returned
      */
     public static List<Pattern> parseAllowedOriginsRegex(Optional<List<String>> allowedOrigins) {
-        if (allowedOrigins == null || !allowedOrigins.isPresent()) {
+        if (allowedOrigins == null || allowedOrigins.isEmpty()) {
             return List.of();
         }
 
@@ -144,13 +144,18 @@ public class CORSFilter implements Handler<RoutingContext> {
 
             //for both normal and preflight requests we need to check the origin
             boolean allowsOrigin = wildcardOrigin;
+            Boolean isSameOrigin = null;
             boolean originMatches = !wildcardOrigin && corsConfig.origins().isPresent() &&
                     (corsConfig.origins().get().contains(origin) || isOriginAllowedByRegex(allowedOriginsRegex, origin));
             if (!allowsOrigin) {
                 if (corsConfig.origins().isPresent()) {
-                    allowsOrigin = originMatches || isSameOrigin(request, origin);
+                    if (originMatches) {
+                        allowsOrigin = true;
+                    } else {
+                        isSameOrigin = allowsOrigin = isSameOrigin(request, origin);
+                    }
                 } else {
-                    allowsOrigin = isSameOrigin(request, origin);
+                    isSameOrigin = allowsOrigin = isSameOrigin(request, origin);
                 }
             }
             if (!allowsOrigin) {
@@ -168,7 +173,7 @@ public class CORSFilter implements Handler<RoutingContext> {
                 final String requestedHeaders = request.getHeader(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS);
                 //preflight request, handle it specially
                 if (requestedHeaders != null || requestedMethods != null) {
-                    handlePreflightRequest(event, requestedHeaders, requestedMethods, origin, allowsOrigin);
+                    handlePreflightRequest(event, requestedHeaders, requestedMethods);
                     response.end();
                     return;
                 }
@@ -186,7 +191,7 @@ public class CORSFilter implements Handler<RoutingContext> {
             }
 
             //we check that the actual request matches the allowed methods and headers
-            if (!isMethodAllowed(request.method())) {
+            if (!isMethodAllowed(isSameOrigin, request, origin)) {
                 LOG.debugf("Method %s is not allowed", request.method());
                 response.setStatusCode(403);
                 response.setStatusMessage("CORS Rejected - Invalid method");
@@ -203,8 +208,7 @@ public class CORSFilter implements Handler<RoutingContext> {
         }
     }
 
-    private void handlePreflightRequest(RoutingContext event, String requestedHeaders, String requestedMethods, String origin,
-            boolean allowsOrigin) {
+    private void handlePreflightRequest(RoutingContext event, String requestedHeaders, String requestedMethods) {
         //see https://fetch.spec.whatwg.org/#http-cors-protocol
 
         if (corsConfig.accessControlMaxAge().isPresent()) {
@@ -236,7 +240,9 @@ public class CORSFilter implements Handler<RoutingContext> {
                         request.absoluteURI(), origin);
                 return false;
             }
-            if (substringMatch(origin, request.scheme().length() + 3, request.host(), true)) {
+            var authority = request.authority();
+            if (authority != null && authority.host() != null
+                    && substringMatch(origin, request.scheme().length() + 3, authority.host(), true)) {
                 //they are a simple match
                 return true;
             }
@@ -275,7 +281,7 @@ public class CORSFilter implements Handler<RoutingContext> {
             return true;
         }
         if (baseUri.getPort() != -1 && originUri.getPort() != -1) {
-            //ports are explictly set
+            //ports are explicitly set
             return false;
         }
         if (baseUri.getScheme().equals("http")) {
@@ -346,11 +352,13 @@ public class CORSFilter implements Handler<RoutingContext> {
         }
     }
 
-    private boolean isMethodAllowed(HttpMethod method) {
-        if (wildcardMethod) {
+    private boolean isMethodAllowed(Boolean isSameOrigin, HttpServerRequest request, String origin) {
+        if (wildcardMethod || configuredHttpMethods.contains(request.method())) {
             return true;
-        } else {
-            return configuredHttpMethods.contains(method);
         }
+        if (isSameOrigin == null) {
+            return isSameOrigin(request, origin);
+        }
+        return isSameOrigin;
     }
 }
