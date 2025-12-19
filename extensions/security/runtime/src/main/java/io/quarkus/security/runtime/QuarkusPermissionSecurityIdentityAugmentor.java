@@ -119,6 +119,11 @@ public final class QuarkusPermissionSecurityIdentityAugmentor implements Securit
         }
 
         @Override
+        public Set<Permission> getPermissions() {
+            return Set.of();
+        }
+
+        @Override
         public <T extends Credential> T getCredential(Class<T> aClass) {
             return delegate.getCredential(aClass);
         }
