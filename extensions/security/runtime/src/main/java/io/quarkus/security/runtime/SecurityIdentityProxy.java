@@ -41,6 +41,11 @@ public class SecurityIdentityProxy implements SecurityIdentity {
     }
 
     @Override
+    public Set<Permission> getPermissions() {
+        return Set.of();
+    }
+
+    @Override
     public <T extends Credential> T getCredential(Class<T> credentialType) {
         return association.getIdentity().getCredential(credentialType);
     }
