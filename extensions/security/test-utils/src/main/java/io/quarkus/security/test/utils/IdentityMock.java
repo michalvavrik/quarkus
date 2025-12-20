@@ -66,6 +66,11 @@ public class IdentityMock implements SecurityIdentity {
     }
 
     @Override
+    public Set<Permission> getPermissions() {
+        return Set.of();
+    }
+
+    @Override
     public boolean isAnonymous() {
         return anonymous;
     }

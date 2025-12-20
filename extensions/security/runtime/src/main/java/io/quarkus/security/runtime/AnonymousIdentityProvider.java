@@ -44,6 +44,11 @@ public class AnonymousIdentityProvider implements IdentityProvider<AnonymousAuth
         }
 
         @Override
+        public Set<Permission> getPermissions() {
+            return Set.of();
+        }
+
+        @Override
         public <T extends Credential> T getCredential(Class<T> credentialType) {
             return null;
         }
