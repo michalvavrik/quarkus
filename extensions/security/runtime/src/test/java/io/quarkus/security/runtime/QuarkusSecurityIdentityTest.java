@@ -182,6 +182,11 @@ public class QuarkusSecurityIdentityTest {
             return true;
         }
 
+        @Override
+        public Set<Permission> getPermissions() {
+            return Set.of();
+        }
+
     }
 
     static class TestSecurityIdentityPrincipalNullAnonymousFalse extends AbstractTestSecurityIdentity {
@@ -194,6 +199,11 @@ public class QuarkusSecurityIdentityTest {
         @Override
         public boolean isAnonymous() {
             return false;
+        }
+
+        @Override
+        public Set<Permission> getPermissions() {
+            return Set.of();
         }
 
     }
