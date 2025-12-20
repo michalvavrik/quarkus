@@ -71,6 +71,7 @@ import io.quarkus.arc.deployment.ValidationPhaseBuildItem.ValidationErrorBuildIt
 import io.quarkus.arc.processor.AnnotationStore;
 import io.quarkus.arc.processor.BuildExtension;
 import io.quarkus.arc.processor.BuiltinScope;
+import io.quarkus.arc.processor.InterceptorBindingRegistrar;
 import io.quarkus.arc.processor.ObserverInfo;
 import io.quarkus.builder.item.MultiBuildItem;
 import io.quarkus.builder.item.SimpleBuildItem;
@@ -114,6 +115,7 @@ import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.security.deployment.PermissionSecurityChecks.PermissionSecurityChecksBuilder;
+import io.quarkus.security.identity.RunAsUser;
 import io.quarkus.security.identity.SecurityIdentityAugmentor;
 import io.quarkus.security.runtime.IdentityProviderManagerCreator;
 import io.quarkus.security.runtime.PrincipalProducer;
@@ -130,6 +132,7 @@ import io.quarkus.security.runtime.interceptor.DenyAllInterceptor;
 import io.quarkus.security.runtime.interceptor.PermissionsAllowedInterceptor;
 import io.quarkus.security.runtime.interceptor.PermitAllInterceptor;
 import io.quarkus.security.runtime.interceptor.RolesAllowedInterceptor;
+import io.quarkus.security.runtime.interceptor.RunAsUserInterceptor;
 import io.quarkus.security.runtime.interceptor.SecurityCheckStorageBuilder;
 import io.quarkus.security.runtime.interceptor.SecurityConstrainer;
 import io.quarkus.security.runtime.interceptor.SecurityHandler;
@@ -144,6 +147,7 @@ import io.quarkus.security.spi.DefaultSecurityCheckBuildItem;
 import io.quarkus.security.spi.PermissionsAllowedMetaAnnotationBuildItem;
 import io.quarkus.security.spi.RegisterClassSecurityCheckBuildItem;
 import io.quarkus.security.spi.RolesAllowedConfigExpResolverBuildItem;
+import io.quarkus.security.spi.RunAsUserPredicateBuildItem;
 import io.quarkus.security.spi.SecuredInterfaceAnnotationBuildItem;
 import io.quarkus.security.spi.SecurityTransformer;
 import io.quarkus.security.spi.SecurityTransformer.AuthorizationType;
@@ -1309,6 +1313,41 @@ public class SecurityProcessor {
                                     .get()))
                     .forEach(producer::produce);
         }
+    }
+
+    @BuildStep
+    void registerRunAsUserInterceptor(BuildProducer<InterceptorBindingRegistrarBuildItem> interceptorBindingRegistrarProducer,
+            BuildProducer<AnnotationsTransformerBuildItem> annotationsTransformerProducer,
+            BuildProducer<AdditionalBeanBuildItem> additionalBeanProducer,
+            List<RunAsUserPredicateBuildItem> runAsUserPredicates,
+            CombinedIndexBuildItem combinedIndexBuildItem) {
+        var annotationInstances = combinedIndexBuildItem.getIndex().getAnnotations(RunAsUser.class);
+        var targetNotAllowedPredicate = Predicate.not(RunAsUserPredicateBuildItem.getPredicate(runAsUserPredicates));
+        var notAllowedTargets = annotationInstances.stream()
+                .map(AnnotationInstance::target)
+                .filter(targetNotAllowedPredicate)
+                .map(AnnotationTarget::asMethod)
+                .map(mi -> "%s#%s".formatted(mi.declaringClass().name().toString(), mi.name()))
+                .collect(Collectors.joining(", "));
+        if (!notAllowedTargets.isEmpty()) {
+            throw new RuntimeException("Annotation '%s' cannot be used on following methods: %s"
+                    .formatted(RunAsUser.class.getName(), notAllowedTargets));
+        }
+
+        if (runAsUserPredicates.isEmpty()) {
+            return;
+        }
+
+        interceptorBindingRegistrarProducer.produce(new InterceptorBindingRegistrarBuildItem(new InterceptorBindingRegistrar() {
+            @Override
+            public List<InterceptorBinding> getAdditionalBindings() {
+                return List.of(InterceptorBindingRegistrar.InterceptorBinding.of(RunAsUser.class, m -> true));
+            }
+        }));
+        annotationsTransformerProducer.produce(new AnnotationsTransformerBuildItem(AnnotationTransformation
+                .forClasses().whenClass(RunAsUserInterceptor.class)
+                .transform(tc -> tc.add(AnnotationInstance.builder(RunAsUser.class).add("user", "").build()))));
+        additionalBeanProducer.produce(AdditionalBeanBuildItem.unremovableOf(RunAsUserInterceptor.class));
     }
 
     private static boolean hasClassLevelStandardSecurityAnnotation(MethodInfo method, AnnotationStore annotationStore,
