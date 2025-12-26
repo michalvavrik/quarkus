@@ -833,6 +833,7 @@ To configure the resolution of the tenant identifier, use one of the following o
 * <<tenant-resolver>>
 * <<configure-tenant-paths>>
 * <<default-tenant-resolver>>
+* <<header-based-tenant-resolver>>
 * <<issuer-based-tenant-resolver>>
 
 These tenant resolution options are tried in the order they are listed until the tenant id gets resolved.
@@ -899,6 +900,19 @@ quarkus.oidc.b.tenant-paths=/*/hello <3>
 <3> The wildcard in the `/*/hello` represents exactly one path segment. Nevertheless, the wildcard is less specific than the `api`, therefore the `hr` tenant will be used.
 
 TIP: Path-matching mechanism works exactly same as in the xref:security-authorize-web-endpoints-reference.adoc#authorization-using-configuration[Authorization using configuration].
+
+[[header-based-tenant-resolver]]
+==== Resolve tenants with a token header name
+
+OIDC tenants which support Bearer token authentication can be resolved using the header name of the custom HTTP header that contains a bearer token.
+The header-based resolution is enabled when the `quarkus.oidc.token.header` property is set. For example:
+
+[source,properties]
+----
+quarkus.oidc.tenant-a.token.header=Custom-Authorization-1 <1>
+quarkus.oidc.tenant-b.token.header=Custom-Authorization-2
+----
+<1> Tenant `tenant-a` is resolved when the incoming HTTP request contains the `Custom-Authorization-1` header and no other resolver with higher priority resolved an OIDC tenant.
 
 [[default-tenant-resolver]]
 ==== Use request path segments to find tenant id
