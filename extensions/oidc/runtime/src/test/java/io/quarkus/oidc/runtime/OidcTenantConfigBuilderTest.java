@@ -698,6 +698,7 @@ public class OidcTenantConfigBuilderTest {
                 .tenantPath("tenant-path-test-1")
                 .tenantPaths("tenant-path-test-2", "tenant-path-test-3")
                 .publicKey("public-key-test-1")
+                .token().resolveTenantWithHeader("harry").end()
                 .allowTokenIntrospectionCache()
                 .allowUserInfoCache()
                 .cacheUserInfoInIdtoken()
@@ -716,6 +717,8 @@ public class OidcTenantConfigBuilderTest {
         assertTrue(existingConfig.allowTokenIntrospectionCache());
         assertTrue(existingConfig.allowUserInfoCache());
         assertTrue(existingConfig.cacheUserInfoInIdtoken().orElseThrow());
+        assertEquals("harry", existingConfig.token().header().orElseThrow());
+        assertTrue(existingConfig.token().resolveTenantWithHeader());
 
         var newConfig = OidcTenantConfig.builder(existingConfig)
                 // OidcTenantConfig methods
@@ -746,6 +749,8 @@ public class OidcTenantConfigBuilderTest {
         assertFalse(newConfig.allowUserInfoCache());
         assertFalse(newConfig.cacheUserInfoInIdtoken().orElseThrow());
         assertEquals(Provider.GOOGLE, newConfig.provider().orElse(null));
+        assertEquals("harry", newConfig.token().header().orElseThrow());
+        assertTrue(newConfig.token().resolveTenantWithHeader());
     }
 
     @Test

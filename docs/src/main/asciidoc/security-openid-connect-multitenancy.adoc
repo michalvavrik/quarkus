@@ -833,6 +833,7 @@ To configure the resolution of the tenant identifier, use one of the following o
 * <<tenant-resolver>>
 * <<configure-tenant-paths>>
 * <<default-tenant-resolver>>
+* <<header-based-tenant-resolver>>
 * <<issuer-based-tenant-resolver>>
 
 These tenant resolution options are tried in the order they are listed until the tenant id gets resolved.
@@ -940,6 +941,22 @@ Therefore, authenticated users can access the secured application area without r
 
 Default resolution can also work for Bearer token authentication.
 Still, it might be less practical because a tenant identifier must always be set as the last path segment value.
+
+[[header-based-tenant-resolver]]
+==== Resolve tenants with a token header name
+
+OIDC tenants which support Bearer token authentication can be resolved using the header name of the custom HTTP header that contains a bearer token.
+The header-based resolution is enabled with the `quarkus.oidc.token.resolve-tenant-with-header` property. For example:
+
+[source,properties]
+----
+quarkus.oidc.tenant-a.token.resolve-tenant-with-header=true
+quarkus.oidc.tenant-a.token.header=Custom-Authorization-1 <1>
+
+quarkus.oidc.tenant-b.token.resolve-tenant-with-header=true
+quarkus.oidc.tenant-b.token.header=Custom-Authorization-2
+----
+<1> Tenant `tenant-a` is resolved when the incoming HTTP request contains the `Custom-Authorization-1` header.
 
 [[issuer-based-tenant-resolver]]
 ==== Resolve tenants with a token issuer claim

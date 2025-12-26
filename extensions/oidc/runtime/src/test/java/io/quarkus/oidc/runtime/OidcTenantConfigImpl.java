@@ -212,7 +212,8 @@ final class OidcTenantConfigImpl implements OidcTenantConfig {
         INTROSPECTION_CREDENTIALS_SECRET,
         INTROSPECTION_CREDENTIALS_INCLUDE_CLIENT_ID,
         TENANT_ID,
-        JWT_BEARER_TOKEN_PATH
+        JWT_BEARER_TOKEN_PATH,
+        RESOLVE_TENANT_WITH_HEADER
     }
 
     final Map<ConfigMappingMethods, Boolean> invocationsRecorder = new EnumMap<>(ConfigMappingMethods.class);
@@ -405,6 +406,12 @@ final class OidcTenantConfigImpl implements OidcTenantConfig {
             public Optional<String> header() {
                 invocationsRecorder.put(ConfigMappingMethods.TOKEN_HEADER, true);
                 return Optional.empty();
+            }
+
+            @Override
+            public boolean resolveTenantWithHeader() {
+                invocationsRecorder.put(ConfigMappingMethods.RESOLVE_TENANT_WITH_HEADER, true);
+                return false;
             }
 
             @Override

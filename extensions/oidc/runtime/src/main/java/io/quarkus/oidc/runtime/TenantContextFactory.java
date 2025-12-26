@@ -286,6 +286,13 @@ final class TenantContextFactory {
                                 + io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType.WEB_APP
                                 + " application types");
             }
+            if (oidcConfig.token().resolveTenantWithHeader() && oidcConfig.token().header().isEmpty()) {
+                throw new ConfigurationException(
+                        "The '" + getConfigPropertyForTenant(tenantId, "token.resolve-tenant-with-header")
+                                + "' property can only be set to 'true' when the '"
+                                + getConfigPropertyForTenant(tenantId, "token.header")
+                                + "' property is set");
+            }
         } else {
             if (oidcConfig.token().refreshTokenTimeSkew().isPresent()) {
                 oidcConfig.token.setRefreshExpired(true);
@@ -337,7 +344,7 @@ final class TenantContextFactory {
         return createOidcProvider(oidcConfig).flatMap(p -> TenantConfigContext.createReady(p, oidcConfig));
     }
 
-    private String getConfigPropertyForTenant(String tenantId, String configSubKey) {
+    static String getConfigPropertyForTenant(String tenantId, String configSubKey) {
         if (DEFAULT_TENANT_ID.equals(tenantId)) {
             return "quarkus.oidc." + configSubKey;
         } else {
