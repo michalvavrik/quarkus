@@ -286,6 +286,13 @@ final class TenantContextFactory {
                                 + io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType.WEB_APP
                                 + " application types");
             }
+            if (oidcConfig.token().resolveTenantWithHeader() && oidcConfig.token().header().isEmpty()) {
+                throw new ConfigurationException(
+                        "The '" + getConfigPropertyForTenant(tenantId, "token.resolve-tenant-with-header")
+                                + "' property can only be set to 'true' when the '"
+                                + getConfigPropertyForTenant(tenantId, "token.header")
+                                + "' property is set");
+            }
         } else {
             if (oidcConfig.token().refreshTokenTimeSkew().isPresent()) {
                 oidcConfig.token.setRefreshExpired(true);

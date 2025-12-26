@@ -2325,6 +2325,8 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
          */
         public Optional<String> header = Optional.empty();
 
+        private boolean resolveTenantWithHeader;
+
         /**
          * HTTP Authorization header scheme.
          */
@@ -2596,6 +2598,7 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
             refreshTokenTimeSkew = mapping.refreshTokenTimeSkew();
             forcedJwkRefreshInterval = mapping.forcedJwkRefreshInterval();
             header = mapping.header();
+            resolveTenantWithHeader = mapping.resolveTenantWithHeader();
             authorizationScheme = mapping.authorizationScheme();
             signatureAlgorithm = mapping.signatureAlgorithm().map(Enum::toString).map(SignatureAlgorithm::valueOf);
             decryptionKeyLocation = mapping.decryptionKeyLocation();
@@ -2672,6 +2675,11 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
         @Override
         public Optional<String> header() {
             return header;
+        }
+
+        @Override
+        public boolean resolveTenantWithHeader() {
+            return resolveTenantWithHeader;
         }
 
         @Override

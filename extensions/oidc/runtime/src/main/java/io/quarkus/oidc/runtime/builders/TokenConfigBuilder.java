@@ -29,7 +29,7 @@ public final class TokenConfigBuilder {
             String authorizationScheme, Optional<OidcTenantConfig.SignatureAlgorithm> signatureAlgorithm,
             Optional<String> decryptionKeyLocation, Optional<Boolean> decryptIdToken, boolean decryptAccessToken,
             boolean allowJwtIntrospection, boolean requireJwtIntrospectionOnly,
-            boolean allowOpaqueTokenIntrospection, Optional<String> customizerName,
+            boolean allowOpaqueTokenIntrospection, Optional<String> customizerName, boolean resolveTenantWithHeader,
             Optional<Boolean> verifyAccessTokenWithUserInfo, Binding binding) implements OidcTenantConfig.Token {
     }
 
@@ -47,6 +47,7 @@ public final class TokenConfigBuilder {
     private Optional<Duration> refreshTokenTimeSkew;
     private Duration forcedJwkRefreshInterval;
     private Optional<String> header;
+    private boolean resolveTenantWithHeader;
     private String authorizationScheme;
     private Optional<OidcTenantConfig.SignatureAlgorithm> signatureAlgorithm;
     private Optional<String> decryptionKeyLocation;
@@ -83,6 +84,7 @@ public final class TokenConfigBuilder {
         this.refreshTokenTimeSkew = token.refreshTokenTimeSkew();
         this.forcedJwkRefreshInterval = token.forcedJwkRefreshInterval();
         this.header = token.header();
+        this.resolveTenantWithHeader = token.resolveTenantWithHeader();
         this.authorizationScheme = token.authorizationScheme();
         this.signatureAlgorithm = token.signatureAlgorithm();
         this.decryptionKeyLocation = token.decryptionKeyLocation();
@@ -311,6 +313,19 @@ public final class TokenConfigBuilder {
     }
 
     /**
+     * Enables OIDC tenant resolution with the custom HTTP header and sets {@link #header(String)}.
+     *
+     * @param header {@link OidcTenantConfig.Token#header()}; must not be null
+     * @return this builder
+     * @see OidcTenantConfig.Token#resolveTenantWithHeader()
+     */
+    public TokenConfigBuilder resolveTenantWithHeader(String header) {
+        this.header = Optional.of(header);
+        this.resolveTenantWithHeader = true;
+        return this;
+    }
+
+    /**
      * @param authorizationScheme {@link OidcTenantConfig.Token#authorizationScheme()}
      * @return this builder
      */
@@ -490,7 +505,7 @@ public final class TokenConfigBuilder {
                 forcedJwkRefreshInterval, header, authorizationScheme, signatureAlgorithm, decryptionKeyLocation,
                 decryptIdToken,
                 decryptAccessToken, allowJwtIntrospection, requireJwtIntrospectionOnly, allowOpaqueTokenIntrospection,
-                customizerName,
+                customizerName, resolveTenantWithHeader,
                 verifyAccessTokenWithUserInfo, binding);
     }
 
