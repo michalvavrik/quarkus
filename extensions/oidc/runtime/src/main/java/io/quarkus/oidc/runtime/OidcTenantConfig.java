@@ -1189,6 +1189,13 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
         Optional<String> header();
 
         /**
+         * If this OIDC tenant should be resolved by presence of the custom HTTP header that contains a bearer token.
+         * This option is valid only when the {@link Token#header()} configuration property is set.
+         */
+        @WithDefault("false")
+        boolean resolveTenantWithHeader();
+
+        /**
          * HTTP Authorization header scheme.
          */
         @WithDefault(OidcConstants.BEARER_SCHEME)

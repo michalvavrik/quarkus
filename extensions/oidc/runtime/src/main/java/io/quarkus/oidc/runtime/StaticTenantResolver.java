@@ -6,9 +6,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 
 import jakarta.enterprise.inject.Instance;
 
@@ -57,9 +59,15 @@ final class StaticTenantResolver {
             staticTenantResolvers.add(new DefaultStaticTenantResolver(tenantConfigBean));
         }
 
+        // 4. header-based tenant resolver
+        var headerBasedTenantResolver = HeaderBasedTenantResolver.of(tenantConfigBean);
+        if (headerBasedTenantResolver != null) {
+            staticTenantResolvers.add(headerBasedTenantResolver);
+        }
+
         this.staticTenantResolvers = staticTenantResolvers.toArray(new TenantResolver[0]);
 
-        // 4. issuer-based tenant resolver
+        // 5. issuer-based tenant resolver
         if (resolveTenantsWithIssuer) {
             this.issuerBasedTenantResolver = IssuerBasedTenantResolver.of(
                     tenantConfigBean.getStaticTenantsConfig(), tenantConfigBean.getDefaultTenant());
@@ -358,4 +366,38 @@ final class StaticTenantResolver {
         }
     }
 
+    private static final class HeaderBasedTenantResolver implements TenantResolver {
+
+        private final Map<String, String> headerNameToTenantId;
+
+        private HeaderBasedTenantResolver(Map<String, String> headerNameToTenantId) {
+            this.headerNameToTenantId = Map.copyOf(headerNameToTenantId);
+        }
+
+        @Override
+        public String resolve(RoutingContext context) {
+            for (var e : context.request().headers()) {
+                if (headerNameToTenantId.containsKey(e.getKey())) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debugf("Resolved the '%s' OIDC tenant based on the matching header '%s'", e.getValue(), e.getKey());
+                    }
+                    return e.getValue();
+                }
+            }
+            return null;
+        }
+
+        private static TenantResolver of(TenantConfigBean tenantConfigBean) {
+            var headerToTenant = tenantConfigBean.getStaticTenantsConfig().values().stream()
+                    .map(TenantConfigContext::getOidcTenantConfig)
+                    .filter(Objects::nonNull)
+                    .filter(c -> c.token().resolveTenantWithHeader())
+                    .collect(Collectors.toMap(tenantConfig -> tenantConfig.token().header().get(),
+                            tenantConfig -> tenantConfig.tenantId().get()));
+            if (headerToTenant.isEmpty()) {
+                return null;
+            }
+            return new HeaderBasedTenantResolver(headerToTenant);
+        }
+    }
 }
