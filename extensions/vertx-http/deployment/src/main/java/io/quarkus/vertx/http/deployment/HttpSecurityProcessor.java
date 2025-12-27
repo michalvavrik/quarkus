@@ -791,7 +791,7 @@ public class HttpSecurityProcessor {
         if (info.isSynthetic()) {
             return false;
         }
-        if (!Modifier.isPublic(info.flags())) {
+        if (Modifier.isPrivate(info.flags())) {
             return false;
         }
         if (info.isConstructor()) {

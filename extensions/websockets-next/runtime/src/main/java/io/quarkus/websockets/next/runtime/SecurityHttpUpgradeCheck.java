@@ -5,6 +5,7 @@ import static io.netty.handler.codec.http.HttpHeaderNames.LOCATION;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import io.quarkus.security.ForbiddenException;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -13,6 +14,7 @@ import io.quarkus.security.spi.runtime.AuthorizationSuccessEvent;
 import io.quarkus.security.spi.runtime.MethodDescription;
 import io.quarkus.security.spi.runtime.SecurityCheck;
 import io.quarkus.security.spi.runtime.SecurityEventHelper;
+import io.quarkus.vertx.http.runtime.security.HttpSecurityPolicy;
 import io.quarkus.websockets.next.HttpUpgradeCheck;
 import io.smallrye.mutiny.Uni;
 
@@ -24,6 +26,7 @@ public final class SecurityHttpUpgradeCheck implements HttpUpgradeCheck {
 
     private final String redirectUrl;
     private final Map<String, SecurityCheck> endpointToCheck;
+    private final Map<String, HttpSecurityPolicy> endpointToPolicy;
     private final SecurityEventHelper<AuthorizationSuccessEvent, AuthorizationFailureEvent> securityEventHelper;
 
     SecurityHttpUpgradeCheck(String redirectUrl, Map<String, SecurityCheck> endpointToCheck,
@@ -31,16 +34,45 @@ public final class SecurityHttpUpgradeCheck implements HttpUpgradeCheck {
         this.redirectUrl = redirectUrl;
         this.endpointToCheck = Map.copyOf(endpointToCheck);
         this.securityEventHelper = securityEventHelper;
+        this.endpointToPolicy = Map.of(); // FIXME: impl. me!
+        // TODO: authorization policy
+        //  - must be reapplied on security identity update
+        //  - map endpoint -> methodDescription -> and use AuthorizationPolicyStorage to get endpoint policies once
+        //  - have a map "endpoint to HttpSecurityPolicies" and figure how security events can be fired
+        //  - security identity can be updated, how to do that from here? we update the RoutingContext
+        //  - JaxRsPathMatchingHttpSecurityPolicy
+        //  - FIXME: authentication event as well?????????? or not!!
     }
 
     @Override
     public Uni<CheckResult> perform(HttpUpgradeContext context) {
         final SecurityCheck securityCheck = endpointToCheck.get(context.endpointId());
-        return context.securityIdentity().chain(identity -> securityCheck
-                .nonBlockingApply(identity, (MethodDescription) null, null)
-                .replaceWith(() -> permitUpgrade(identity, securityCheck, context))
-                .onFailure(SecurityException.class)
-                .recoverWithItem(t -> rejectUpgrade(t, identity, securityCheck, context)));
+        final HttpSecurityPolicy httpSecurityPolicy = endpointToPolicy.get(context.endpointId());
+        return context.securityIdentity()
+                .chain(identity -> {
+                    Uni<Object> authorizationCheck = Uni.createFrom().nullItem();
+                    if (httpSecurityPolicy != null) {
+                        if (securityCheck != null) {
+                            // FIXME: check not null
+                        } else {
+                            // FIXME: check null
+                        }
+                    } else {
+                        if (securityCheck != null) {
+                            // FIXME: check not null
+                        } else {
+                            // FIXME: this shouldn't be allowed probably? doesn't make a sense if both authorizations are null
+                        }
+                    }
+
+                    return securityCheck
+                            // security check
+                            .nonBlockingApply(identity, (MethodDescription) null, null)
+                            // map authorization result to the CheckResult
+                            .replaceWith(() -> permitUpgrade(identity, securityCheck, context))
+                            .onFailure(SecurityException.class)
+                            .recoverWithItem(t -> rejectUpgrade(t, identity, securityCheck, context));
+                });
     }
 
     @Override
