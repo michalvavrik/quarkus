@@ -162,7 +162,7 @@ public class RegisteredClientImpl implements RegisteredClient {
         }
         // Retry up to three times with a one-second delay between the retries if the connection is closed
         Uni<HttpResponse<Buffer>> response = filterHttpRequest(requestProps, request, buffer)
-                .sendBuffer(OidcCommonUtils.getRequestBuffer(requestProps, buffer))
+                .flatMap(httpRequest -> httpRequest.sendBuffer(OidcCommonUtils.getRequestBuffer(requestProps, buffer)))
                 .onFailure(SocketException.class)
                 .retry()
                 .atMost(oidcConfig.connectionRetryCount())
@@ -174,16 +174,9 @@ public class RegisteredClientImpl implements RegisteredClient {
         return response.onItem();
     }
 
-    private HttpRequest<Buffer> filterHttpRequest(OidcRequestContextProperties requestProps, HttpRequest<Buffer> request,
+    private Uni<HttpRequest<Buffer>> filterHttpRequest(OidcRequestContextProperties requestProps, HttpRequest<Buffer> request,
             Buffer body) {
-        if (!requestFilters.isEmpty()) {
-            OidcRequestContext context = new OidcRequestContext(request, body, requestProps);
-            for (OidcRequestFilter filter : OidcCommonUtils.getMatchingOidcRequestFilters(requestFilters,
-                    OidcEndpoint.Type.REGISTERED_CLIENT)) {
-                filter.filter(context);
-            }
-        }
-        return request;
+        return OidcCommonUtils.filterHttpRequest(requestProps, request, body, requestFilters, OidcEndpoint.Type.REGISTERED_CLIENT);
     }
 
     private RegisteredClient newRegisteredClient(HttpResponse<Buffer> resp, OidcRequestContextProperties requestProps) {

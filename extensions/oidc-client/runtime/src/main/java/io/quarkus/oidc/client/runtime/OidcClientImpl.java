@@ -280,7 +280,7 @@ public class OidcClientImpl implements OidcClient {
         // Retry up to three times with a one-second delay between the retries if the connection is closed
         Buffer buffer = OidcCommonUtils.encodeForm(body);
         Uni<HttpResponse<Buffer>> response = filterHttpRequest(requestProps, endpointType, request, buffer)
-                .sendBuffer(OidcCommonUtils.getRequestBuffer(requestProps, buffer))
+                .flatMap(httpRequest -> httpRequest.sendBuffer(OidcCommonUtils.getRequestBuffer(requestProps, buffer)))
                 .onFailure(SocketException.class)
                 .retry()
                 .atMost(oidcConfig.connectionRetryCount())
@@ -456,16 +456,10 @@ public class OidcClientImpl implements OidcClient {
         }
     }
 
-    private HttpRequest<Buffer> filterHttpRequest(
+    private Uni<HttpRequest<Buffer>> filterHttpRequest(
             OidcRequestContextProperties requestProps,
             OidcEndpoint.Type endpointType, HttpRequest<Buffer> request, Buffer body) {
-        if (!requestFilters.isEmpty()) {
-            OidcRequestContext context = new OidcRequestContext(request, body, requestProps);
-            for (OidcRequestFilter filter : OidcCommonUtils.getMatchingOidcRequestFilters(requestFilters, endpointType)) {
-                filter.filter(context);
-            }
-        }
-        return request;
+        return OidcCommonUtils.filterHttpRequest(requestProps, request, body, requestFilters, endpointType);
     }
 
     OidcClientConfig getConfig() {

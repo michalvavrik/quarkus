@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +34,7 @@ import java.util.stream.Collectors;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 
+import io.quarkus.oidc.common.OidcRequestFilter.OidcFilterRequestContext;
 import org.jboss.logging.Logger;
 
 import io.quarkus.arc.Arc;
@@ -571,13 +573,9 @@ public class OidcCommonUtils {
         if (!cookies.isEmpty()) {
             request.putHeader(COOKIE_REQUEST_HEADER, cookies);
         }
-        if (!requestFilters.isEmpty()) {
-            OidcRequestContext context = new OidcRequestContext(request, null, requestProps);
-            for (OidcRequestFilter filter : getMatchingOidcRequestFilters(requestFilters, OidcEndpoint.Type.DISCOVERY)) {
-                filter.filter(context);
-            }
-        }
-        return sendRequest(vertx, request, blockingDnsLookup).onItem().transform(resp -> {
+        return applyRequestFilters(requestFilters, OidcEndpoint.Type.DISCOVERY, request, requestProps)
+                .flatMap(ignored -> sendRequest(vertx, request, blockingDnsLookup))
+                .onItem().transform(resp -> {
 
             Buffer buffer = filterHttpResponse(requestProps, resp, responseFilters, OidcEndpoint.Type.DISCOVERY);
 
@@ -711,6 +709,30 @@ public class OidcCommonUtils {
             return map;
         }
         return Map.of();
+    }
+
+    public static Uni<HttpRequest<Buffer>> filterHttpRequest(OidcRequestContextProperties requestProps,
+                                                             HttpRequest<Buffer> request, Buffer body,
+                                                             Map<OidcEndpoint.Type, List<OidcRequestFilter>> requestFilters,
+                                                             OidcEndpoint.Type type) {
+        return applyRequestFilters(requestFilters, type, request, requestProps).replaceWith(request);
+    }
+
+    private static Uni<Void> applyRequestFilters(Map<OidcEndpoint.Type, List<OidcRequestFilter>> requestFilters, OidcEndpoint.Type type, HttpRequest<Buffer> request, OidcRequestContextProperties requestProps) {
+        if (!requestFilters.isEmpty()) {
+            var context = new OidcFilterRequestContext(request, null, requestProps);
+            return applyRequestFilters(getMatchingOidcRequestFilters(requestFilters, type), 0, context);
+        } else {
+            return Uni.createFrom().voidItem();
+        }
+    }
+
+    private static Uni<Void> applyRequestFilters(List<OidcRequestFilter> requestFilters, int index, OidcFilterRequestContext context) {
+        if (requestFilters.size() == index) {
+            return Uni.createFrom().voidItem();
+        }
+
+        return requestFilters.get(index).filter(context).chain(() -> applyRequestFilters(requestFilters, index + 1, context));
     }
 
     public static List<OidcRequestFilter> getMatchingOidcRequestFilters(Map<OidcEndpoint.Type, List<OidcRequestFilter>> filters,

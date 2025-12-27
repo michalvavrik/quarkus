@@ -154,10 +154,9 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         if (!cookies.isEmpty()) {
             request.putHeader(OidcCommonUtils.COOKIE_REQUEST_HEADER, cookies);
         }
-        return OidcCommonUtils
-                .sendRequest(vertx,
-                        filterHttpRequest(requestProps, OidcEndpoint.Type.JWKS, request, null),
-                        oidcConfig.useBlockingDnsLookup())
+        return filterHttpRequest(requestProps, OidcEndpoint.Type.JWKS, request, null)
+                .flatMap(httpRequest -> OidcCommonUtils
+                        .sendRequest(vertx, httpRequest, oidcConfig.useBlockingDnsLookup()))
                 .onItem()
                 .transform(resp -> getJsonWebKeySet(requestProps, resp));
     }
@@ -221,11 +220,10 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         if (!cookies.isEmpty()) {
             request.putHeader(OidcCommonUtils.COOKIE_REQUEST_HEADER, cookies);
         }
-        return OidcCommonUtils
-                .sendRequest(vertx,
-                        filterHttpRequest(requestProps, OidcEndpoint.Type.USERINFO, request, null)
-                                .putHeader(AUTHORIZATION_HEADER, OidcConstants.BEARER_SCHEME + " " + token),
-                        oidcConfig.useBlockingDnsLookup())
+        return filterHttpRequest(requestProps, OidcEndpoint.Type.USERINFO, request, null)
+                .flatMap(httpRequest -> OidcCommonUtils
+                        .sendRequest(vertx, httpRequest.putHeader(AUTHORIZATION_HEADER, OidcConstants.BEARER_SCHEME + " " + token),
+                                oidcConfig.useBlockingDnsLookup()))
                 .onItem().transform(resp -> getUserInfo(requestProps, resp));
     }
 
@@ -385,7 +383,7 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         }
         // Retry up to three times with a one-second delay between the retries if the connection is closed.
         var preparedResponse = filterHttpRequest(requestProps, endpointType, request, buffer)
-                .sendBuffer(OidcCommonUtils.getRequestBuffer(requestProps, buffer))
+                .flatMap(httpRequest -> httpRequest.sendBuffer(OidcCommonUtils.getRequestBuffer(requestProps, buffer)))
                 .onFailure(SocketException.class)
                 .retry()
                 .atMost(oidcConfig.connectionRetryCount())
@@ -535,15 +533,9 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         return clientSecret;
     }
 
-    private HttpRequest<Buffer> filterHttpRequest(OidcRequestContextProperties requestProps, OidcEndpoint.Type endpointType,
+    private Uni<HttpRequest<Buffer>> filterHttpRequest(OidcRequestContextProperties requestProps, OidcEndpoint.Type endpointType,
             HttpRequest<Buffer> request, Buffer body) {
-        if (!requestFilters.isEmpty()) {
-            OidcRequestContext context = new OidcRequestContext(request, body, requestProps);
-            for (OidcRequestFilter filter : OidcCommonUtils.getMatchingOidcRequestFilters(requestFilters, endpointType)) {
-                filter.filter(context);
-            }
-        }
-        return request;
+        return OidcCommonUtils.filterHttpRequest(requestProps, request, body, requestFilters, endpointType);
     }
 
     private OidcRequestContextProperties getRequestProps(String grantType) {
