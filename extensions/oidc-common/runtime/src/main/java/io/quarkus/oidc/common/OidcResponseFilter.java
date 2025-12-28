@@ -1,5 +1,9 @@
 package io.quarkus.oidc.common;
 
+import java.util.function.Supplier;
+
+import io.quarkus.oidc.common.runtime.OidcCommonUtils;
+import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.core.MultiMap;
 import io.vertx.mutiny.core.buffer.Buffer;
 
@@ -50,10 +54,43 @@ public interface OidcResponseFilter {
     }
 
     /**
+     * OIDC response context implementation, which provides access to the HTTP response status code, headers and body.
+     */
+    final class OidcResponseFilterContext extends OidcResponseContext {
+
+        public OidcResponseFilterContext(OidcRequestContextProperties requestProperties, int statusCode,
+                MultiMap responseHeaders, Buffer responseBody) {
+            super(requestProperties, statusCode, responseHeaders, responseBody);
+        }
+
+        public Uni<Void> runBlocking(Supplier<Void> function) {
+            return OidcCommonUtils.runBlocking(function);
+        }
+    }
+
+    /**
      * Filter OIDC responses.
      *
      * @param responseContext the response context which provides access to the HTTP response status code, headers and body.
-     *
+     * @deprecated implement {@link #filter(OidcResponseFilterContext)} instead
      */
-    void filter(OidcResponseContext responseContext);
+    @Deprecated(since = "3.31", forRemoval = true)
+    default void filter(OidcResponseContext responseContext) {
+        throw new UnsupportedOperationException("filter(OidcResponseContext responseContext) method is not implemented");
+    }
+
+    /**
+     * Filter OIDC responses asynchronously.
+     * Blocking tasks can be run with the {@link OidcResponseFilterContext#runBlocking(Supplier)} method.
+     *
+     * @param responseContext the response context which provides access to the HTTP response status code, headers and body.
+     * @return {@link Uni}
+     */
+    default Uni<Void> filter(OidcResponseFilterContext responseContext) {
+        return Uni.createFrom().item(() -> {
+            filter((OidcResponseContext) responseContext);
+            return null;
+        });
+    }
+
 }

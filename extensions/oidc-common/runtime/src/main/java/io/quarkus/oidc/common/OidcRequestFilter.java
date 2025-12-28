@@ -1,5 +1,9 @@
 package io.quarkus.oidc.common;
 
+import java.util.function.Supplier;
+
+import io.quarkus.oidc.common.runtime.OidcCommonUtils;
+import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.core.buffer.Buffer;
 import io.vertx.mutiny.ext.web.client.HttpRequest;
 
@@ -46,14 +50,46 @@ public interface OidcRequestFilter {
     }
 
     /**
+     * OIDC request context implementation, which provides access to the HTTP request headers and body,
+     * as well as context properties.
+     */
+    final class OidcRequestFilterContext extends OidcRequestContext {
+
+        public OidcRequestFilterContext(HttpRequest<Buffer> request, Buffer requestBody,
+                OidcRequestContextProperties contextProperties) {
+            super(request, requestBody, contextProperties);
+        }
+
+        public Uni<Void> runBlocking(Supplier<Void> function) {
+            return OidcCommonUtils.runBlocking(function);
+        }
+    }
+
+    /**
      * Filter OIDC request.
      *
      * @param requestContext the request context which provides access to the HTTP request headers and body, as well as context
      *        properties.
-     *
+     * @deprecated implement {@link #filter(OidcRequestFilterContext)} instead
      */
+    @Deprecated(since = "3.31", forRemoval = true)
     default void filter(OidcRequestContext requestContext) {
         filter(requestContext.request(), requestContext.requestBody(), requestContext.contextProperties());
+    }
+
+    /**
+     * Filter OIDC request asynchronously.
+     * Blocking tasks can be run with the {@link OidcRequestFilterContext#runBlocking(Supplier)} method.
+     *
+     * @param requestContext the request context which provides access to the HTTP request headers and body, as well as context
+     *        properties.
+     * @return {@link Uni}; must not be null
+     */
+    default Uni<Void> filter(OidcRequestFilterContext requestContext) {
+        return Uni.createFrom().item(() -> {
+            filter((OidcRequestContext) requestContext);
+            return null;
+        });
     }
 
     /**
