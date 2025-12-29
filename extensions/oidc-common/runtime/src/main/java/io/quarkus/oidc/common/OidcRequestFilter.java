@@ -1,5 +1,8 @@
 package io.quarkus.oidc.common;
 
+import java.util.function.Supplier;
+
+import io.smallrye.mutiny.Uni;
 import io.vertx.mutiny.core.buffer.Buffer;
 import io.vertx.mutiny.ext.web.client.HttpRequest;
 
@@ -42,33 +45,32 @@ public interface OidcRequestFilter {
             requestBody = buffer;
             contextProperties.put(OidcRequestContextProperties.REQUEST_BODY, buffer);
         }
-
     }
 
     /**
-     * Filter OIDC request.
+     * Filter OIDC request without blocking.
+     * Blocking tasks must use the {@link #filter(OidcRequestContext, OidcBlockingContext)} method instead.
      *
      * @param requestContext the request context which provides access to the HTTP request headers and body, as well as context
      *        properties.
-     *
      */
     default void filter(OidcRequestContext requestContext) {
-        filter(requestContext.request(), requestContext.requestBody(), requestContext.contextProperties());
+        throw new UnsupportedOperationException("filter(OidcRequestContext requestContext) method is not implemented");
     }
 
     /**
-     * Filter OIDC requests
+     * Filter OIDC request asynchronously.
+     * Blocking tasks can be run with the {@link OidcBlockingContext#runBlocking(Supplier)} method.
      *
-     * @param request HTTP request that can have its headers customized
-     * @param requestBody request body, will be null for HTTP GET methods, may be null for other HTTP methods
-     * @param contextProperties context properties that can be available in context of some requests
-     *
-     * @deprecated use {@link #filter(OidcRequestContext)}
+     * @param requestContext the request context which provides access to the HTTP request headers and body, as well
+     *        as context properties.
+     * @param blockingContext context object used to execute blocking tasks
+     * @return {@link Uni}; must not be null
      */
-    @Deprecated(forRemoval = true)
-    default void filter(HttpRequest<Buffer> request, Buffer requestBody, OidcRequestContextProperties contextProperties) {
-        throw new UnsupportedOperationException(
-                "filter(HttpRequest<Buffer> request, Buffer requestBody, OidcRequestContextProperties contextProperties)"
-                        + " method is not implemented");
+    default Uni<Void> filter(OidcRequestContext requestContext, OidcBlockingContext<Void> blockingContext) {
+        return Uni.createFrom().item(() -> {
+            filter(requestContext);
+            return null;
+        });
     }
 }
