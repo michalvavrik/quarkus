@@ -874,6 +874,10 @@ quarkus.http.auth.proactive=false <1>
 ----
 <1> Start authenticating an opening WebSocket handshake request only when the `io.quarkus.oidc.BearerTokenAuthentication` annotation is detected.
 
+==== Secure HTTP upgrade with the `@AuthorizationPolicy` annotation
+
+TODO
+
 [[secure-callback-methods]]
 ==== Secure WebSocket endpoint callback methods
 
