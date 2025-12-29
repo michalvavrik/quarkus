@@ -109,6 +109,14 @@ public final class HttpAuthenticator {
      * If no credentials are present it will resolve to null.
      */
     public Uni<SecurityIdentity> attemptAuthentication(RoutingContext routingContext) {
+        try {
+            return attemptAuthenticationInternal(routingContext);
+        } catch (Throwable throwable) {
+            return Uni.createFrom().failure(throwable);
+        }
+    }
+
+    private Uni<SecurityIdentity> attemptAuthenticationInternal(RoutingContext routingContext) {
         // we need to keep track of authN attempts so that we know authN only happens after
         // the HTTP request has been matched with the annotated method
         if (selectAuthMechanismWithAnnotation) {
