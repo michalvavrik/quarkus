@@ -52,6 +52,7 @@ import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.
 import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Secret;
 import io.quarkus.oidc.common.runtime.config.OidcCommonConfig;
 import io.quarkus.oidc.common.runtime.config.OidcCommonConfig.Tls.Verification;
+import io.quarkus.proxy.ProxyConfigurationRegistry;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.runtime.util.ClassPathUtils;
 import io.quarkus.tls.runtime.config.TlsConfigUtils;
@@ -157,9 +158,9 @@ public class OidcCommonUtils {
     }
 
     public static void setHttpClientOptions(OidcCommonConfig oidcConfig, HttpClientOptions options,
-            TlsConfigSupport tlsSupport) {
+            TlsConfigSupport tlsSupport, ProxyConfigurationRegistry proxyConfigurationRegistry) {
 
-        Optional<ProxyOptions> proxyOpt = toProxyOptions(oidcConfig.proxy());
+        Optional<ProxyOptions> proxyOpt = toProxyOptions(oidcConfig.proxy(), proxyConfigurationRegistry);
         if (proxyOpt.isPresent()) {
             options.setProxyOptions(proxyOpt.get());
         }
@@ -281,7 +282,10 @@ public class OidcCommonUtils {
         return connectionDelayInSecs * 1000;
     }
 
-    public static Optional<ProxyOptions> toProxyOptions(OidcCommonConfig.Proxy proxyConfig) {
+    public static Optional<ProxyOptions> toProxyOptions(OidcCommonConfig.Proxy proxyConfig,
+            ProxyConfigurationRegistry proxyConfigurationRegistry) {
+        // FIXME: write a test for this util method
+        // FIXME: accept that the registry can be null
         // Proxy is enabled if (at least) "host" is configured.
         if (!proxyConfig.host().isPresent()) {
             return Optional.empty();
@@ -295,6 +299,7 @@ public class OidcCommonUtils {
             host = proxyConfig.host().get();
         }
         jsonOptions.put("host", host);
+        // TODO: at least from the dev svc util, this had default 80
         jsonOptions.put("port", proxyConfig.port());
         if (proxyConfig.username().isPresent()) {
             jsonOptions.put("username", proxyConfig.username().get());
