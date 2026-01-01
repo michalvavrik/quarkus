@@ -1,10 +1,13 @@
 package io.quarkus.smallrye.jwt.runtime.auth;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.function.Consumer;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
 
@@ -17,6 +20,7 @@ import io.quarkus.security.runtime.QuarkusSecurityIdentity;
 import io.quarkus.vertx.http.runtime.security.HttpSecurityUtils;
 import io.smallrye.jwt.auth.principal.JWTParser;
 import io.smallrye.jwt.auth.principal.ParseException;
+import io.smallrye.jwt.util.ResourceUtils;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.UniEmitter;
 import io.vertx.ext.web.RoutingContext;
@@ -28,6 +32,7 @@ import io.vertx.ext.web.RoutingContext;
 public class MpJwtValidator implements IdentityProvider<TokenAuthenticationRequest> {
 
     private static final Logger log = Logger.getLogger(MpJwtValidator.class);
+    private static final String NONE = "NONE";
 
     final JWTParser parser;
     final boolean blockingAuthentication;
@@ -38,9 +43,11 @@ public class MpJwtValidator implements IdentityProvider<TokenAuthenticationReque
     }
 
     @Inject
-    public MpJwtValidator(JWTParser parser, SmallRyeJwtConfig config) {
+    public MpJwtValidator(JWTParser parser, SmallRyeJwtConfig config,
+            @ConfigProperty(name = "mp.jwt.verify.publickey.location", defaultValue = NONE) String mpJwtLocation,
+            @ConfigProperty(name = "mp.jwt.decrypt.key.location", defaultValue = NONE) String mpJwtDecryptKeyLocation) {
         this.parser = parser;
-        this.blockingAuthentication = config == null ? false : config.blockingAuthentication();
+        this.blockingAuthentication = useBlockingAuthentication(config, mpJwtLocation, mpJwtDecryptKeyLocation);
     }
 
     @Override
@@ -86,6 +93,45 @@ public class MpJwtValidator implements IdentityProvider<TokenAuthenticationReque
         } catch (ParseException e) {
             log.debug("Authentication failed", e);
             throw new AuthenticationFailedException(e);
+        }
+    }
+
+    public boolean isBlockingAuthentication() {
+        return blockingAuthentication;
+    }
+
+    private static boolean useBlockingAuthentication(SmallRyeJwtConfig config, String mpJwtLocation,
+            String mpJwtDecryptKeyLocation) {
+        if (config != null && config.blockingAuthentication().isPresent()) {
+            return config.blockingAuthentication().get();
+        }
+        return isNotLocalResource(mpJwtLocation) || isNotLocalResource(mpJwtDecryptKeyLocation);
+    }
+
+    private static boolean isNotLocalResource(String location) {
+        if (location == null || NONE.equalsIgnoreCase(location)) {
+            return false;
+        }
+        if (location.startsWith(ResourceUtils.CLASSPATH_SCHEME)) {
+            return false;
+        }
+        if (location.startsWith(ResourceUtils.FILE_SCHEME)) {
+            return false;
+        }
+        if (ResourceUtils.getAsClasspathResource(location) != null) {
+            return false;
+        }
+        if (getAsFileSystemResource(location) != null) {
+            return false;
+        }
+        return true;
+    }
+
+    private static InputStream getAsFileSystemResource(String location) {
+        try {
+            return ResourceUtils.getAsFileSystemResource(location);
+        } catch (IOException e) {
+            return null;
         }
     }
 }
