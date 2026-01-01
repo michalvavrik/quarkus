@@ -65,6 +65,9 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
     private final boolean isFormAuthEventObserver;
     private final PersistentLoginManager loginManager;
     private final Event<FormAuthenticationEvent> formAuthEvent;
+    private final Set<String> landingPageQueryParams;
+    private final Set<String> errorPageQueryParams;
+    private final Set<String> loginPageQueryParams;
 
     //the temp encryption key, persistent across dev mode restarts
     static volatile String encryptionKey;
@@ -107,6 +110,9 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         this.formAuthEvent = this.isFormAuthEventObserver
                 ? Arc.container().beanManager().getEvent().select(FormAuthenticationEvent.class)
                 : null;
+        this.landingPageQueryParams = runtimeForm.landingPageQueryParams().orElse(null);
+        this.loginPageQueryParams = runtimeForm.loginPageQueryParams().orElse(null);
+        this.errorPageQueryParams = runtimeForm.errorPageQueryParams().orElse(null);
     }
 
     /**
@@ -133,6 +139,9 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         this.loginManager = loginManager;
         this.isFormAuthEventObserver = false;
         this.formAuthEvent = null;
+        this.landingPageQueryParams = null;
+        this.loginPageQueryParams = null;
+        this.errorPageQueryParams = null;
     }
 
     public Uni<SecurityIdentity> runFormAuth(final RoutingContext exchange,
@@ -216,6 +225,10 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
                 // when landingPage is not null, however we can't control inheritors
                 throw new IllegalStateException(
                         "Landing page is no set, please make sure 'quarkus.http.auth.form.landing-page' is configured properly.");
+            }
+            if (landingPageQueryParams != null) {
+                // FIXME: impl. me!
+
             }
             location = exchange.request().scheme() + "://" + exchange.request().authority() + landingPage;
         }
@@ -310,6 +323,13 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
             if (redirectToErrorPage) {
                 log.debugf("Serving form auth error page %s for %s", errorPage, context);
                 // This method would no longer be called if authentication had already occurred.
+                if (errorPageQueryParams != null) {
+                    // FIXME: impl. me!
+                    // TODO: encoding issues Test%20Case & Check
+                    // TODO: is it dangerous to pass through some query params and should we encode them like that Vertx CVE?
+                    //      we need to consider URLs, HTML, javascript and ...?
+                    // TODO: test query params with multiple values!
+                }
                 return getRedirect(context, errorPage);
             }
         } else {
@@ -317,6 +337,9 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
                 log.debugf("Serving login form %s for %s", loginPage, context);
                 // we need to store the URL
                 storeInitialLocation(context);
+                if (loginPageQueryParams != null) {
+                    // FIXME: impl. me!
+                }
                 return getRedirect(context, loginPage);
             }
         }
