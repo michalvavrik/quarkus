@@ -65,6 +65,9 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
     private final boolean isFormAuthEventObserver;
     private final PersistentLoginManager loginManager;
     private final Event<FormAuthenticationEvent> formAuthEvent;
+    private final Set<String> landingPageQueryParams;
+    private final Set<String> errorPageQueryParams;
+    private final Set<String> loginPageQueryParams;
 
     //the temp encryption key, persistent across dev mode restarts
     static volatile String encryptionKey;
@@ -107,6 +110,9 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         this.formAuthEvent = this.isFormAuthEventObserver
                 ? Arc.container().beanManager().getEvent().select(FormAuthenticationEvent.class)
                 : null;
+        this.landingPageQueryParams = runtimeForm.landingPageQueryParams().orElse(null);
+        this.loginPageQueryParams = runtimeForm.loginPageQueryParams().orElse(null);
+        this.errorPageQueryParams = runtimeForm.errorPageQueryParams().orElse(null);
     }
 
     /**
@@ -133,6 +139,9 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         this.loginManager = loginManager;
         this.isFormAuthEventObserver = false;
         this.formAuthEvent = null;
+        this.landingPageQueryParams = null;
+        this.loginPageQueryParams = null;
+        this.errorPageQueryParams = null;
     }
 
     public Uni<SecurityIdentity> runFormAuth(final RoutingContext exchange,
