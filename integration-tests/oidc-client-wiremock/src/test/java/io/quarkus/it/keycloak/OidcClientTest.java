@@ -34,7 +34,9 @@ import com.github.tomakehurst.wiremock.client.WireMock;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.RestAssured;
+import io.restassured.filter.log.ResponseLoggingFilter;
 import io.restassured.response.Response;
+import io.vertx.core.json.JsonObject;
 
 // use method order because we need to keep this test class extendable
 // changing the order and adding extra waiting can lead to extra token refresh
@@ -325,6 +327,28 @@ public class OidcClientTest {
                 .then()
                 .statusCode(200)
                 .body(equalTo("access_token_exchanged"));
+    }
+
+    @Order(16)
+    @Test
+    public void testOidcClientHealthCheck() {
+        RestAssured.given()
+                .log().all().filter(new ResponseLoggingFilter()) // FIXME: remove me!
+                .get("/frontend/echoTokenExchangeGrant")
+                .then()
+                .statusCode(200)
+                .body(equalTo("access_token_exchanged"));
+        Response healthReadyResponse = RestAssured.when().get("/q/health/ready");
+        JsonObject jsonHealth = new JsonObject(healthReadyResponse.asString());
+        JsonObject oidcCheck = jsonHealth.getJsonArray("checks").getJsonObject(0);
+        assertEquals("UP", oidcCheck.getString("status"));
+        assertEquals("OIDC Client Health Check", oidcCheck.getString("name"));
+
+        JsonObject data = oidcCheck.getJsonObject("data");
+        System.out.println("////// data " + data); // FIXME: remove me and add disabled status check
+        assertEquals("Unknown", data.getString("jwtbearer-grant"));
+        assertEquals("OK", data.getString("Client with enabled discovery"));
+        assertEquals("Error", data.getString("Client with error status"));
     }
 
     private void checkLog() {
