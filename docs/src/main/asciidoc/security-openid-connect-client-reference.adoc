@@ -1801,6 +1801,32 @@ String dynamicClientAdmin() throws ExecutionException, InterruptedException {
 
 endif::no-quarkus-oidc-client-graphql[]
 
+[[health-check]]
+== Health Check
+
+If you use the `quarkus-smallrye-health` extension, Quarkus can provide a health check for each OIDC client with enabled discovery of the OIDC endpoints.
+The OIDC client health check can be enabled with the `quarkus.oidc-client.health.enabled` configuration property:
+
+[source,properties]
+----
+quarkus.oidc-client.health.enabled=true
+quarkus.oidc-client.discovery-enabled=true
+----
+
+[[health-check]]
+== Health Check
+
+When using the `quarkus-smallrye-health` extension, Quarkus can expose health checks for OIDC clients.
+The health check uses OIDC endpoint discovery to validate the connection; therefore, discovery must be enabled.
+
+To activate the health check, set `quarkus.oidc-client.health.enabled` to true and ensure discovery is not disabled:
+
+[source,properties]
+----
+quarkus.oidc-client.health.enabled=true
+quarkus.oidc-client.discovery-enabled=true
+----
+
 [[configuration-reference]]
 == Configuration reference
 
