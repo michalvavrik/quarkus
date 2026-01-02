@@ -45,7 +45,7 @@ import io.quarkus.smallrye.jwt.runtime.auth.JsonWebTokenCredentialProducer;
 import io.quarkus.smallrye.jwt.runtime.auth.JwtPrincipalProducer;
 import io.quarkus.smallrye.jwt.runtime.auth.MpJwtValidator;
 import io.quarkus.smallrye.jwt.runtime.auth.RawOptionalClaimCreator;
-import io.quarkus.vertx.http.deployment.HttpAuthMechanismAnnotationBuildItem;
+import io.quarkus.vertx.http.deployment.spi.HttpAuthMechanismAnnotationBuildItem;
 import io.quarkus.vertx.http.deployment.SecurityInformationBuildItem;
 import io.smallrye.jwt.algorithm.KeyEncryptionAlgorithm;
 import io.smallrye.jwt.algorithm.SignatureAlgorithm;

@@ -38,7 +38,7 @@ import io.quarkus.security.webauthn.WebAuthnBuildTimeConfig;
 import io.quarkus.security.webauthn.WebAuthnRecorder;
 import io.quarkus.security.webauthn.WebAuthnSecurity;
 import io.quarkus.security.webauthn.WebAuthnTrustedIdentityProvider;
-import io.quarkus.vertx.http.deployment.HttpAuthMechanismAnnotationBuildItem;
+import io.quarkus.vertx.http.deployment.spi.HttpAuthMechanismAnnotationBuildItem;
 import io.quarkus.vertx.http.deployment.NonApplicationRootPathBuildItem;
 import io.quarkus.vertx.http.deployment.VertxWebRouterBuildItem;
 import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;

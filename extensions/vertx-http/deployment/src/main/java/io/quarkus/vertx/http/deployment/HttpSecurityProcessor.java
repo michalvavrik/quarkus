@@ -4,7 +4,7 @@ import static io.quarkus.arc.processor.DotNames.APPLICATION_SCOPED;
 import static io.quarkus.arc.processor.DotNames.SINGLETON;
 import static io.quarkus.security.spi.ClassSecurityAnnotationBuildItem.useClassLevelSecurity;
 import static io.quarkus.security.spi.SecurityTransformerBuildItem.createSecurityTransformer;
-import static io.quarkus.vertx.http.deployment.HttpAuthMechanismAnnotationBuildItem.isExcludedAnnotationTarget;
+import static io.quarkus.vertx.http.deployment.spi.HttpAuthMechanismAnnotationBuildItem.isExcludedAnnotationTarget;
 import static io.quarkus.vertx.http.runtime.security.HttpAuthenticator.BASIC_AUTH_ANNOTATION_DETECTED;
 import static io.quarkus.vertx.http.runtime.security.HttpAuthenticator.TEST_IF_BASIC_AUTH_IMPLICITLY_REQUIRED;
 import static java.util.stream.Collectors.toMap;
@@ -28,6 +28,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import io.quarkus.vertx.http.deployment.spi.HttpAuthMechanismAnnotationBuildItem;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Singleton;
 
@@ -382,7 +383,8 @@ public class HttpSecurityProcessor {
         Predicate<AnnotationTarget> isExcludedAnnotationTarget = isExcludedAnnotationTarget(additionalHttpAuthMechAnnotations);
         Predicate<ClassInfo> useClassLevelSecurity = useClassLevelSecurity(classSecurityAnnotations);
         DotName[] mechNames = Stream
-                .concat(Stream.of(AUTH_MECHANISM_NAME), additionalHttpAuthMechAnnotations.stream().map(s -> s.annotationName))
+                .concat(Stream.of(AUTH_MECHANISM_NAME), additionalHttpAuthMechAnnotations.stream()
+                        .map(HttpAuthMechanismAnnotationBuildItem::getAnnotationName))
                 .flatMap(mechName -> {
                     var instances = combinedIndexBuildItem.getIndex().getAnnotations(mechName);
                     if (!instances.isEmpty()) {
@@ -414,7 +416,7 @@ public class HttpSecurityProcessor {
 
             // register method interceptor that will be run before security checks
             Map<String, String> knownBindingValues = additionalHttpAuthMechAnnotations.stream()
-                    .collect(Collectors.toMap(item -> item.annotationName.toString(), item -> item.authMechanismScheme));
+                    .collect(Collectors.toMap(item -> item.getAnnotationName().toString(), HttpAuthMechanismAnnotationBuildItem::getAuthMechanismScheme));
             bindingProducer.produce(new EagerSecurityInterceptorBindingBuildItem(
                     recorder.authMechanismSelectionInterceptorCreator(), knownBindingValues, mechNames));
             recorder.selectAuthMechanismViaAnnotation();

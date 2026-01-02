@@ -118,7 +118,7 @@ import io.quarkus.tls.deployment.spi.TlsRegistryBuildItem;
 import io.quarkus.vertx.core.deployment.CoreVertxBuildItem;
 import io.quarkus.vertx.http.deployment.EagerSecurityInterceptorBindingBuildItem;
 import io.quarkus.vertx.http.deployment.FilterBuildItem;
-import io.quarkus.vertx.http.deployment.HttpAuthMechanismAnnotationBuildItem;
+import io.quarkus.vertx.http.deployment.spi.HttpAuthMechanismAnnotationBuildItem;
 import io.quarkus.vertx.http.deployment.PreRouterFinalizationBuildItem;
 import io.quarkus.vertx.http.deployment.SecurityInformationBuildItem;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
