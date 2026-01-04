@@ -46,7 +46,8 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         GET("Get"),
         REFRESH("Refresh"),
         INTROSPECT("Introspect"),
-        REVOKE("Revoke");
+        REVOKE("Revoke"),
+        PAR("Pushed Authorization Request");
 
         String op;
 
@@ -241,6 +242,20 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         return getString(requestProps, metadata.getJsonWebKeySetUri(), resp, OidcEndpoint.Type.JWKS).map(JsonWebKeySet::new);
     }
 
+    record ParSuccessfulResponse(String requestUri, long expiresIn) {
+    }
+
+    Uni<ParSuccessfulResponse> doPushedAuthorizationRequest(String codeFlowParams) {
+        // FIXME: impl. me!
+        // FIXME: validate that the PAR URI EXISTS!
+        // TODO: it could be that client_id is duplicated as it is added again downstream with creds!
+        // TODO: code flow params to form body
+        return getHttpResponse(getRequestProps(), metadata.getPushedAuthorizationRequestUri(), null,
+                TokenOperation.PAR, OidcEndpoint.Type.PUSHED_AUTHORIZATION_REQUEST)
+                // map response according to the https://datatracker.ietf.org/doc/html/rfc9126#section-2.2
+                .transformToUni(resp -> Uni.createFrom().item(new ParSuccessfulResponse(null, -1L)));
+    }
+
     Uni<AuthorizationCodeTokens> getAuthorizationCodeTokens(String code, String redirectUri, String codeVerifier) {
         final MultiMap codeGrantParams = new MultiMap(io.vertx.core.MultiMap.caseInsensitiveMultiMap());
         codeGrantParams.add(OidcConstants.GRANT_TYPE, OidcConstants.AUTHORIZATION_CODE);
@@ -378,8 +393,13 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
             }
         }
         if (LOG.isDebugEnabled()) {
-            LOG.debugf("%s token: url : %s, headers: %s, request params: %s", op.operation(), request.uri(), request.headers(),
-                    formBody);
+            if (op == TokenOperation.PAR) {
+                LOG.debugf("%s: url : %s, headers: %s, request params: %s", op.operation(), request.uri(),
+                        request.headers(), formBody);
+            } else {
+                LOG.debugf("%s token: url : %s, headers: %s, request params: %s", op.operation(), request.uri(),
+                        request.headers(), formBody);
+            }
         }
         // Retry up to three times with a one-second delay between the retries if the connection is closed.
         var preparedResponse = filterHttpRequest(requestProps, endpointType, request, buffer)
@@ -553,6 +573,10 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
 
     private OidcRequestContextProperties getRequestProps(OidcRequestContextProperties contextProperties) {
         return getRequestProps(contextProperties, null);
+    }
+
+    private OidcRequestContextProperties getRequestProps() {
+        return getRequestProps(null, null);
     }
 
     private OidcRequestContextProperties getRequestProps(OidcRequestContextProperties contextProperties, String grantType) {
