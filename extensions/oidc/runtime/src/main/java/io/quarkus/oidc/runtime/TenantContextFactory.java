@@ -534,9 +534,10 @@ final class TenantContextFactory {
         String endSessionUri = OidcCommonUtils.getOidcEndpointUrl(authServerUriString, oidcConfig.endSessionPath());
         String registrationUri = OidcCommonUtils.getOidcEndpointUrl(authServerUriString, oidcConfig.registrationPath());
         String revocationUri = OidcCommonUtils.getOidcEndpointUrl(authServerUriString, oidcConfig.revokePath());
+        String pushedAuthorizationRequestUri = oidcConfig.authentication().par().endpoint().orElse(null);
         return new OidcConfigurationMetadata(tokenUri,
                 introspectionUri, authorizationUri, jwksUri, userInfoUri, endSessionUri, registrationUri, revocationUri,
-                oidcConfig.token().issuer().orElse(null));
+                oidcConfig.token().issuer().orElse(null), pushedAuthorizationRequestUri);
     }
 
     private void fireOidcServerNotAvailableEvent(String authServerUrl, String tenantId) {
