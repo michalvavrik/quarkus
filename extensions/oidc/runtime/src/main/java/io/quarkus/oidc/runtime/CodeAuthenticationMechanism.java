@@ -752,6 +752,8 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
                         // extra redirect parameters, see https://openid.net/specs/openid-connect-core-1_0.html#AuthRequests
                         addExtraParamsToUri(codeFlowParams, configContext.oidcConfig().authentication().extraParams());
 
+                        // FIXME: here!
+
                         String authorizationURL = configContext.provider().getMetadata().getAuthorizationUri() + "?"
                                 + codeFlowParams;
 
