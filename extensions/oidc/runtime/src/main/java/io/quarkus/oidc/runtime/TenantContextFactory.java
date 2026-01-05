@@ -514,7 +514,15 @@ final class TenantContextFactory {
                             client.close();
                             return Uni.createFrom().failure(new ConfigurationException(
                                     "UserInfo is required but the OpenID Provider UserInfo endpoint is not configured."
-                                            + " Use 'quarkus.oidc.user-info-path' if the discovery is disabled."));
+                                            + " Use '%s' if the discovery is disabled."
+                                                    .formatted(getConfigPropertyForTenant(tenantId, "user-info-path"))));
+                        }
+                        if (oidcConfig.authentication().par().enabled().orElse(false)
+                                && metadata.getPushedAuthorizationRequestUri() == null) {
+                            String exceptionMessage = ("OIDC tenant '%s' has enabled the pushed authorization request, but "
+                                    + "the OpenID Provider PAR endpoint is not configured. Use '%s' if the discovery is disabled.")
+                                    .formatted(tenantId, getConfigPropertyForTenant(tenantId, "authentication.par.endpoint"));
+                            return Uni.createFrom().failure(new ConfigurationException(exceptionMessage));
                         }
                         return OidcProviderClientImpl.of(client, vertx, metadata, oidcConfig, oidcRequestFilters,
                                 oidcResponseFilters);
@@ -534,9 +542,10 @@ final class TenantContextFactory {
         String endSessionUri = OidcCommonUtils.getOidcEndpointUrl(authServerUriString, oidcConfig.endSessionPath());
         String registrationUri = OidcCommonUtils.getOidcEndpointUrl(authServerUriString, oidcConfig.registrationPath());
         String revocationUri = OidcCommonUtils.getOidcEndpointUrl(authServerUriString, oidcConfig.revokePath());
+        String pushedAuthorizationRequestUri = oidcConfig.authentication().par().endpoint().orElse(null);
         return new OidcConfigurationMetadata(tokenUri,
                 introspectionUri, authorizationUri, jwksUri, userInfoUri, endSessionUri, registrationUri, revocationUri,
-                oidcConfig.token().issuer().orElse(null));
+                oidcConfig.token().issuer().orElse(null), pushedAuthorizationRequestUri);
     }
 
     private void fireOidcServerNotAvailableEvent(String authServerUrl, String tenantId) {

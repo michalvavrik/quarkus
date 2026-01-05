@@ -64,6 +64,7 @@ public class KeycloakRealmResourceManager implements QuarkusTestResourceLifecycl
 
         realm.getClients().add(createClient("quarkus-app", defaultClientSecret));
         realm.getClients().add(createClientJwt("quarkus-app-jwt"));
+        realm.getClients().add(createClientJwtWithRequiredPar("quarkus-app-jwt-par"));
         realm.getUsers().add(createUser("alice", "user"));
         realm.getUsers().add(createUser("admin", "user", "admin"));
         realm.getUsers().add(createUser("jdoe", "user", "confidential"));
@@ -81,6 +82,13 @@ public class KeycloakRealmResourceManager implements QuarkusTestResourceLifecycl
         client.setSecret("AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow");
 
         return client;
+    }
+
+    private static ClientRepresentation createClientJwtWithRequiredPar(String clientId) {
+        var jwtClient = createClientJwt(clientId);
+        jwtClient.setAttributes(Map.of("require.pushed.authorization.requests", "true"));
+        jwtClient.setStandardFlowEnabled(true);
+        return jwtClient;
     }
 
     private static ClientRepresentation createClient(String clientId, String secret) {
