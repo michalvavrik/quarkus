@@ -22,6 +22,7 @@ public class OidcConfigurationMetadata {
     public static final String SUBJECT_TYPES_SUPPORTED = "subject_types_supported";
     public static final String ID_TOKEN_SIGNING_ALGORITHMS_SUPPORTED = "id_token_signing_alg_values_supported";
     public static final String CODE_CHALLENGE_METHODS_SUPPORTED = "code_challenge_methods_supported";
+    public static final String PUSHED_AUTHORIZATION_REQUEST_ENDPOINT = "pushed_authorization_request_endpoint";
 
     private final String discoveryUri;
     private final String tokenUri;
@@ -33,6 +34,7 @@ public class OidcConfigurationMetadata {
     private final String registrationUri;
     private final String revocationUri;
     private final String issuer;
+    private final String pushedAuthorizationRequestUri;
     private final JsonObject json;
 
     public OidcConfigurationMetadata(String tokenUri,
@@ -43,7 +45,8 @@ public class OidcConfigurationMetadata {
             String endSessionUri,
             String registrationUri,
             String revocationUri,
-            String issuer) {
+            String issuer,
+            String pushedAuthorizationRequestUri) {
         this.discoveryUri = null;
         this.tokenUri = tokenUri;
         this.introspectionUri = introspectionUri;
@@ -54,6 +57,7 @@ public class OidcConfigurationMetadata {
         this.registrationUri = registrationUri;
         this.revocationUri = revocationUri;
         this.issuer = issuer;
+        this.pushedAuthorizationRequestUri = pushedAuthorizationRequestUri;
         this.json = null;
     }
 
@@ -82,6 +86,8 @@ public class OidcConfigurationMetadata {
                 localMetadataConfig == null ? null : localMetadataConfig.revocationUri);
         this.issuer = getMetadataValue(wellKnownConfig, ISSUER,
                 localMetadataConfig == null ? null : localMetadataConfig.issuer);
+        this.pushedAuthorizationRequestUri = getMetadataValue(wellKnownConfig, PUSHED_AUTHORIZATION_REQUEST_ENDPOINT,
+                localMetadataConfig == null ? null : localMetadataConfig.pushedAuthorizationRequestUri);
         this.json = wellKnownConfig;
     }
 
@@ -147,6 +153,10 @@ public class OidcConfigurationMetadata {
 
     public String getIssuer() {
         return issuer;
+    }
+
+    public String getPushedAuthorizationRequestUri() {
+        return pushedAuthorizationRequestUri;
     }
 
     public String get(String propertyName) {
