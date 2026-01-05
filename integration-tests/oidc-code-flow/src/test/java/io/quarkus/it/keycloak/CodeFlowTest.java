@@ -1764,6 +1764,37 @@ public class CodeFlowTest {
         }
     }
 
+    @Test
+    public void testPushedAuthorizationRequestJwtSecret() throws IOException {
+        // first verify that PAR is required by this OIDC client
+        try (final WebClient webClient = createWebClient()) {
+            webClient.getOptions().setThrowExceptionOnFailingStatusCode(false);
+            var webResponse = webClient
+                    .getPage("http://localhost:8081/web-app/pushed-authorization-request/disabled-par-tenant-jwt")
+                    .getWebResponse();
+            // in logs, we could see text similar to this: Authorization code flow has failed,
+            // error code: invalid_request, error description: Pushed Authorization Request is only allowed
+            assertEquals(401, webResponse.getStatusCode());
+        }
+
+        // now verify that with enabled PAR, authorization succeeds
+        // the only difference to the previous OIDC tenant is enabled PAR
+        try (final WebClient webClient = createWebClient()) {
+            HtmlPage page = webClient.getPage("http://localhost:8081/web-app/pushed-authorization-request/tenant-jwt");
+
+            assertEquals("Sign in to quarkus", page.getTitleText());
+
+            HtmlForm loginForm = page.getForms().get(0);
+
+            loginForm.getInputByName("username").setValueAttribute("alice");
+            loginForm.getInputByName("password").setValueAttribute("alice");
+
+            page = loginForm.getButtonByName("login").click();
+            assertEquals("alice", page.getBody().asNormalizedText());
+            webClient.getCookieManager().clearCookies();
+        }
+    }
+
     private WebClient createWebClient() {
         WebClient webClient = new WebClient();
         webClient.setCssErrorHandler(new SilentCssErrorHandler());
