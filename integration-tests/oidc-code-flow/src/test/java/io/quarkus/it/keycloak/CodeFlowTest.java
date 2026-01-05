@@ -1764,6 +1764,24 @@ public class CodeFlowTest {
         }
     }
 
+    @Test
+    public void testPushedAuthorizationRequestJwtSecret() throws IOException {
+        try (final WebClient webClient = createWebClient()) {
+            HtmlPage page = webClient.getPage("http://localhost:8081/web-app/pushed-authorization-request/tenant-jwt");
+
+            assertEquals("Sign in to quarkus", page.getTitleText());
+
+            HtmlForm loginForm = page.getForms().get(0);
+
+            loginForm.getInputByName("username").setValueAttribute("alice");
+            loginForm.getInputByName("password").setValueAttribute("alice");
+
+            page = loginForm.getButtonByName("login").click();
+            assertEquals("alice", page.getBody().asNormalizedText());
+            webClient.getCookieManager().clearCookies();
+        }
+    }
+
     private WebClient createWebClient() {
         WebClient webClient = new WebClient();
         webClient.setCssErrorHandler(new SilentCssErrorHandler());
