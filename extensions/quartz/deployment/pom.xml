@@ -45,6 +45,13 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- QuartzSchedulerRunAsUserTest needs Quarkus Security dependency -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-security-deployment</artifactId>
+            <optional>true</optional>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
