@@ -6,6 +6,8 @@ import jakarta.ws.rs.Path;
 import org.eclipse.microprofile.rest.client.annotation.RegisterProvider;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
+import io.quarkus.oidc.client.filter.api.OidcClientRequestFilter;
+
 @RegisterProvider(OidcClientRequestFilter.class)
 @RegisterRestClient
 @Path("/")
