@@ -27,8 +27,10 @@ final class SecurityExceptionMapperUtil {
                         return exceptionMessage != null ? createResponse(exceptionMessage) : DEFAULT_UNAUTHORIZED_RESPONSE;
                     }
                     Response.ResponseBuilder responseBuilder = Response.status(challengeData.status);
-                    if (challengeData.headerName != null) {
-                        responseBuilder.header(challengeData.headerName.toString(), challengeData.headerContent);
+                    if (challengeData.addHeaders()) {
+                        challengeData.getHeaders()
+                                .forEach((headerName, headerContent) -> responseBuilder.header(headerName.toString(),
+                                        headerContent));
                     }
                     if (exceptionMessage != null && challengeData.status == 401) {
                         responseBuilder.entity(exceptionMessage);
