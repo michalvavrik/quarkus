@@ -42,8 +42,10 @@ public class AuthenticationFailedExceptionMapper implements ExceptionMapper<Auth
                         .await().indefinitely();
                 int statusCode = challengeData == null ? 401 : challengeData.status;
                 Response.ResponseBuilder responseBuilder = Response.status(statusCode);
-                if (challengeData != null && challengeData.headerName != null) {
-                    responseBuilder.header(challengeData.headerName.toString(), challengeData.headerContent);
+                if (challengeData != null && challengeData.addHeaders()) {
+                    challengeData.getHeaders()
+                            .forEach((headerName, headerContent) -> responseBuilder.header(headerName.toString(),
+                                    headerContent));
                 }
                 if (LaunchMode.current().isDev() && exception.getMessage() != null && statusCode == 401) {
                     responseBuilder.entity(exception.getMessage());
