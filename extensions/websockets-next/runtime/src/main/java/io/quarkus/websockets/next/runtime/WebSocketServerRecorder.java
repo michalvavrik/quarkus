@@ -1,5 +1,6 @@
 package io.quarkus.websockets.next.runtime;
 
+import static io.quarkus.security.spi.runtime.AbstractSecurityIdentityAssociation.TEST_SECURITY_DELEGATE_RUNTIME_KEY;
 import static io.quarkus.security.spi.runtime.SecurityEventHelper.AUTHORIZATION_FAILURE;
 import static io.quarkus.security.spi.runtime.SecurityEventHelper.AUTHORIZATION_SUCCESS;
 
@@ -25,6 +26,8 @@ import org.jboss.logging.Logger;
 import io.quarkus.arc.Arc;
 import io.quarkus.arc.ArcContainer;
 import io.quarkus.arc.SyntheticCreationalContext;
+import io.quarkus.arc.runtime.BeanContainer;
+import io.quarkus.registry.ValueRegistry;
 import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.annotations.Recorder;
 import io.quarkus.security.identity.CurrentIdentityAssociation;
@@ -210,6 +213,9 @@ public class WebSocketServerRecorder {
             if (ctx.user() instanceof QuarkusHttpUser user) {
                 return connection -> new SecuritySupport(user.getSecurityIdentity(), connection, ctx);
             }
+            if (ctx.get(QuarkusHttpUser.DEFERRED_IDENTITY_KEY) != null) {
+                return connection -> new SecuritySupport(null, connection, ctx);
+            }
         }
         return ignored -> SecuritySupport.NOOP;
     }
@@ -319,5 +325,14 @@ public class WebSocketServerRecorder {
                 };
             }
         };
+    }
+
+    public void setupTestSecurityDelegateIdentityAssociation(BeanContainer beanContainer) {
+        var valueRegistry = beanContainer.beanInstance(ValueRegistry.class);
+        var currentIdentityAssociation = beanContainer.beanInstance(WebSocketSecurityIdentityAssociation.class);
+        // this is done to cover situation when @TestSecurity is used, proactive authentication is disabled and
+        // users need to access SecurityIdentity within active CDI request scope (either they injected SecurityIdentity,
+        // or they have payload security checks)
+        valueRegistry.register(TEST_SECURITY_DELEGATE_RUNTIME_KEY, currentIdentityAssociation);
     }
 }

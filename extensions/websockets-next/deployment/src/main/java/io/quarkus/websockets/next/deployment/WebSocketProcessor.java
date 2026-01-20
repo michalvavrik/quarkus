@@ -57,6 +57,7 @@ import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.arc.deployment.AnnotationsTransformerBuildItem;
 import io.quarkus.arc.deployment.AutoAddScopeBuildItem;
 import io.quarkus.arc.deployment.BeanArchiveIndexBuildItem;
+import io.quarkus.arc.deployment.BeanContainerBuildItem;
 import io.quarkus.arc.deployment.BeanDefiningAnnotationBuildItem;
 import io.quarkus.arc.deployment.BeanDiscoveryFinishedBuildItem;
 import io.quarkus.arc.deployment.InvokerFactoryBuildItem;
@@ -83,6 +84,7 @@ import io.quarkus.builder.item.SimpleBuildItem;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.GeneratedClassGizmo2Adaptor;
+import io.quarkus.deployment.IsTest;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.Consume;
@@ -914,6 +916,17 @@ public class WebSocketProcessor {
             BuildProducer<AdditionalBeanBuildItem> additionalBeanProducer) {
         if (capabilities.isPresent(Capability.SECURITY)) {
             additionalBeanProducer.produce(AdditionalBeanBuildItem.unremovableOf(WebSocketSecurityIdentityAssociation.class));
+        }
+    }
+
+    @Record(RUNTIME_INIT)
+    @Consume(SyntheticBeansRuntimeInitBuildItem.class)
+    @BuildStep(onlyIf = IsTest.class)
+    void delegateToWebSocketSecurityIdentityAssociationFromTestSecurity(Capabilities capabilities,
+            BeanContainerBuildItem beanContainerBuildItem,
+            WebSocketServerRecorder webSocketServerRecorder) {
+        if (capabilities.isPresent(Capability.SECURITY)) {
+            webSocketServerRecorder.setupTestSecurityDelegateIdentityAssociation(beanContainerBuildItem.getValue());
         }
     }
 

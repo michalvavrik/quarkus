@@ -1,5 +1,7 @@
 package io.quarkus.test.security;
 
+import static io.quarkus.security.spi.runtime.AbstractSecurityIdentityAssociation.TEST_SECURITY_DELEGATE_RUNTIME_KEY;
+
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -8,6 +10,7 @@ import jakarta.enterprise.inject.Alternative;
 import jakarta.inject.Inject;
 import jakarta.interceptor.Interceptor;
 
+import io.quarkus.registry.ValueRegistry;
 import io.quarkus.runtime.LaunchMode;
 import io.quarkus.security.identity.CurrentIdentityAssociation;
 import io.quarkus.security.identity.IdentityProviderManager;
@@ -20,14 +23,6 @@ import io.smallrye.mutiny.Uni;
 @ApplicationScoped
 public class TestIdentityAssociation implements CurrentIdentityAssociation {
 
-    @PostConstruct
-    public void check() {
-        if (LaunchMode.current() != LaunchMode.TEST) {
-            //paranoid check
-            throw new RuntimeException("TestAuthController can only be used in tests");
-        }
-    }
-
     private volatile SecurityIdentity testIdentity;
 
     /**
@@ -39,8 +34,25 @@ public class TestIdentityAssociation implements CurrentIdentityAssociation {
      * A request scoped delegate that allows the system to function as normal when
      * the user has not been explicitly overridden
      */
+    private final CurrentIdentityAssociation delegate;
+
+    // used for JUnit test verifying this bean
+    TestIdentityAssociation(CurrentIdentityAssociation delegate) {
+        this.delegate = delegate;
+    }
+
     @Inject
-    DelegateSecurityIdentityAssociation delegate;
+    TestIdentityAssociation(ValueRegistry valueRegistry, DelegateSecurityIdentityAssociation defaultDelegate) {
+        this.delegate = valueRegistry.getOrDefault(TEST_SECURITY_DELEGATE_RUNTIME_KEY, defaultDelegate);
+    }
+
+    @PostConstruct
+    public void check() {
+        if (LaunchMode.current() != LaunchMode.TEST) {
+            //paranoid check
+            throw new RuntimeException("TestAuthController can only be used in tests");
+        }
+    }
 
     public SecurityIdentity getTestIdentity() {
         return testIdentity;
@@ -82,12 +94,13 @@ public class TestIdentityAssociation implements CurrentIdentityAssociation {
                 return testIdentity;
             }
         }
-        return delegate.getIdentity();
+        return underlying;
     }
 
     void setPathBasedIdentity(boolean pathBasedIdentity) {
         isPathBasedIdentity = pathBasedIdentity;
     }
+
 }
 
 @RequestScoped

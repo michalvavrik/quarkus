@@ -1,5 +1,6 @@
 package io.quarkus.security.spi.runtime;
 
+import io.quarkus.registry.ValueRegistry;
 import io.quarkus.runtime.BlockingOperationControl;
 import io.quarkus.runtime.BlockingOperationNotAllowedException;
 import io.quarkus.security.identity.CurrentIdentityAssociation;
@@ -9,6 +10,15 @@ import io.quarkus.security.identity.request.AnonymousAuthenticationRequest;
 import io.smallrye.mutiny.Uni;
 
 public abstract class AbstractSecurityIdentityAssociation implements CurrentIdentityAssociation {
+
+    /**
+     * {@link ValueRegistry} key that allows extensions to register their own request-scoped delegate
+     * to the @TestSecurity identity association.
+     * This only makes sense in very special cases, like in case of WebSockets Next, when the identity provided
+     * by authentication mechanisms is stored on the WebSocket connection.
+     */
+    public static ValueRegistry.RuntimeKey<CurrentIdentityAssociation> TEST_SECURITY_DELEGATE_RUNTIME_KEY = ValueRegistry.RuntimeKey
+            .key("io.quarkus.test.security.delegate-identity-association", CurrentIdentityAssociation.class);
 
     private volatile SecurityIdentity identity;
     private volatile Uni<SecurityIdentity> deferredIdentity;
