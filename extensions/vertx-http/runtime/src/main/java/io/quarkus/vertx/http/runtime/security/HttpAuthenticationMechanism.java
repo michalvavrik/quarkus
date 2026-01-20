@@ -67,8 +67,9 @@ public interface HttpAuthenticationMechanism {
                 return false;
             }
             context.response().setStatusCode(challengeData.status);
-            if (challengeData.headerName != null) {
-                context.response().headers().set(challengeData.headerName, challengeData.headerContent);
+            if (challengeData.addHeaders()) {
+                challengeData.getHeaders()
+                        .forEach((headerName, headerContent) -> context.response().headers().set(headerName, headerContent));
             }
             return true;
         }
