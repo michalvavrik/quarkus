@@ -82,7 +82,7 @@ public class TestIdentityAssociation implements CurrentIdentityAssociation {
                 return testIdentity;
             }
         }
-        return delegate.getIdentity();
+        return underlying;
     }
 
     void setPathBasedIdentity(boolean pathBasedIdentity) {
