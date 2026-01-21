@@ -8,6 +8,7 @@ import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import io.quarkus.security.identity.SecurityIdentity;
+import io.quarkus.security.spi.runtime.IdentityProviderBuilder;
 import io.quarkus.tls.TlsConfiguration;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.cors.CORSConfig;
@@ -143,6 +144,14 @@ public interface HttpSecurity {
      * @return HttpSecurity
      */
     HttpSecurity basic(String authenticationRealm);
+
+    /**
+     * Registers the Basic authentication mechanism in addition to all other global authentication mechanisms.
+     *
+     * @param identityProviderBuilder such as the Quarkus Security JPA {@link IdentityProviderBuilder}.
+     * @return HttpSecurity
+     */
+    HttpSecurity basic(IdentityProviderBuilder identityProviderBuilder);
 
     /**
      * Registers the mutual TLS client authentication mechanism in addition to all other global authentication mechanisms.
