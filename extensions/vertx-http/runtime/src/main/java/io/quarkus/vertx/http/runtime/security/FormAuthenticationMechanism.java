@@ -2,6 +2,7 @@ package io.quarkus.vertx.http.runtime.security;
 
 import static io.quarkus.security.spi.runtime.SecurityEventHelper.fire;
 import static io.quarkus.vertx.http.runtime.security.FormAuthenticationEvent.createLoginEvent;
+import static io.quarkus.vertx.http.runtime.security.HttpSecurityImpl.createMechanism;
 import static io.quarkus.vertx.http.runtime.security.RoutingContextAwareSecurityIdentity.addRoutingCtxToIdentityIfMissing;
 
 import java.net.URI;
@@ -34,6 +35,7 @@ import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.identity.request.AuthenticationRequest;
 import io.quarkus.security.identity.request.TrustedAuthenticationRequest;
 import io.quarkus.security.identity.request.UsernamePasswordAuthenticationRequest;
+import io.quarkus.security.spi.runtime.IdentityProviderBuilder;
 import io.quarkus.security.spi.runtime.SecurityEventHelper;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
 import io.smallrye.mutiny.Uni;
@@ -402,6 +404,13 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         cookie.setMaxAge(0);
         cookie.setPath(cookiePath);
         routingContext.response().addCookie(cookie);
+    }
+
+    public static HttpAuthenticationMechanism of(FormAuthConfig runtimeForm, Optional<String> encKey,
+            IdentityProviderBuilder identityProviderBuilder) {
+        Objects.requireNonNull(identityProviderBuilder);
+        var formBasedMechanism = new FormAuthenticationMechanism(runtimeForm, encKey);
+        return createMechanism(formBasedMechanism, identityProviderBuilder);
     }
 
     private static String startWithSlash(String page) {
