@@ -7,6 +7,8 @@ import java.util.Set;
 
 import org.eclipse.microprofile.config.ConfigProvider;
 
+import io.quarkus.security.identity.IdentityProvider;
+import io.quarkus.security.spi.runtime.IdentityProviderBuilder;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.security.FormAuthenticationMechanism;
@@ -61,6 +63,7 @@ public interface Form {
         private Optional<Set<String>> landingPageQueryParams;
         private Optional<Set<String>> errorPageQueryParams;
         private Optional<Set<String>> loginPageQueryParams;
+        private IdentityProviderBuilder identityProviderBuilder;
 
         public Builder() {
             this(ConfigProvider.getConfig().unwrap(SmallRyeConfig.class).getConfigMapping(VertxHttpConfig.class));
@@ -87,6 +90,7 @@ public interface Form {
             this.landingPageQueryParams = formAuthConfig.landingPageQueryParams();
             this.errorPageQueryParams = formAuthConfig.errorPageQueryParams();
             this.loginPageQueryParams = formAuthConfig.loginPageQueryParams();
+            this.identityProviderBuilder = null;
         }
 
         /**
@@ -341,8 +345,23 @@ public interface Form {
             return this;
         }
 
+        /**
+         * Register {@link IdentityProvider}s as the Quarkus Security JPA {@link IdentityProvider}s programmatically.
+         * If not configured, the {@link IdentityProvider}s globally registered as CDI beans are used instead.
+         *
+         * @param identityProviderBuilder such as the Quarkus Security JPA {@link IdentityProviderBuilder}.
+         * @return Builder
+         */
+        public Builder identityProviders(IdentityProviderBuilder identityProviderBuilder) {
+            this.identityProviderBuilder = identityProviderBuilder;
+            return this;
+        }
+
         public HttpAuthenticationMechanism build() {
-            return new FormAuthenticationMechanism(createFormConfig(), encryptionKey);
+            if (identityProviderBuilder == null) {
+                return new FormAuthenticationMechanism(createFormConfig(), encryptionKey);
+            }
+            return FormAuthenticationMechanism.of(createFormConfig(), encryptionKey, identityProviderBuilder);
         }
 
         private FormAuthConfig createFormConfig() {
