@@ -7,6 +7,9 @@ import java.util.Set;
 
 import org.eclipse.microprofile.config.ConfigProvider;
 
+import io.quarkus.security.identity.IdentityProvider;
+import io.quarkus.security.identity.request.TrustedAuthenticationRequest;
+import io.quarkus.security.identity.request.UsernamePasswordAuthenticationRequest;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.security.FormAuthenticationMechanism;
@@ -61,6 +64,9 @@ public interface Form {
         private Optional<Set<String>> landingPageQueryParams;
         private Optional<Set<String>> errorPageQueryParams;
         private Optional<Set<String>> loginPageQueryParams;
+        private int priority;
+        private IdentityProvider<TrustedAuthenticationRequest> trustedIdentityProvider;
+        private IdentityProvider<UsernamePasswordAuthenticationRequest> usernamePasswordIdentityProvider;
 
         public Builder() {
             this(ConfigProvider.getConfig().unwrap(SmallRyeConfig.class).getConfigMapping(VertxHttpConfig.class));
@@ -87,6 +93,9 @@ public interface Form {
             this.landingPageQueryParams = formAuthConfig.landingPageQueryParams();
             this.errorPageQueryParams = formAuthConfig.errorPageQueryParams();
             this.loginPageQueryParams = formAuthConfig.loginPageQueryParams();
+            this.priority = formAuthConfig.priority();
+            this.usernamePasswordIdentityProvider = null;
+            this.trustedIdentityProvider = null;
         }
 
         /**
@@ -341,8 +350,40 @@ public interface Form {
             return this;
         }
 
+        /**
+         * Register {@link IdentityProvider}s as the Quarkus Security JPA {@link IdentityProvider}s programmatically.
+         * If not configured, the {@link IdentityProvider}s globally registered as CDI beans are used instead.
+         *
+         * @param trustedIdentityProvider {@link IdentityProvider} for {@link UsernamePasswordAuthenticationRequest}
+         * @param usernamePasswordIdentityProvider {@link IdentityProvider} for {@link TrustedAuthenticationRequest}
+         * @return
+         */
+        public Builder identityProviders(
+                IdentityProvider<UsernamePasswordAuthenticationRequest> usernamePasswordIdentityProvider,
+                IdentityProvider<TrustedAuthenticationRequest> trustedIdentityProvider) {
+            this.trustedIdentityProvider = Objects.requireNonNull(trustedIdentityProvider);
+            this.usernamePasswordIdentityProvider = Objects.requireNonNull(usernamePasswordIdentityProvider);
+            return this;
+        }
+
+        /**
+         * Form-based authentication mechanism priority.
+         *
+         * @param priority {@link HttpAuthenticationMechanism#getPriority()}
+         * @return Builder
+         * @see FormAuthConfig#priority()
+         */
+        public Builder priority(int priority) {
+            this.priority = priority;
+            return this;
+        }
+
         public HttpAuthenticationMechanism build() {
-            return new FormAuthenticationMechanism(createFormConfig(), encryptionKey);
+            if (trustedIdentityProvider == null) {
+                return new FormAuthenticationMechanism(createFormConfig(), encryptionKey);
+            }
+            return FormAuthenticationMechanism.of(createFormConfig(), encryptionKey, trustedIdentityProvider,
+                    usernamePasswordIdentityProvider);
         }
 
         private FormAuthConfig createFormConfig() {
@@ -352,12 +393,12 @@ public interface Form {
                     Optional<String> cookiePath, Optional<String> cookieDomain, boolean httpOnlyCookie,
                     CookieSameSite cookieSameSite, Optional<Duration> cookieMaxAge, String postLocation,
                     Optional<Set<String>> landingPageQueryParams, Optional<Set<String>> errorPageQueryParams,
-                    Optional<Set<String>> loginPageQueryParams) implements FormAuthConfig {
+                    Optional<Set<String>> loginPageQueryParams, int priority) implements FormAuthConfig {
             }
             return new FormConfigImpl(loginPage, usernameParameter, passwordParameter, errorPage,
                     landingPage, locationCookie, timeout, newCookieInterval, cookieName, cookiePath,
                     cookieDomain, httpOnlyCookie, cookieSameSite, cookieMaxAge, postLocation, landingPageQueryParams,
-                    errorPageQueryParams, loginPageQueryParams);
+                    errorPageQueryParams, loginPageQueryParams, priority);
         }
     }
 }
