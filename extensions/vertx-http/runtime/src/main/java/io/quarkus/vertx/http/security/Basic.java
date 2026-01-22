@@ -31,4 +31,14 @@ public interface Basic {
         return new BasicAuthenticationMechanism(authenticationRealm, true);
     }
 
+    /**
+     * Creates a new basic authentication mechanism with given {@link HttpAuthenticationMechanism#getPriority()}.
+     *
+     * @return HttpAuthenticationMechanism
+     * @see AuthRuntimeConfig#basicPriority()
+     */
+    static HttpAuthenticationMechanism priority(int priority) {
+        return new BasicAuthenticationMechanism(null, true, priority);
+    }
+
 }
