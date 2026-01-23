@@ -787,6 +787,46 @@ For example, you can combine the built-in Basic and the Quarkus `quarkus-oidc` B
 
 The authentication process completes as soon as the first `SecurityIdentity` is produced by one of the authentication mechanisms.
 
+=== Configuring authentication mechanism priority
+
+Quarkus Security uses a priority system to determine which mechanism gets the first chance to produce that `SecurityIdentity`.
+This priority affects the order of:
+
+* **Credential Verification:** Mechanisms with higher priority are checked first. The first one to validate credentials wins, stopping the process (unless inclusive authentication is enabled).
+* **Authentication Challenge:** If the request is unauthenticated, mechanisms are asked to issue a challenge in priority order.
+
+The default priorities can be overridden using the configuration properties listed below.
+
+.Supported authentication mechanism priority
+|===
+^|Authentication mechanism^| Configuration property^| Default priority
+
+s|Basic authentication mechanism
+^|`quarkus.http.auth.basic.priority`
+^|2000
+
+s|Form-based authentication mechanism
+^|`quarkus.http.auth.form.priority`
+^|1000
+
+s|Mutual TLS authentication mechanism
+^|`quarkus.http.auth.mtls.priority`
+^|3000 (if inclusive authentication is enabled), otherwise 1000
+
+ifndef::no-webauthn-authentication[]
+s|WebAuthn authentication mechanism
+^|`quarkus.webauthn.priority`
+^|1000
+endif::no-webauthn-authentication[]
+
+s|OIDC authentication mechanism
+^|`quarkus.oidc.priority`
+^|1001
+
+s|SmallRye JWT authentication mechanism
+^|`quarkus.smallrye-jwt.priority`
+^|1000
+
 [[inclusive-authentication]]
 === Inclusive Authentication
 
