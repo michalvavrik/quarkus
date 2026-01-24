@@ -453,7 +453,8 @@ final class HttpSecurityImpl implements HttpSecurity {
             if (mechanism == null || mechanism.isBlank()) {
                 throw new IllegalArgumentException("Authentication mechanism must not be null or blank");
             }
-            this.authMechanism = new HttpSecurityConfiguration.AuthenticationMechanism(mechanism, null);
+            boolean inclusiveAuthentication = false; // FIXME: this must come form mapping
+            this.authMechanism = new HttpSecurityConfiguration.AuthenticationMechanism(mechanism, inclusiveAuthentication);
             return this;
         }
 
