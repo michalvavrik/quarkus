@@ -2,7 +2,10 @@ package io.quarkus.vertx.http.runtime;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
+import io.quarkus.runtime.configuration.TrimmedStringConverter;
+import io.smallrye.config.WithConverter;
 import io.smallrye.config.WithDefault;
 
 public interface PolicyMappingConfig {
@@ -52,7 +55,7 @@ public interface PolicyMappingConfig {
      * It needs to match {@link io.quarkus.vertx.http.runtime.security.HttpCredentialTransport} authentication scheme
      * such as 'basic', 'bearer', 'form', etc.
      */
-    Optional<String> authMechanism();
+    Optional<Set<@WithConverter(TrimmedStringConverter.class) String>> authMechanism();
 
     /**
      * Indicates that this policy always applies to the matched paths in addition to the policy with a winning path.
