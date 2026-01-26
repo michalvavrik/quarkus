@@ -5,7 +5,6 @@ import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.random.RandomGenerator;
 
 import jakarta.annotation.Priority;
 import jakarta.inject.Singleton;
@@ -116,9 +115,9 @@ public final class AccessTokenRequestFilterGenerator {
         String uniqueClassName = "%s_%sClient_%sTokenExchange".formatted(requestFilterClass.getName(),
                 clientName(i.clientName()), exchangeTokenName(i.exchangeTokenActivated()));
         if (i.methodDescription != null) {
-            // we need the random so that we avoid conflicts between methods with the same name and different parameters
+            // the hash code should prevent collisions between overridden methods and classes with the same simple name
             uniqueClassName += "_" + instance.getTargetMethodInfo().declaringClass().simpleName() + "_"
-                    + i.methodDescription.getMethodName() + "_" + RandomGenerator.getDefault().nextInt();
+                    + i.methodDescription.getMethodName() + "_" + i.methodDescription.hashCode();
         }
         return uniqueClassName;
     }
