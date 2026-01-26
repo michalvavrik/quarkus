@@ -75,7 +75,8 @@ public final class HttpSecurityConfiguration {
     record Policy(String name, HttpSecurityPolicy instance) {
     }
 
-    record AuthenticationMechanism(String name, HttpAuthenticationMechanism instance) {
+    record AuthenticationMechanisms(Set<String> names, boolean inclusiveAuthentication) {
+
     }
 
     interface HttpPermissionCarrier {
@@ -88,7 +89,7 @@ public final class HttpSecurityConfiguration {
 
         Set<String> getMethods();
 
-        AuthenticationMechanism getAuthMechanism();
+        AuthenticationMechanisms getAuthMechanisms();
 
         Policy getPolicy();
 
@@ -304,11 +305,11 @@ public final class HttpSecurityConfiguration {
             }
 
             @Override
-            public AuthenticationMechanism getAuthMechanism() {
+            public AuthenticationMechanisms getAuthMechanisms() {
                 if (mapping.authMechanism().isPresent()) {
-                    String authMech = mapping.authMechanism().get();
-                    if (!authMech.isEmpty()) {
-                        return new AuthenticationMechanism(authMech, null);
+                    var mechanisms = mapping.authMechanism().get();
+                    if (!mechanisms.isEmpty()) {
+                        return new AuthenticationMechanisms(mechanisms, mapping.inclusive());
                     }
                 }
                 return null;
@@ -399,8 +400,8 @@ public final class HttpSecurityConfiguration {
             return false;
         }
         for (var permission : httpPermissions) {
-            if (permission.getAuthMechanism() != null
-                    && BasicAuthentication.AUTH_MECHANISM_SCHEME.equals(permission.getAuthMechanism().name())) {
+            if (permission.getAuthMechanisms() != null
+                    && permission.getAuthMechanisms().names().contains(BasicAuthentication.AUTH_MECHANISM_SCHEME)) {
                 return false;
             }
         }
