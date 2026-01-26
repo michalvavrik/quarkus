@@ -11,6 +11,8 @@ import static java.lang.Boolean.TRUE;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -39,7 +41,6 @@ import io.quarkus.security.spi.runtime.SecurityEventHelper;
 import io.quarkus.vertx.http.runtime.AuthRuntimeConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.security.HttpSecurityConfiguration.AuthenticationMechanism;
-import io.quarkus.vertx.http.runtime.security.annotation.BasicAuthentication;
 import io.smallrye.mutiny.Uni;
 import io.vertx.ext.web.RoutingContext;
 
@@ -79,7 +80,7 @@ public final class HttpAuthenticator {
     private final IdentityProviderManager identityProviderManager;
     private final HttpAuthenticationMechanism[] mechanisms;
     private final SecurityEventHelper<AuthenticationSuccessEvent, AuthenticationFailureEvent> securityEventHelper;
-    private final boolean inclusiveAuth;
+    private final boolean globalInclusiveAuth;
     private final boolean strictInclusiveMode;
 
     HttpAuthenticator(IdentityProviderManager identityProviderManager, Event<AuthenticationFailureEvent> authFailureEvent,
@@ -89,9 +90,9 @@ public final class HttpAuthenticator {
         this.securityEventHelper = new SecurityEventHelper<>(authSuccessEvent, authFailureEvent, AUTHENTICATION_SUCCESS,
                 AUTHENTICATION_FAILURE, beanManager, securityEventsEnabled);
         this.identityProviderManager = identityProviderManager;
-        this.inclusiveAuth = httpConfig.auth().inclusive();
+        this.globalInclusiveAuth = httpConfig.auth().inclusive();
         this.strictInclusiveMode = httpConfig.auth().inclusiveMode() == AuthRuntimeConfig.InclusiveMode.STRICT;
-        this.mechanisms = HttpSecurityConfiguration.get().getMechanisms(providers, inclusiveAuth);
+        this.mechanisms = HttpSecurityConfiguration.get().getMechanisms(providers, globalInclusiveAuth);
     }
 
     public IdentityProviderManager getIdentityProviderManager() {
@@ -118,7 +119,7 @@ public final class HttpAuthenticator {
         // determine whether user selected path specific mechanism via HTTP Security policy or annotation
         final AuthenticationMechanism pathSpecificMechanism;
         if (selectAuthMechanismWithAnnotation && isAuthMechanismSelected(routingContext)) {
-            pathSpecificMechanism = getAuthMechanism(routingContext);
+            pathSpecificMechanism = getSelectedAuthMechanism(routingContext);
         } else {
             AbstractPathMatchingHttpSecurityPolicy pathMatchingPolicy = routingContext
                     .get(AbstractPathMatchingHttpSecurityPolicy.class.getName());
@@ -128,37 +129,18 @@ public final class HttpAuthenticator {
         // authenticate
         Uni<SecurityIdentity> result;
         if (pathSpecificMechanism == null) {
-            result = createSecurityIdentity(routingContext, 0);
+            result = createAndValidateSecurityIdentity(routingContext, mechanisms, identityProviderManager, globalInclusiveAuth,
+                    strictInclusiveMode, mechanisms.length);
         } else {
-            result = findBestCandidateMechanism(routingContext, pathSpecificMechanism).onItem().ifNotNull()
-                    .transformToUni(new Function<HttpAuthenticationMechanism, Uni<? extends SecurityIdentity>>() {
+            boolean inclusiveAuth = globalInclusiveAuth || pathSpecificMechanism.inclusiveAuthentication();
+            result = findBestCandidateMechanisms(routingContext, 0, inclusiveAuth, pathSpecificMechanism.names(),
+                    new LinkedList<>())
+                    .onItem().ifNotNull()
+                    .transformToUni(new Function<HttpAuthenticationMechanism[], Uni<? extends SecurityIdentity>>() {
                         @Override
-                        public Uni<SecurityIdentity> apply(HttpAuthenticationMechanism mech) {
-                            return mech.authenticate(routingContext, identityProviderManager);
-                        }
-                    });
-        }
-
-        if (inclusiveAuth && strictInclusiveMode && pathSpecificMechanism == null) {
-            // inclusive authentication in the strict mode requires that all registered mechanisms created identity
-            // if at least one of them created it (AKA: if identity is not null, null results in anonymous identity)
-            // inclusive authentication is not applied when path-specific mechanism has been selected (because there
-            // user said use 'xyz' mechanism, not all the mechanisms)
-            result = result.onItem().ifNotNull()
-                    .transformToUni(new Function<SecurityIdentity, Uni<? extends SecurityIdentity>>() {
-                        @Override
-                        public Uni<? extends SecurityIdentity> apply(SecurityIdentity identity) {
-                            Map<String, SecurityIdentity> identities = HttpSecurityUtils.getSecurityIdentities(routingContext);
-                            if (identities == null || identities.size() != mechanisms.length) {
-                                return Uni.createFrom().failure(new AuthenticationFailedException(
-                                        """
-                                                There is '%d' HTTP authentication mechanisms, however only '%d' authentication mechanisms
-                                                created identity: %s
-                                                """
-                                                .formatted(identities == null ? 0 : identities.size(), mechanisms.length,
-                                                        identities == null ? "" : identities.keySet())));
-                            }
-                            return Uni.createFrom().item(identity);
+                        public Uni<SecurityIdentity> apply(HttpAuthenticationMechanism[] candidates) {
+                            return createAndValidateSecurityIdentity(routingContext, candidates, identityProviderManager,
+                                    inclusiveAuth, strictInclusiveMode, pathSpecificMechanism.names().size());
                         }
                     });
         }
@@ -190,7 +172,37 @@ public final class HttpAuthenticator {
         return result;
     }
 
-    private Uni<SecurityIdentity> createSecurityIdentity(RoutingContext routingContext, int i) {
+    private static Uni<SecurityIdentity> createAndValidateSecurityIdentity(RoutingContext routingContext,
+            HttpAuthenticationMechanism[] mechanisms, IdentityProviderManager identityProviderManager, boolean inclusiveAuth,
+            boolean strictInclusiveMode, int expectedIdentitiesCount) {
+        if (inclusiveAuth && strictInclusiveMode) {
+            // inclusive authentication in the strict mode requires that all selected mechanisms created identity
+            // if at least one of them created it (AKA: if identity is not null, null results in anonymous identity)
+            return createSecurityIdentity(routingContext, 0, mechanisms, identityProviderManager, true)
+                    .onItem().ifNotNull()
+                    .transformToUni(new Function<SecurityIdentity, Uni<? extends SecurityIdentity>>() {
+                        @Override
+                        public Uni<? extends SecurityIdentity> apply(SecurityIdentity identity) {
+                            Map<String, SecurityIdentity> identities = HttpSecurityUtils.getSecurityIdentities(routingContext);
+                            if (identities == null || identities.size() != expectedIdentitiesCount) {
+                                return Uni.createFrom().failure(new AuthenticationFailedException(
+                                        """
+                                                There is '%d' selected HTTP authentication mechanisms, however only '%d'
+                                                authentication mechanisms created identity: %s
+                                                """
+                                                .formatted(identities == null ? 0 : identities.size(), expectedIdentitiesCount,
+                                                        identities == null ? "" : identities.keySet())));
+                            }
+                            return Uni.createFrom().item(identity);
+                        }
+                    });
+        } else {
+            return createSecurityIdentity(routingContext, 0, mechanisms, identityProviderManager, inclusiveAuth);
+        }
+    }
+
+    private static Uni<SecurityIdentity> createSecurityIdentity(RoutingContext routingContext, int i,
+            HttpAuthenticationMechanism[] mechanisms, IdentityProviderManager identityProviderManager, boolean inclusiveAuth) {
         if (i == mechanisms.length) {
             return Uni.createFrom().nullItem();
         }
@@ -200,14 +212,18 @@ public final class HttpAuthenticator {
                     public Uni<SecurityIdentity> apply(SecurityIdentity identity) {
                         if (identity != null) {
                             if (inclusiveAuth) {
-                                return authenticateWithAllMechanisms(identity, i, routingContext);
+                                // FIXME: for 'selectAuthMechanismWithAnnotation' do we need to remember auth mech scheme? yep
+                                return authenticateWithAllMechanisms(identity, i, routingContext, mechanisms,
+                                        identityProviderManager);
                             }
                             if (selectAuthMechanismWithAnnotation && !isAuthMechanismSelected(routingContext)) {
-                                return rememberAuthMechScheme(mechanisms[i], routingContext).replaceWith(identity);
+                                return rememberSelectedAuthMechScheme(mechanisms[i], routingContext, inclusiveAuth)
+                                        .replaceWith(identity);
                             }
                             return Uni.createFrom().item(identity);
                         }
-                        return createSecurityIdentity(routingContext, i + 1);
+                        return createSecurityIdentity(routingContext, i + 1, mechanisms, identityProviderManager,
+                                inclusiveAuth);
                     }
                 });
     }
@@ -226,7 +242,8 @@ public final class HttpAuthenticator {
 
         // we only require auth mechanism to put itself into routing context when there is more than one mechanism registered
         if (mechanisms.length > 1) {
-            HttpAuthenticationMechanism matchingMech = routingContext.get(HttpAuthenticationMechanism.class.getName());
+            // FIXME: this logic must change!!! for there will be more than one mechanism!!!!!
+            HttpAuthenticationMechanism matchingMech = getMechanismWhichProvidedIdentity(routingContext);
             if (matchingMech != null) {
                 result = matchingMech.sendChallenge(routingContext);
             }
@@ -239,8 +256,8 @@ public final class HttpAuthenticator {
                 result = result.onItem().transformToUni(new Function<Boolean, Uni<? extends Boolean>>() {
                     @Override
                     public Uni<? extends Boolean> apply(Boolean authDone) {
-                        if (authDone) {
-                            return Uni.createFrom().item(authDone);
+                        if (Boolean.TRUE.equals(authDone)) {
+                            return Uni.createFrom().item(true);
                         }
                         return mech.sendChallenge(routingContext);
                     }
@@ -267,8 +284,9 @@ public final class HttpAuthenticator {
 
     public Uni<ChallengeData> getChallenge(RoutingContext routingContext) {
         // we only require auth mechanism to put itself into routing context when there is more than one mechanism registered
+        // FIXME: this must change as it will be more than one mechanism!!!!!!!!!!
         if (mechanisms.length > 1) {
-            HttpAuthenticationMechanism matchingMech = routingContext.get(HttpAuthenticationMechanism.class.getName());
+            HttpAuthenticationMechanism matchingMech = getMechanismWhichProvidedIdentity(routingContext);
             if (matchingMech != null) {
                 return matchingMech.getChallenge(routingContext);
             }
@@ -290,8 +308,9 @@ public final class HttpAuthenticator {
         return result;
     }
 
-    private Uni<SecurityIdentity> authenticateWithAllMechanisms(SecurityIdentity identity, int i,
-            RoutingContext routingContext) {
+    private static Uni<SecurityIdentity> authenticateWithAllMechanisms(SecurityIdentity identity, int i,
+            RoutingContext routingContext, HttpAuthenticationMechanism[] mechanisms,
+            IdentityProviderManager identityProviderManager) {
         return mechanisms[i].getCredentialTransport(routingContext)
                 .onItem().transformToUni(new Function<HttpCredentialTransport, Uni<? extends SecurityIdentity>>() {
                     @Override
@@ -316,53 +335,57 @@ public final class HttpAuthenticator {
 
                         // authenticate with remaining mechanisms
                         if (isFirstIdentity) {
-                            return createSecurityIdentity(routingContext, i + 1)
+                            return createSecurityIdentity(routingContext, i + 1, mechanisms, identityProviderManager, true)
                                     .replaceWith(addRoutingCtxToIdentityIfMissing(identity, routingContext));
                         } else {
-                            return createSecurityIdentity(routingContext, i + 1);
+                            return createSecurityIdentity(routingContext, i + 1, mechanisms, identityProviderManager, true);
                         }
                     }
                 });
     }
 
-    private Uni<HttpAuthenticationMechanism> findBestCandidateMechanism(RoutingContext routingContext,
-            AuthenticationMechanism pathSpecificMechanism) {
-        if (pathSpecificMechanism.instance() != null) {
-            rememberAuthMechanism(routingContext, pathSpecificMechanism);
-            return Uni.createFrom().item(pathSpecificMechanism.instance());
-        }
-        return findBestCandidateMechanism(routingContext, pathSpecificMechanism.name(), 0);
-    }
-
-    private Uni<HttpAuthenticationMechanism> findBestCandidateMechanism(RoutingContext routingContext,
-            String pathSpecificMechanism, int i) {
+    private Uni<HttpAuthenticationMechanism[]> findBestCandidateMechanisms(RoutingContext routingContext, int i,
+            boolean inclusiveAuth, Set<String> mechanismsToFind, List<HttpAuthenticationMechanism> foundSelectedMechanisms) {
         if (i == mechanisms.length) {
-            return Uni.createFrom().nullItem();
+            if (foundSelectedMechanisms.isEmpty()) {
+                return Uni.createFrom().nullItem();
+            }
+            return Uni.createFrom().item(foundSelectedMechanisms.toArray(HttpAuthenticationMechanism[]::new));
         }
-        return getPathSpecificMechanism(i, routingContext, pathSpecificMechanism).onItem().transformToUni(
-                new Function<HttpAuthenticationMechanism, Uni<? extends HttpAuthenticationMechanism>>() {
+        return getPathSpecificMechanism(i, routingContext, mechanismsToFind, inclusiveAuth).flatMap(
+                new Function<HttpAuthenticationMechanism, Uni<? extends HttpAuthenticationMechanism[]>>() {
                     @Override
-                    public Uni<? extends HttpAuthenticationMechanism> apply(HttpAuthenticationMechanism mech) {
+                    public Uni<? extends HttpAuthenticationMechanism[]> apply(HttpAuthenticationMechanism mech) {
                         if (mech != null) {
-                            if (selectAuthMechanismWithAnnotation && !isAuthMechanismSelected(routingContext)) {
-                                return rememberAuthMechScheme(mech, routingContext).replaceWith(mech);
+                            foundSelectedMechanisms.add(mech);
+                            if (mechanismsToFind.isEmpty()) {
+                                return Uni.createFrom()
+                                        .item(foundSelectedMechanisms.toArray(HttpAuthenticationMechanism[]::new));
                             }
-                            return Uni.createFrom().item(mech);
                         }
-                        return findBestCandidateMechanism(routingContext, pathSpecificMechanism, i + 1);
+                        return findBestCandidateMechanisms(routingContext, i + 1, inclusiveAuth, mechanismsToFind,
+                                foundSelectedMechanisms);
                     }
                 });
     }
 
     private Uni<HttpAuthenticationMechanism> getPathSpecificMechanism(int index, RoutingContext routingContext,
-            String pathSpecificMechanism) {
+            Set<String> mechanismsToFind, boolean inclusiveAuth) {
         return mechanisms[index].getCredentialTransport(routingContext).onItem()
                 .transform(new Function<HttpCredentialTransport, HttpAuthenticationMechanism>() {
                     @Override
                     public HttpAuthenticationMechanism apply(HttpCredentialTransport t) {
-                        if (t != null && t.getAuthenticationScheme().equalsIgnoreCase(pathSpecificMechanism)) {
+                        if (t != null && mechanismsToFind.contains(t.getAuthenticationScheme())) {
+                            // FIXME: multiple things needs to be solved here:
+                            //  - remember me
+                            //  - putting the mechanism there, do we combine them????
+                            // FIXME: this cannot be just mechanisms[index] as it will be multiple mechanisms
+
+                            // FIXME: don't do this! rely on remembering instead
                             routingContext.put(HttpAuthenticationMechanism.class.getName(), mechanisms[index]);
-                            rememberAuthMechanism(routingContext, t.getAuthenticationScheme());
+
+                            rememberSelectedAuthMechanism(routingContext, t.getAuthenticationScheme(), inclusiveAuth);
+                            mechanismsToFind.remove(t.getAuthenticationScheme());
                             return mechanisms[index];
                         }
                         return null;
@@ -374,16 +397,12 @@ public final class HttpAuthenticator {
         selectAuthMechanismWithAnnotation = true;
     }
 
-    static void selectAuthMechanism(RoutingContext routingContext, String authMechanism) {
+    static void selectAuthMechanism(RoutingContext routingContext, String authMechanism, boolean pathSpecificInclusiveAuth) {
         if (requestAlreadyAuthenticated(routingContext, authMechanism)) {
-            AuthenticationMechanism authenticationMechanism = getAuthMechanism(routingContext);
+            AuthenticationMechanism authenticationMechanism = getSelectedAuthMechanism(routingContext);
             final String previousMechanism;
             if (authenticationMechanism != null) {
-                if (authenticationMechanism.name() != null) {
-                    previousMechanism = authenticationMechanism.name();
-                } else {
-                    previousMechanism = ClientProxy.unwrap(authenticationMechanism.instance()).getClass().getName();
-                }
+                previousMechanism = authenticationMechanism.name();
             } else {
                 previousMechanism = null;
             }
@@ -397,7 +416,7 @@ public final class HttpAuthenticator {
                     selected with the annotation.
                     """.formatted(authMechanism, previousMechanism));
         }
-        rememberAuthMechanism(routingContext, authMechanism);
+        rememberSelectedAuthMechanism(routingContext, authMechanism, pathSpecificInclusiveAuth);
     }
 
     private static void rememberAuthAttempted(RoutingContext routingContext) {
@@ -405,7 +424,7 @@ public final class HttpAuthenticator {
     }
 
     private static boolean isAuthMechanismSelected(RoutingContext routingContext) {
-        return getAuthMechanism(routingContext) != null;
+        return getSelectedAuthMechanism(routingContext) != null;
     }
 
     private static boolean requestAlreadyAuthenticated(RoutingContext event, String newAuthMechanism) {
@@ -413,7 +432,7 @@ public final class HttpAuthenticator {
     }
 
     private static boolean authenticatedWithDifferentAuthMechanism(String newAuthMechanism, RoutingContext event) {
-        return !newAuthMechanism.equalsIgnoreCase(getAuthMechanismScheme(event));
+        return !newAuthMechanism.equalsIgnoreCase(getSelectedAuthMechanismScheme(event));
     }
 
     /**
@@ -421,40 +440,40 @@ public final class HttpAuthenticator {
      * in case that someone tries to change the mechanism after the authentication. This way, we can be permissive
      * when the selected mechanism is same as the one already used.
      */
-    private static Uni<HttpCredentialTransport> rememberAuthMechScheme(HttpAuthenticationMechanism mech, RoutingContext event) {
+    private static Uni<HttpCredentialTransport> rememberSelectedAuthMechScheme(HttpAuthenticationMechanism mech,
+            RoutingContext event, boolean inclusiveAuth) {
         return mech.getCredentialTransport(event)
                 .onItem().ifNotNull().invoke(new Consumer<HttpCredentialTransport>() {
                     @Override
                     public void accept(HttpCredentialTransport t) {
                         if (t.getAuthenticationScheme() != null) {
-                            rememberAuthMechanism(event, t.getAuthenticationScheme());
+                            rememberSelectedAuthMechanism(event, t.getAuthenticationScheme(), inclusiveAuth);
                         }
                     }
                 });
     }
 
-    private static void rememberAuthMechanism(RoutingContext event, AuthenticationMechanism newAuthMechanism) {
-        event.put(AUTH_MECHANISM, newAuthMechanism);
-        event.put(HttpAuthenticationMechanism.class.getName(), newAuthMechanism.instance());
+    private static void rememberSelectedAuthMechanism(RoutingContext event, String newAuthMechanism, boolean inclusiveAuth) {
+        event.put(AUTH_MECHANISM, new AuthenticationMechanism(newAuthMechanism, inclusiveAuth));
     }
 
-    private static void rememberAuthMechanism(RoutingContext event, String newAuthMechanism) {
-        event.put(AUTH_MECHANISM, new AuthenticationMechanism(newAuthMechanism, null));
-    }
-
-    private static AuthenticationMechanism getAuthMechanism(RoutingContext event) {
+    private static AuthenticationMechanism getSelectedAuthMechanism(RoutingContext event) {
         return event.get(AUTH_MECHANISM);
     }
 
-    private static String getAuthMechanismScheme(RoutingContext event) {
-        AuthenticationMechanism authenticationMechanism = getAuthMechanism(event);
+    private static String getSelectedAuthMechanismScheme(RoutingContext event) {
+        AuthenticationMechanism authenticationMechanism = getSelectedAuthMechanism(event);
         if (authenticationMechanism != null) {
             return authenticationMechanism.name();
         }
         return null;
     }
 
-    static class NoAuthenticationMechanism implements HttpAuthenticationMechanism {
+    private static HttpAuthenticationMechanism getMechanismWhichProvidedIdentity(RoutingContext routingContext) {
+        return routingContext.get(HttpAuthenticationMechanism.class.getName());
+    }
+
+    static final class NoAuthenticationMechanism implements HttpAuthenticationMechanism {
 
         @Override
         public Uni<SecurityIdentity> authenticate(RoutingContext context,

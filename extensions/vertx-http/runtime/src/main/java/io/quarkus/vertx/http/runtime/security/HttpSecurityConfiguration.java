@@ -75,7 +75,13 @@ public final class HttpSecurityConfiguration {
     record Policy(String name, HttpSecurityPolicy instance) {
     }
 
-    record AuthenticationMechanism(String name, HttpAuthenticationMechanism instance) {
+    record AuthenticationMechanism(String name, boolean inclusiveAuthentication) {
+
+        Set<String> names() {
+            // FIXME: remove name and put this as the property instead!
+            return Set.of(name);
+        }
+
     }
 
     interface HttpPermissionCarrier {
@@ -308,7 +314,8 @@ public final class HttpSecurityConfiguration {
                 if (mapping.authMechanism().isPresent()) {
                     String authMech = mapping.authMechanism().get();
                     if (!authMech.isEmpty()) {
-                        return new AuthenticationMechanism(authMech, null);
+                        // FIXME: this needs to use the "inclusive" flag from the mapping!
+                        return new AuthenticationMechanism(authMech, false);
                     }
                 }
                 return null;
