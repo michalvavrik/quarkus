@@ -372,7 +372,7 @@ final class HttpSecurityImpl implements HttpSecurity {
         private boolean shared;
         private boolean applyToJaxRs;
         private String[] methods;
-        private HttpSecurityConfiguration.AuthenticationMechanism authMechanism;
+        private HttpSecurityConfiguration.AuthenticationMechanisms authMechanism;
         private AuthorizationPolicy authorizationPolicy;
 
         private HttpPermissionImpl(String[] paths) {
@@ -447,13 +447,24 @@ final class HttpSecurityImpl implements HttpSecurity {
         }
 
         @Override
-        public HttpPermission authenticatedWith(String mechanism) {
+        public HttpPermission authenticatedWith(String... schemes) {
             validateAuthenticationNotSetYet();
             requireAuthenticationByDefault();
-            if (mechanism == null || mechanism.isBlank()) {
-                throw new IllegalArgumentException("Authentication mechanism must not be null or blank");
+            if (schemes == null || schemes.length == 0) {
+                throw new IllegalArgumentException("Authentication mechanisms must not be null or empty");
             }
-            this.authMechanism = new HttpSecurityConfiguration.AuthenticationMechanism(mechanism, null);
+            this.authMechanism = new HttpSecurityConfiguration.AuthenticationMechanisms(Set.of(schemes), false);
+            return this;
+        }
+
+        @Override
+        public HttpPermission authenticatedWithAll(String... schemes) {
+            validateAuthenticationNotSetYet();
+            requireAuthenticationByDefault();
+            if (schemes == null || schemes.length == 0) {
+                throw new IllegalArgumentException("Authentication mechanisms must not be null or empty");
+            }
+            this.authMechanism = new HttpSecurityConfiguration.AuthenticationMechanisms(Set.of(schemes), true);
             return this;
         }
 
@@ -521,7 +532,7 @@ final class HttpSecurityImpl implements HttpSecurity {
         }
 
         @Override
-        public HttpSecurityConfiguration.AuthenticationMechanism getAuthMechanism() {
+        public HttpSecurityConfiguration.AuthenticationMechanisms getAuthMechanisms() {
             return authMechanism;
         }
 
