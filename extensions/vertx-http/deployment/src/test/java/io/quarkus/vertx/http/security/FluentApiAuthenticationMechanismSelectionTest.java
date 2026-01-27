@@ -24,6 +24,8 @@ import io.quarkus.security.StringPermission;
 import io.quarkus.security.identity.IdentityProviderManager;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.identity.request.AuthenticationRequest;
+import io.quarkus.security.runtime.QuarkusPrincipal;
+import io.quarkus.security.runtime.QuarkusSecurityIdentity;
 import io.quarkus.security.test.utils.TestIdentityController;
 import io.quarkus.security.test.utils.TestIdentityProvider;
 import io.quarkus.test.QuarkusUnitTest;
@@ -173,6 +175,72 @@ public class FluentApiAuthenticationMechanismSelectionTest {
         }
     }
 
+    @Test
+    void testCombiningBasicAndMutualTls() {
+        // anonymous user
+        RestAssured.given().get("/mtls-basic").then().statusCode(401);
+
+        // other mechanism, that must not be allowed for this path
+        RestAssured.given().header("custom-auth", "ignored").get("/mtls-basic").then().statusCode(401);
+
+        // only basic auth
+
+        // only mTLS
+
+        // both basic and mTLS auth
+    }
+
+    @Test
+    void testCombiningBasicAndMutualTls_inclusiveAuthentication() {
+        // anonymous user
+        RestAssured.given().get("/mtls-basic-inclusive").then().statusCode(401);
+
+        // other mechanism, that must not be allowed for this path
+        RestAssured.given().header("custom-auth", "ignored").get("/mtls-basic-inclusive").then().statusCode(401);
+
+        // only basic auth - fail as we require both basic and mTLS
+
+        // only mTLS - fail as we require both basic and mTLS
+
+        // both basic and mTLS auth
+    }
+
+    @Test
+    void testCombiningBasicAndMutualTlsAndForm() {
+        // anonymous user
+        RestAssured.given().redirects().follow(false).get("/mtls-basic-form").then().statusCode(302);
+
+        // other mechanism, that must not be allowed for this path
+        RestAssured.given().redirects().follow(false).header("custom-auth", "ignored").get("/mtls-basic-form").then()
+                .statusCode(302);
+
+        // only basic auth
+
+        // only mTLS
+
+        // only form
+
+        // all three - basic, form and mTLS auth
+    }
+
+    @Test
+    void testCombiningBasicAndMutualTlsAndForm_inclusiveAuthentication() {
+        // anonymous user
+        RestAssured.given().redirects().follow(false).get("/mtls-basic-form-inclusive").then().statusCode(302);
+
+        // other mechanism, that must not be allowed for this path
+        RestAssured.given().redirects().follow(false).header("custom-auth", "ignored").get("/mtls-basic-form-inclusive").then()
+                .statusCode(302);
+
+        // only basic auth - fail as we require both basic and mTLS
+
+        // only mTLS - fail as we require both basic and mTLS
+
+        // only form - fail as we require both basic and mTLS
+
+        // all three - basic, form and mTLS auth
+    }
+
     private static void basicAuthTest(String s, String operand) {
         RestAssured
                 .given()
@@ -232,6 +300,10 @@ public class FluentApiAuthenticationMechanismSelectionTest {
                     .path("/custom-instance/admin").authenticatedWith("custom-scheme").authorization()
                     .policy((identity, event) -> identity.hasRole("admin")
                             && event.normalizedPath().endsWith("/custom-instance/admin"))
+                    .path("/mtls-basic").authenticatedWith("basic", "x509").roles("admin")
+                    .path("/mtls-basic-inclusive").authenticatedWithAll("basic", "x509").roles("admin")
+                    .path("/mtls-basic-form").authenticatedWith("form", "basic", "x509").roles("admin")
+                    .path("/mtls-basic-form-inclusive").authenticatedWithAll("form", "basic", "x509").roles("admin")
                     .path("/mtls").mTLS();
         }
 
@@ -263,6 +335,12 @@ public class FluentApiAuthenticationMechanismSelectionTest {
 
         @Override
         public Uni<SecurityIdentity> authenticate(RoutingContext context, IdentityProviderManager identityProviderManager) {
+            if (context.request().headers().get("custom-auth") != null) {
+                return Uni.createFrom().item(QuarkusSecurityIdentity.builder()
+                        .setPrincipal(new QuarkusPrincipal("Olga"))
+                        .addRole("admin")
+                        .build());
+            }
             return delegate.authenticate(context, identityProviderManager);
         }
 
