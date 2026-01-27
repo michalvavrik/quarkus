@@ -986,16 +986,52 @@ quarkus.http.auth.permission.bearer.auth-mechanism=bearer
 quarkus.http.auth.permission.custom.paths=/hello/custom <3>
 quarkus.http.auth.permission.custom.policy=authenticated
 quarkus.http.auth.permission.custom.auth-mechanism=custom
+
+quarkus.http.auth.permission.basic-bearer.paths=/hello/basic-bearer <4>
+quarkus.http.auth.permission.basic-bearer.policy=authenticated
+quarkus.http.auth.permission.basic-bearer.auth-mechanism=basic,bearer
 ----
 <1> The REST endpoint `/hello/basic` can only ever be accessed by using the <<basic-auth>>.
 <2> The REST endpoint `/hello/bearer` can only ever be accessed by using the xref:security-oidc-bearer-token-authentication.adoc[OIDC bearer token authentication mechanism].
 <3> The REST endpoint `/hello/custom` can only ever be accessed by using a custom `HttpAuthenticationMechanism` with a `custom` authentication scheme.
+<4> The REST endpoint `/hello/basic-bearer` can be accessed either by using the xref:security-oidc-bearer-token-authentication.adoc[OIDC bearer token authentication mechanism], or by using the <<basic-auth>>.
 
 [IMPORTANT]
 ====
 Ensure that the value of the `auth-mechanism` property matches the authentication scheme supported by `HttpAuthenticationMechanism`, for example, `basic`, `bearer` or `custom`.
 For example, for the `quarkus.http.auth.permission.custom.auth-mechanism=custom` expression to be effective, a custom `HttpAuthenticationMechanism` implementation must set its authentication scheme to `custom` in its `HttpAuthenticationMechanism#getCredentialTransport` method implementation.
 ====
+
+==== Use HTTP Security Policy inclusive path-based authentication
+
+When <<inclusive-authentication>> is enabled for all the HTTP paths with the `quarkus.http.auth.inclusive` configuration property, every selected authentication mechanism must provide the `SecurityIdentity`.
+For example:
+
+[source,properties]
+----
+quarkus.http.auth.inclusive=true
+
+quarkus.http.auth.permission.basic-bearer.paths=/hello/basic-bearer
+quarkus.http.auth.permission.basic-bearer.policy=authenticated
+quarkus.http.auth.permission.basic-bearer.auth-mechanism=basic,bearer   <1>
+----
+<1> The REST endpoint `/hello/basic-bearer` can be accessed by using both the xref:security-oidc-bearer-token-authentication.adoc[OIDC bearer token authentication mechanism], and the <<basic-auth>>.
+Authentication will fail if either the <<basic-auth>> or the xref:security-oidc-bearer-token-authentication.adoc[OIDC bearer token authentication mechanism] failed to provide the `SecurityIdentity`.
+
+In some situations, you may need to enable the <<inclusive-authentication>> only for certain HTTP paths with elevated security, like admin endpoints.
+Here is example how to do it:
+
+[source,properties]
+----
+quarkus.http.auth.inclusive=false
+
+quarkus.http.auth.permission.admin-endpoints.paths=/admin
+quarkus.http.auth.permission.admin-endpoints.policy=authenticated
+quarkus.http.auth.permission.admin-endpoints.auth-mechanism=bearer,x509 <1>
+quarkus.http.auth.permission.admin-endpoints.inclusive=true <2>
+----
+<1> The REST endpoint `/admin` can only be accessed by using both the xref:security-oidc-bearer-token-authentication.adoc[OIDC bearer token authentication mechanism], and the <<mutual-tls>>.
+<2> Enable <<inclusive-authentication>> only for the REST endpoint `/admin`.
 
 [[use-annotations-for-path-based-auth]]
 ==== Use annotations to enable path-based authentication for Jakarta REST endpoints
@@ -1092,57 +1128,6 @@ It is also possible to use the `io.quarkus.vertx.http.runtime.security.annotatio
 Annotation-based analogy to the `quarkus.http.auth.permission.basic.auth-mechanism=custom` configuration property is the `@HttpAuthenticationMechanism("custom")` annotation.
 
 NOTE: For consistency with various Jakarta EE specifications, it is recommended to always repeat annotations instead of relying on annotation inheritance.
-
-==== Use inclusive authentication to enable path-based authentication
-
-By default, Quarkus only supports <<path-based-authentication>> for one authentication mechanism per path.
-If more than one authentication mechanism must be used for the path-based authentication, you can write a custom `HttpAuthenticationMechanism` as documented in the xref:security-customization.adoc#dealing-with-more-than-one-http-auth-mechanisms[Dealing with more than one HttpAuthenticationMechanism] section of the Security Tips and Tricks guide.
-Another option is to enable <<inclusive-authentication>> in the lax mode and write a custom `HttpSecurityPolicy` or `PermissionChecker` that verifies that all registered HTTP authentication mechanisms created their mechanism-specific `SecurityIdentity`.
-
-.Enable inclusive authentication in the lax mode
-[source,properties]
-----
-quarkus.http.auth.inclusive-mode=lax <1>
-quarkus.http.auth.inclusive=true
-----
-<1> By default, inclusive authentication requires that all registered HTTP authentication mechanisms must create the `SecurityIdentity`.
-However, in the lax mode, the authentication succeeds if at least one registered `HttpAuthenticationMechanism` created the `SecurityIdentity`.
-
-Let's assume that we have 3 registered mechanisms, mTLS, Basic and OIDC and you only require Basic and mTLS authentications to succeed to permit access to the `hello` method.
-In this case, enabling an inclusive authentication in a lax mode allows to check which mechanisms produced the identity as shown in the example below:
-
-.Example of the HTTP Authentication mechanisms check
-[source,java]
-----
-import io.quarkus.security.PermissionChecker;
-import io.quarkus.security.PermissionsAllowed;
-import io.quarkus.security.identity.SecurityIdentity;
-import io.quarkus.vertx.http.runtime.security.HttpSecurityUtils;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-
-import java.util.Map;
-
-@Path("/hello")
-public class HelloResource {
-
-    @PermissionsAllowed("mtls-basic")
-    @GET
-    public String hello() {
-        return "Hello world";
-    }
-
-    @PermissionChecker("mtls-basic")
-    boolean isMtlsAndBasicAuthentication(SecurityIdentity identity) {
-        Map<String, SecurityIdentity> identities = HttpSecurityUtils.getSecurityIdentities(identity);
-        if (identities != null) {
-            return identities.containsKey("basic") && identities.containsKey("x509"); <1>
-        }
-        return false;
-    }
-}
-----
-<1> Permit access to the endpoint only if it is confirmed that both `mTLS` and `Basic` authentication mechanisms have authenticated the current request.
 
 ==== How to combine it with HTTP Security Policy
 
