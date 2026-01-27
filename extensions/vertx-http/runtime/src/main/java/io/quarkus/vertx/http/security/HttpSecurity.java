@@ -9,6 +9,7 @@ import java.util.function.Predicate;
 
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.tls.TlsConfiguration;
+import io.quarkus.vertx.http.runtime.AuthRuntimeConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.cors.CORSConfig;
 import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;
@@ -285,11 +286,20 @@ public interface HttpSecurity {
         HttpSecurity authenticated();
 
         /**
-         * HTTP request must be authenticated using a mechanism
+         * HTTP request must be authenticated using any of mechanisms
          * with matching {@link HttpCredentialTransport#getAuthenticationScheme()}.
+         * When {@link AuthRuntimeConfig#inclusive()} is enabled, this method becomes alias for
+         * {@link #authenticatedWithAll(String...)}.
          * Please note that annotation-based mechanism selection has higher priority during the mechanism selection.
          */
-        HttpPermission authenticatedWith(String scheme);
+        HttpPermission authenticatedWith(String... schemes);
+
+        /**
+         * HTTP request must be authenticated using all mechanisms
+         * with matching {@link HttpCredentialTransport#getAuthenticationScheme()} (inclusive authentication).
+         * Please note that annotation-based mechanism selection has higher priority during the mechanism selection.
+         */
+        HttpPermission authenticatedWithAll(String... schemes);
 
         /**
          * Indicates that this policy always applies to the matched paths in addition to the policy with a winning path.
