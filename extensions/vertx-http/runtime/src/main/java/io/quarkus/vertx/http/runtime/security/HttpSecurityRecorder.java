@@ -524,6 +524,7 @@ public class HttpSecurityRecorder {
     }
 
     public Function<String, Consumer<RoutingContext>> authMechanismSelectionInterceptorCreator() {
+        boolean pathSpecificInclusiveAuth = false; // this should be supplied from annotation attribute in the future
         return new Function<String, Consumer<RoutingContext>>() {
             @Override
             public Consumer<RoutingContext> apply(String authMechanismName) {
@@ -533,7 +534,7 @@ public class HttpSecurityRecorder {
                 return new Consumer<RoutingContext>() {
                     @Override
                     public void accept(RoutingContext routingContext) {
-                        HttpAuthenticator.selectAuthMechanism(routingContext, authMechanismName);
+                        HttpAuthenticator.selectAuthMechanism(routingContext, authMechanismName, pathSpecificInclusiveAuth);
                     }
                 };
             }
