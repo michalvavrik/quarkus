@@ -415,6 +415,7 @@ public class HttpSecurityProcessor {
             // register method interceptor that will be run before security checks
             Map<String, String> knownBindingValues = additionalHttpAuthMechAnnotations.stream()
                     .collect(Collectors.toMap(item -> item.annotationName.toString(), item -> item.authMechanismScheme));
+            // TODO: this must pass down interceptor creator with array string
             bindingProducer.produce(new EagerSecurityInterceptorBindingBuildItem(
                     recorder.authMechanismSelectionInterceptorCreator(), knownBindingValues, mechNames));
             recorder.selectAuthMechanismViaAnnotation();

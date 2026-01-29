@@ -533,7 +533,7 @@ public class HttpSecurityRecorder {
                 return new Consumer<RoutingContext>() {
                     @Override
                     public void accept(RoutingContext routingContext) {
-                        HttpAuthenticator.selectAuthMechanism(routingContext, authMechanismName);
+                        HttpAuthenticator.selectAuthMechanism(routingContext, new String[] { authMechanismName });
                     }
                 };
             }
