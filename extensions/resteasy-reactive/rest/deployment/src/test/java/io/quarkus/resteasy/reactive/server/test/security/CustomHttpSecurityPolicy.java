@@ -28,7 +28,10 @@ public class CustomHttpSecurityPolicy implements HttpSecurityPolicy {
                 return CheckResult.PERMIT;
             });
         }
-        return Uni.createFrom().item(CheckResult.PERMIT);
+        if (request.request().headers().contains("deny-access")) {
+            return CheckResult.deny();
+        }
+        return CheckResult.permit();
     }
 
     @Override
