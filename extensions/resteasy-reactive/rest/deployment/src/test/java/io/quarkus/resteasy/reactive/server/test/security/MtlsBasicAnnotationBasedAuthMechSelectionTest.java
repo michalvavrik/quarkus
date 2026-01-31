@@ -30,10 +30,13 @@ public class MtlsBasicAnnotationBasedAuthMechSelectionTest {
     @TestHTTPResource(value = "/basic", tls = true)
     URL basicUrl;
 
+    @TestHTTPResource(value = "/basic-or-mtls", tls = true)
+    URL basicOrMtlsUrl;
+
     @RegisterExtension
     static final QuarkusUnitTest config = new QuarkusUnitTest()
             .withApplicationRoot((jar) -> jar
-                    .addClasses(MtlsResource.class)
+                    .addClasses(MtlsResource.class, CustomHeaderAuthenticateMechanism.class)
                     .addClasses(TestIdentityProvider.class, TestTrustedIdentityProvider.class, TestIdentityController.class)
                     .addAsResource("mtls/mtls-basic-jks.conf", "application.properties")
                     .addAsResource("mtls/server-keystore.jks", "server-keystore.jks")
@@ -43,6 +46,45 @@ public class MtlsBasicAnnotationBasedAuthMechSelectionTest {
     public static void setup() {
         TestIdentityController.resetRoles()
                 .add("admin", "admin", "admin");
+    }
+
+    @Test
+    public void testOtherMechanismNotAllowed() {
+        // MTLS select, don't allow anything else
+        RestAssured.given()
+                .trustStore(new File("src/test/resources/mtls/client-truststore.jks"), "password")
+                .header("custom-auth", "ignored")
+                .get(mtlsUrl).then().statusCode(401);
+        // Basic selected, don't allow anything else
+        RestAssured.given()
+                .trustStore(new File("src/test/resources/mtls/client-truststore.jks"), "password")
+                .header("custom-auth", "ignored")
+                .get(basicUrl).then().statusCode(401);
+        // Basic or Mutual TLS selected, don't allow anything else
+        RestAssured.given()
+                .trustStore(new File("src/test/resources/mtls/client-truststore.jks"), "password")
+                .header("custom-auth", "ignored")
+                .get(basicOrMtlsUrl).then().statusCode(401);
+    }
+
+    @Test
+    public void testMutualTlsOrBasicAuthenticationEnforced() {
+        // anonymous user must not be allowed as we used an annotation selecting authentication mechanism
+        RestAssured.given()
+                .trustStore(new File("src/test/resources/mtls/client-truststore.jks"), "password")
+                .get(basicOrMtlsUrl).then().statusCode(401);
+        // endpoint is annotated with @MTLSAuthentication, therefore mTLS must pass
+        RestAssured.given()
+                .keyStore(new File("src/test/resources/mtls/client-keystore.jks"), "password")
+                .trustStore(new File("src/test/resources/mtls/client-truststore.jks"), "password")
+                .get(basicOrMtlsUrl).then().statusCode(200).body(is("CN=client,OU=cert,O=quarkus,L=city,ST=state,C=AU"));
+        // endpoint is annotated with @BasicAuthentication, therefore basic must pass
+        RestAssured.given()
+                .auth()
+                .preemptive()
+                .basic("admin", "admin")
+                .trustStore(new File("src/test/resources/mtls/client-truststore.jks"), "password")
+                .get(basicOrMtlsUrl).then().statusCode(200).body(is("admin"));
     }
 
     @Test
@@ -98,6 +140,14 @@ public class MtlsBasicAnnotationBasedAuthMechSelectionTest {
         @Path("basic")
         @GET
         public String basic() {
+            return identity.getPrincipal().getName();
+        }
+
+        @MTLSAuthentication
+        @BasicAuthentication
+        @Path("basic-or-mtls")
+        @GET
+        public String basicOrMtls() {
             return identity.getPrincipal().getName();
         }
 
