@@ -759,6 +759,15 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
                             codeFlowParams.append(AMP).append(OidcConstants.NONCE).append(EQ).append(nonce);
                         }
 
+                        // authorization_details
+                        var authorizationDetails = authenticationConfig.rar().authorizationDetails();
+                        if (!authorizationDetails.isEmpty()) {
+                            // TODO: impl. me!
+                            codeFlowParams.append(AMP).append(OidcConstants.AUTHORIZATION_DETAILS).append(EQ)
+                                    .append(OidcCommonUtils.urlEncode(
+                                            "[{ \"type\": \"openid_credential\", \"credential_configuration_id\": \"rar-credential\"}]"));
+                        }
+
                         // extra redirect parameters, see https://openid.net/specs/openid-connect-core-1_0.html#AuthRequests
                         addExtraParamsToUri(codeFlowParams, authenticationConfig.extraParams());
 

@@ -53,6 +53,19 @@ public class FrontendResource {
     }
 
     @GET
+    @Path("login-rar")
+    public Response loginRar() {
+        return redirect("rar", "callback-rar");
+    }
+
+    @GET
+    @Path("callback-rar")
+    public Response callbackRar(@RestQuery String code) throws Exception {
+        String accessToken = getAccessToken("rar", "callback-rar", code);
+        return Response.ok(accessToken).build();
+    }
+
+    @GET
     @Path("login-jwt-with-nonce/{nonce}")
     public Response loginJwtWithNonce(@RestPath String nonce) {
         return redirect("dpop-jwt", "callback-jwt-with-nonce/" + nonce);
@@ -263,5 +276,22 @@ public class FrontendResource {
 
     private OidcConfigurationMetadata getConfigMetadata(String tenantId) {
         return oidcTenants.getStaticTenant(tenantId).getOidcMetadata();
+    }
+
+    private String getAccessToken(String tenantId, String redirectPath, String code) {
+        String redirectUriParam = ui.getBaseUriBuilder().path("single-page-app").path(redirectPath).build().toString();
+
+        MultiMap grantParams = MultiMap.caseInsensitiveMultiMap();
+        grantParams.add(OidcConstants.CLIENT_ID, "backend-service");
+        grantParams.add(OidcConstants.GRANT_TYPE, OidcConstants.AUTHORIZATION_CODE);
+        grantParams.add(OidcConstants.CODE_FLOW_CODE, code);
+        grantParams.add(OidcConstants.CODE_FLOW_REDIRECT_URI, redirectUriParam);
+
+        Buffer encoded = OidcCommonUtils.encodeForm(grantParams);
+        HttpRequest<Buffer> requestToKeycloak = client.postAbs(getConfigMetadata(tenantId).getTokenUri());
+        requestToKeycloak.putHeader("Content-Type", HttpHeaders.APPLICATION_X_WWW_FORM_URLENCODED.toString());
+
+        JsonObject grantResponse = requestToKeycloak.sendBufferAndAwait(encoded).bodyAsJsonObject();
+        return grantResponse.getString("access_token");
     }
 }
