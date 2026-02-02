@@ -22,6 +22,7 @@ import io.quarkus.runtime.configuration.TrimmedStringConverter;
 import io.quarkus.security.identity.SecurityIdentityAugmentor;
 import io.smallrye.config.WithConverter;
 import io.smallrye.config.WithDefault;
+import io.smallrye.config.WithParentName;
 
 public interface OidcTenantConfig extends OidcClientCommonConfig {
 
@@ -1015,6 +1016,13 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
          */
         @ConfigDocSection
         PushedAuthorizationRequest par();
+
+        /**
+         * Configuration for the rich authorization requests (RAR)
+         * as defined by the <a href="https://datatracker.ietf.org/doc/html/rfc9396">RFC 9396</a>.
+         */
+        @ConfigDocSection
+        RichAuthorizationRequests rar();
     }
 
     /**
@@ -1362,5 +1370,31 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
          * using the `pushed_authorization_request_endpoint` parameter.
          */
         Optional<String> path();
+    }
+
+    /**
+     * Rich Authorization Requests (RAR) configuration.
+     */
+    interface RichAuthorizationRequests {
+
+        /**
+         * Configures the `authorization_details` request parameter fields of the authorization request.
+         * Please note that the `type` field is required. If the `type` is not configured, validation will fail.
+         * For example, if you configure the `quarkus.oidc.authentication.rar.type=customer_information` property,
+         * following `authorization_details` request parameter will be added to the authorization request:
+         * <pre>
+         * {@code
+         * [
+         *    {
+         *       "type": "customer_information"
+         *    }
+         * ]
+         * }
+         * </pre>
+         */
+        @ConfigDocMapKey("field")
+        @WithParentName
+        Map<String, String> simpleConfig();
+
     }
 }
