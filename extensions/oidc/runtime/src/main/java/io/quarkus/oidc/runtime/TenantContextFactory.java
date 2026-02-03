@@ -543,6 +543,17 @@ final class TenantContextFactory {
                                 return Uni.createFrom().failure(new ConfigurationException(exceptionMessage));
                             }
                         }
+                        if (OidcUtils.isRarEnabled(oidcConfig.authentication())) {
+                            if (!oidcConfig.authentication().rar().stringType().containsKey("type")) {
+                                String configurationProperty = getConfigPropertyForTenant(tenantId,
+                                        "authentication.rar.string-type.type");
+                                String exceptionMessage = ("""
+                                        OIDC tenant '%s' has enabled the rich authorization requests, but the string
+                                        field `type` is not configured. Please set '%s' configuration property.
+                                        """).formatted(tenantId, configurationProperty);
+                                return Uni.createFrom().failure(new ConfigurationException(exceptionMessage));
+                            }
+                        }
                         return OidcProviderClientImpl.of(client, vertx, metadata, oidcConfig, oidcRequestFilters,
                                 oidcResponseFilters);
                     }

@@ -1096,4 +1096,8 @@ public final class OidcUtils {
         }
         return metadata.isRequirePushedAuthorizationRequests();
     }
+
+    static boolean isRarEnabled(Authentication authenticationConfig) {
+        return !authenticationConfig.rar().stringType().isEmpty() || !authenticationConfig.rar().arrayType().isEmpty();
+    }
 }

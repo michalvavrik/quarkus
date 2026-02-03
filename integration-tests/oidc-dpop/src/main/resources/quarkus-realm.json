@@ -885,6 +885,23 @@
         "offline_access",
         "microprofile-jwt"
       ]
+    },
+    {
+      "clientId": "oid4vc-rest-api",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "secret",
+      "redirectUris": ["*"],
+      "directAccessGrantsEnabled": true,
+      "defaultClientScopes": ["profile"],
+      "optionalClientScopes": ["vc-scope-mapping"],
+      "attributes": {
+        "oid4vci.enabled": "true",
+        "oid4vc.client.enabled": "true"
+      }
     }
   ],
   "clientScopes": [
@@ -1433,6 +1450,29 @@
           }
         }
       ]
+    },
+    {
+      "id": "12345-vc-scope-mapping",
+      "name": "vc-scope-mapping",
+      "protocol": "oid4vc",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "vc.issuer_did": "did:web:vc.example.com",
+        "vc.credential_configuration_id": "vc-scope-mapping",
+        "vc.credential_identifier": "my-credential-identifier",
+        "vc.format": "jwt_vc",
+        "vc.expiry_in_seconds": 31536000,
+        "vc.verifiable_credential_type": "my-vct",
+        "vc.supported_credential_types": "credential-type-1,credential-type-2",
+        "vc.credential_contexts": "context-1,context-2",
+        "vc.credential_signing_alg": "ES256",
+        "vc.cryptographic_binding_methods_supported": "jwk",
+        "vc.sd_jwt.number_of_decoys": "2",
+        "vc.credential_build_config.sd_jwt.visible_claims": "iat,jti,nbf,exp,given_name",
+        "vc.credential_build_config.hash_algorithm": "SHA-256",
+        "vc.credential_build_config.token_jws_type": "JWS",
+        "vc.include_in_metadata": "true"
+      }
     }
   ],
   "defaultDefaultClientScopes": [
@@ -1638,6 +1678,20 @@
         "config": {
           "priority": [
             "100"
+          ]
+        }
+      },
+      {
+        "id": "generated-ecdsa-key-provider",
+        "name": "es256-generated",
+        "providerId": "ecdsa-generated",
+        "subComponents": {},
+        "config": {
+          "priority": [
+            "100"
+          ],
+          "algorithm": [
+            "ES256"
           ]
         }
       }
@@ -2265,95 +2319,127 @@
     "cibaInterval": "5",
     "realmReusableOtpCode": "false"
   },
-  "users" : [ {
-    "id" : "af134cab-f41c-4675-b141-205f975db679",
-    "username" : "admin",
-    "enabled" : true,
-    "totp" : false,
-    "emailVerified" : false,
-    "credentials" : [ {
-      "type" : "password",
-      "hashedSaltedValue" : "NICTtwsvSxJ5hL8hLAuleDUv9jwZcuXgxviMXvR++cciyPtiIEStEaJUyfA9DOir59awjPrHOumsclPVjNBplA==",
-      "salt" : "T/2P5o5oxFJUEk68BRURRg==",
-      "hashIterations" : 27500,
-      "counter" : 0,
-      "algorithm" : "pbkdf2-sha256",
-      "digits" : 0,
-      "period" : 0,
-      "createdDate" : 1554245879354,
-      "config" : { }
-    } ],
-    "disableableCredentialTypes" : [ "password" ],
-    "requiredActions" : [ ],
-    "realmRoles" : [ "admin", "user" ],
-    "notBefore" : 0,
-    "groups" : [ ]
-  }, {
-    "id" : "eb4123a3-b722-4798-9af5-8957f823657a",
-    "username" : "alice",
-    "enabled" : true,
-    "totp" : false,
-    "emailVerified" : false,
-    "credentials" : [ {
-      "type" : "password",
-      "hashedSaltedValue" : "A3okqV2T/ybXTVEgKfosoSjP8Yc9IZbFP/SY4cEd6hag7TABQrQ6nUSuwagGt96l8cw1DTijO75PqX6uiTXMzw==",
-      "salt" : "sl4mXx6T9FypPH/s9TngfQ==",
-      "hashIterations" : 27500,
-      "counter" : 0,
-      "algorithm" : "pbkdf2-sha256",
-      "digits" : 0,
-      "period" : 0,
-      "createdDate" : 1554245879116,
-      "config" : { }
-    } ],
-    "disableableCredentialTypes" : [ "password" ],
-    "requiredActions" : [ ],
-    "realmRoles" : [ "user" ],
-    "notBefore" : 0,
-    "groups" : [ ]
-  }, {
-    "id" : "1eed6a8e-a853-4597-b4c6-c4c2533546a0",
-    "username" : "jdoe",
-    "enabled" : true,
-    "totp" : false,
-    "emailVerified" : false,
-    "credentials" : [ {
-      "type" : "password",
-      "hashedSaltedValue" : "JV3DUNLjqOadjbBOtC4rvacQI553CGaDGAzBS8MR5ReCr7SwF3E6CsW3T7/XO8ITZAsch8+A/6loeuCoVLLJrg==",
-      "salt" : "uCbOH7HZtyDtMd0E9DG/nw==",
-      "hashIterations" : 27500,
-      "counter" : 0,
-      "algorithm" : "pbkdf2-sha256",
-      "digits" : 0,
-      "period" : 0,
-      "createdDate" : 1554245879227,
-      "config" : { }
-    } ],
-    "disableableCredentialTypes" : [ "password" ],
-    "requiredActions" : [ ],
-    "realmRoles" : [ "confidential", "user" ],
-    "notBefore" : 0,
-    "groups" : [ ]
-  }, {
-    "id" : "948c59ec-46ed-4d99-aa43-02900029b930",
-    "createdTimestamp" : 1554245880023,
-    "username" : "service-account-backend-service",
-    "enabled" : true,
-    "totp" : false,
-    "emailVerified" : false,
-    "email" : "service-account-backend-service@placeholder.org",
-    "serviceAccountClientId" : "backend-service",
-    "credentials" : [ ],
-    "disableableCredentialTypes" : [ ],
-    "requiredActions" : [ ],
-    "realmRoles" : [ "offline_access" ],
-    "clientRoles" : {
-      "backend-service" : [ "uma_protection" ],
-      "account" : [ "view-profile", "manage-account" ]
+  "users": [
+    {
+      "id": "af134cab-f41c-4675-b141-205f975db679",
+      "username": "admin",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": false,
+      "credentials": [
+        {
+          "type": "password",
+          "hashedSaltedValue": "NICTtwsvSxJ5hL8hLAuleDUv9jwZcuXgxviMXvR++cciyPtiIEStEaJUyfA9DOir59awjPrHOumsclPVjNBplA==",
+          "salt": "T/2P5o5oxFJUEk68BRURRg==",
+          "hashIterations": 27500,
+          "counter": 0,
+          "algorithm": "pbkdf2-sha256",
+          "digits": 0,
+          "period": 0,
+          "createdDate": 1554245879354,
+          "config": {}
+        }
+      ],
+      "disableableCredentialTypes": [
+        "password"
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "admin",
+        "user"
+      ],
+      "notBefore": 0,
+      "groups": []
     },
-    "notBefore" : 0,
-    "groups" : [ ]
-  } ],
+    {
+      "id": "eb4123a3-b722-4798-9af5-8957f823657a",
+      "username": "alice",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": false,
+      "credentials": [
+        {
+          "type": "password",
+          "hashedSaltedValue": "A3okqV2T/ybXTVEgKfosoSjP8Yc9IZbFP/SY4cEd6hag7TABQrQ6nUSuwagGt96l8cw1DTijO75PqX6uiTXMzw==",
+          "salt": "sl4mXx6T9FypPH/s9TngfQ==",
+          "hashIterations": 27500,
+          "counter": 0,
+          "algorithm": "pbkdf2-sha256",
+          "digits": 0,
+          "period": 0,
+          "createdDate": 1554245879116,
+          "config": {}
+        }
+      ],
+      "disableableCredentialTypes": [
+        "password"
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "user"
+      ],
+      "notBefore": 0,
+      "groups": []
+    },
+    {
+      "id": "1eed6a8e-a853-4597-b4c6-c4c2533546a0",
+      "username": "jdoe",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": false,
+      "credentials": [
+        {
+          "type": "password",
+          "hashedSaltedValue": "JV3DUNLjqOadjbBOtC4rvacQI553CGaDGAzBS8MR5ReCr7SwF3E6CsW3T7/XO8ITZAsch8+A/6loeuCoVLLJrg==",
+          "salt": "uCbOH7HZtyDtMd0E9DG/nw==",
+          "hashIterations": 27500,
+          "counter": 0,
+          "algorithm": "pbkdf2-sha256",
+          "digits": 0,
+          "period": 0,
+          "createdDate": 1554245879227,
+          "config": {}
+        }
+      ],
+      "disableableCredentialTypes": [
+        "password"
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "confidential",
+        "user"
+      ],
+      "notBefore": 0,
+      "groups": []
+    },
+    {
+      "id": "948c59ec-46ed-4d99-aa43-02900029b930",
+      "createdTimestamp": 1554245880023,
+      "username": "service-account-backend-service",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": false,
+      "email": "service-account-backend-service@placeholder.org",
+      "serviceAccountClientId": "backend-service",
+      "credentials": [],
+      "disableableCredentialTypes": [],
+      "requiredActions": [],
+      "realmRoles": [
+        "offline_access"
+      ],
+      "clientRoles": {
+        "backend-service": [
+          "uma_protection"
+        ],
+        "account": [
+          "view-profile",
+          "manage-account"
+        ]
+      },
+      "notBefore": 0,
+      "groups": []
+    }
+  ],
   "keycloakVersion": "26.0.7",
   "userManagedAccessAllowed": false,
   "organizationsEnabled": false,

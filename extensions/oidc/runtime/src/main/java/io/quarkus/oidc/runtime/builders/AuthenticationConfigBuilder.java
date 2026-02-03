@@ -17,6 +17,7 @@ import io.quarkus.oidc.runtime.OidcTenantConfig.Authentication.CacheControl;
 import io.quarkus.oidc.runtime.OidcTenantConfig.Authentication.CookieSameSite;
 import io.quarkus.oidc.runtime.OidcTenantConfig.Authentication.ResponseMode;
 import io.quarkus.oidc.runtime.OidcTenantConfig.PushedAuthorizationRequest;
+import io.quarkus.oidc.runtime.OidcTenantConfig.RichAuthorizationRequests;
 
 /**
  * Builder for the {@link Authentication} config.
@@ -34,7 +35,8 @@ public final class AuthenticationConfigBuilder {
             Optional<Boolean> userInfoRequired, Optional<Duration> sessionAgeExtension,
             Duration stateCookieAge, boolean javaScriptAutoRedirect, Optional<Boolean> idTokenRequired,
             Optional<Duration> internalIdTokenLifespan, Optional<Boolean> pkceRequired, Optional<String> pkceSecret,
-            Optional<String> stateSecret, PushedAuthorizationRequest par) implements Authentication {
+            Optional<String> stateSecret, PushedAuthorizationRequest par,
+            RichAuthorizationRequests rar) implements Authentication {
     }
 
     private final OidcTenantConfigBuilder builder;
@@ -72,6 +74,7 @@ public final class AuthenticationConfigBuilder {
     private Optional<String> pkceSecret;
     private Optional<String> stateSecret;
     private PushedAuthorizationRequest par;
+    private RichAuthorizationRequests rar;
 
     public AuthenticationConfigBuilder() {
         this(new OidcTenantConfigBuilder());
@@ -120,6 +123,7 @@ public final class AuthenticationConfigBuilder {
         this.pkceSecret = authentication.pkceSecret();
         this.stateSecret = authentication.stateSecret();
         this.par = authentication.par();
+        this.rar = authentication.rar();
     }
 
     /**
@@ -600,6 +604,38 @@ public final class AuthenticationConfigBuilder {
     }
 
     /**
+     * Enables the rich authorization requests ({@link Authentication#rar()}) and configures the authorization details
+     * request parameter.
+     *
+     * @param authorizationDetails {@link RichAuthorizationRequests#stringType()}
+     * @return this builder
+     */
+    public AuthenticationConfigBuilder rar(Map<String, String> authorizationDetails) {
+        return rar(authorizationDetails, Map.of());
+    }
+
+    /**
+     * Enables the rich authorization requests ({@link Authentication#rar()}) and configures the authorization details
+     * request parameter.
+     *
+     * @param simpleAuthorizationDetails {@link RichAuthorizationRequests#stringType()}
+     * @param arrayAuthorizationDetails {@link RichAuthorizationRequests#arrayType()}
+     * @return this builder
+     */
+    public AuthenticationConfigBuilder rar(Map<String, String> simpleAuthorizationDetails,
+            Map<String, List<String>> arrayAuthorizationDetails) {
+        Objects.requireNonNull(simpleAuthorizationDetails);
+        Objects.requireNonNull(arrayAuthorizationDetails);
+        record RichAuthorizationRequestsImpl(Map<String, String> stringType, Map<String, List<String>> arrayType)
+                implements
+                    RichAuthorizationRequests {
+        }
+        this.rar = new RichAuthorizationRequestsImpl(Map.copyOf(simpleAuthorizationDetails),
+                Map.copyOf(arrayAuthorizationDetails));
+        return this;
+    }
+
+    /**
      * @return OidcTenantConfigBuilder with built {@link Authentication}
      */
     public OidcTenantConfigBuilder end() {
@@ -622,6 +658,6 @@ public final class AuthenticationConfigBuilder {
                 failOnMissingStateParam,
                 failOnUnresolvedKid,
                 userInfoRequired, sessionAgeExtension, stateCookieAge, javaScriptAutoRedirect, idTokenRequired,
-                internalIdTokenLifespan, pkceRequired, pkceSecret, stateSecret, par);
+                internalIdTokenLifespan, pkceRequired, pkceSecret, stateSecret, par, rar);
     }
 }
