@@ -157,7 +157,7 @@ public class OidcDPopTest {
         }
     }
 
-    private WebClient createWebClient() {
+    static WebClient createWebClient() {
         WebClient webClient = new WebClient();
         webClient.setCssErrorHandler(new SilentCssErrorHandler());
         return webClient;
