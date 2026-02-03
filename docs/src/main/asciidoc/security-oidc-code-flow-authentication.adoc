@@ -942,6 +942,34 @@ quarkus.oidc.authentication.par.enabled=true
 quarkus.oidc.authentication.par.path=/as/par
 ----
 
+=== Rich Authorization Requests
+
+link:https://datatracker.ietf.org/doc/html/rfc9396[OAuth 2.0 Rich Authorization Requests] (RAR) enable clients to specify fine-grained authorization requirements in the authorization request.
+Instead of relying solely on traditional OAuth 2.0 scopes, RAR allows applications to request specific permissions using the `authorization_details` parameter.
+
+You can configure authorization details using the `quarkus.oidc.authentication.rar.*` configuration properties:
+
+[source, properties]
+----
+quarkus.oidc.authentication.rar.string-type.type=openid_credential  <1>
+quarkus.oidc.authentication.rar.string-type.credential_configuration_id=vc-scope-mapping
+quarkus.oidc.authentication.rar.array-type.locations=${quarkus.oidc.auth-server-url}
+----
+<1> The `type` field is required. Validation will fail on startup if it is not set.
+
+With this configuration, Quarkus adds the following `authorization_details` parameter to the authorization request:
+
+[source, json]
+----
+[
+    {
+        "type": "openid_credential",
+        "credential_configuration_id": "vc-scope-mapping",
+        "locations": [ "http://localhost:34187/realms/quarkus" ]
+    }
+]
+----
+
 === Handling and controlling the lifetime of authentication
 
 Another important requirement for authentication is to ensure that the data the session is based on is up-to-date without requiring the user to authenticate for every single request.

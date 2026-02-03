@@ -139,6 +139,11 @@ public final class OidcUtils {
     static final BlockingTaskRunner<Void> deleteTokensRequestContext = new BlockingTaskRunner<Void>();
 
     /**
+     * <a href="https://datatracker.ietf.org/doc/html/rfc9396">RFC 9396</a> authorization request parameter.
+     */
+    static final String AUTHORIZATION_DETAILS = "authorization_details";
+
+    /**
      * This pattern uses a positive lookahead to split an expression around the forward slashes
      * ignoring those which are located inside a pair of the double quotes.
      */
@@ -1095,5 +1100,9 @@ public final class OidcUtils {
             return parConfig.enabled().get();
         }
         return metadata.isRequirePushedAuthorizationRequests();
+    }
+
+    static boolean isRarEnabled(Authentication authenticationConfig) {
+        return !authenticationConfig.rar().stringType().isEmpty() || !authenticationConfig.rar().arrayType().isEmpty();
     }
 }
