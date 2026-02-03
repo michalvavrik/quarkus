@@ -121,6 +121,11 @@ public final class OidcUtils {
     public static final String DPOP_PROOF_JWT_CLAIMS = "dpop_proof_jwt_claims";
     public static final String CLEAR_SITE_DATA_HEADER = "Clear-Site-Data";
 
+    /**
+     * <a href="https://datatracker.ietf.org/doc/html/rfc9396">RFC 9396</a> authorization request parameter.
+     */
+    public static final String AUTHORIZATION_DETAILS = "authorization_details";
+
     private static final String APPLICATION_JWT = "application/jwt";
 
     // Browsers enforce that the total Set-Cookie expression such as
@@ -1095,5 +1100,9 @@ public final class OidcUtils {
             return parConfig.enabled().get();
         }
         return metadata.isRequirePushedAuthorizationRequests();
+    }
+
+    static boolean isRarEnabled(Authentication authenticationConfig) {
+        return !authenticationConfig.rar().stringType().isEmpty() || !authenticationConfig.rar().arrayType().isEmpty();
     }
 }
