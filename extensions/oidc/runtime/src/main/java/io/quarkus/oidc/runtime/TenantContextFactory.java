@@ -543,6 +543,7 @@ final class TenantContextFactory {
                                 return Uni.createFrom().failure(new ConfigurationException(exceptionMessage));
                             }
                         }
+                        // FIXME: if RAR enabled, validate that "type" field is present!
                         return OidcProviderClientImpl.of(client, vertx, metadata, oidcConfig, oidcRequestFilters,
                                 oidcResponseFilters);
                     }

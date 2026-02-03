@@ -61,6 +61,7 @@ import io.smallrye.mutiny.Uni;
 import io.vertx.core.MultiMap;
 import io.vertx.core.http.Cookie;
 import io.vertx.core.http.HttpHeaders;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
 
@@ -757,6 +758,22 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
 
                         if (nonce != null) {
                             codeFlowParams.append(AMP).append(OidcConstants.NONCE).append(EQ).append(nonce);
+                        }
+
+                        // authorization_details
+                        boolean rarEnabled = !authenticationConfig.rar().simpleType().isEmpty(); // 'type' is required
+                        if (rarEnabled) {
+                            var authorizationDetailsArray = new JsonArray();
+                            var authorizationDetailsObject = new JsonObject();
+                            authenticationConfig.rar().simpleType().forEach(authorizationDetailsObject::put);
+                            authenticationConfig.rar().arrayType().forEach((k, v) -> {
+                                var arrayField = new JsonArray();
+                                v.forEach(arrayField::add);
+                                authorizationDetailsObject.put(k, arrayField);
+                            });
+                            authorizationDetailsArray.add(authorizationDetailsObject);
+                            codeFlowParams.append(AMP).append(OidcConstants.AUTHORIZATION_DETAILS).append(EQ)
+                                    .append(OidcCommonUtils.urlEncode(authorizationDetailsArray.encode()));
                         }
 
                         // extra redirect parameters, see https://openid.net/specs/openid-connect-core-1_0.html#AuthRequests
