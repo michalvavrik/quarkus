@@ -1378,7 +1378,6 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
 
         /**
          * Configures the `authorization_details` request parameter string fields of the authorization request.
-         * Please note that the `type` field is required. If the `type` is not configured, validation will fail.
          * For example, if you configure the `quarkus.oidc.authentication.rar.simple.type=openid_credential`
          * property, following `authorization_details` request parameter will be added to the authorization request:
          *
