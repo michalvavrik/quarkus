@@ -998,6 +998,15 @@ quarkus.oidc-client.credentials.jwt.token-path=/var/run/secrets/tokens <1>
 ----
 <1> Path to a JWT bearer token. Quarkus loads a new token from a filesystem and reload it when the token has expired.
 
+Your other option is to implement the `ClientAssertionProvider` interface as a CDI bean. For example:
+
+[source,java]
+----
+package io.quarkus.it.keycloak;
+
+
+----
+
 Your other option is to use `OidcClient` methods for acquiring or refreshing tokens which accept additional grant parameters, for example, `oidcClient.getTokens(Map.of("client_assertion", "ey..."))`.
 
 If you work work with the OIDC client filters then you must register a custom filter which will provide this assertion.
