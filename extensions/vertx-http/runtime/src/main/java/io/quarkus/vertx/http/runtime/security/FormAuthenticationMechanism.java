@@ -34,6 +34,7 @@ import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.identity.request.AuthenticationRequest;
 import io.quarkus.security.identity.request.TrustedAuthenticationRequest;
 import io.quarkus.security.identity.request.UsernamePasswordAuthenticationRequest;
+import io.quarkus.security.spi.runtime.FormAuthenticationTokenSender;
 import io.quarkus.security.spi.runtime.SecurityEventHelper;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
 import io.smallrye.mutiny.Uni;
@@ -72,6 +73,10 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
     private final Set<String> errorPageQueryParams;
     private final Set<String> loginPageQueryParams;
     private final int priority;
+    private final FormAuthenticationTokenSender authTokenSender;
+    private final String authTokenParameter;
+    private final boolean authTokenMode;
+    private final String authTokenGenerationLocation;
 
     //the temp encryption key, persistent across dev mode restarts
     static volatile String encryptionKey;
@@ -118,6 +123,10 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         this.loginPageQueryParams = runtimeForm.loginPageQueryParams().filter(p -> !p.isEmpty()).orElse(null);
         this.errorPageQueryParams = runtimeForm.errorPageQueryParams().filter(p -> !p.isEmpty()).orElse(null);
         this.priority = runtimeForm.priority();
+        this.authTokenSender = null; // FIXME: impl me!
+        this.authTokenParameter = null; // FIXME: impl me!
+        this.authTokenMode = false; // FIXME: impl. me!
+        this.authTokenGenerationLocation = null; // FIXME: impl. me!
     }
 
     /**
@@ -148,6 +157,10 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         this.loginPageQueryParams = null;
         this.errorPageQueryParams = null;
         this.priority = HttpAuthenticationMechanism.DEFAULT_PRIORITY;
+        this.authTokenSender = null;
+        this.authTokenParameter = null;
+        this.authTokenMode = false;
+        this.authTokenGenerationLocation = null;
     }
 
     public Uni<SecurityIdentity> runFormAuth(final RoutingContext exchange,
@@ -162,6 +175,7 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
                         try {
                             MultiMap res = exchange.request().formAttributes();
 
+                            // TODO: or token!!
                             final String jUsername = res.get(usernameParameter);
                             final String jPassword = res.get(passwordParameter);
                             if (jUsername == null || jPassword == null) {
@@ -317,6 +331,16 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
     @Override
     public Uni<SecurityIdentity> authenticate(RoutingContext context,
             IdentityProviderManager identityProviderManager) {
+        // FIXME: impl. me! and remove the comments
+        // so how does it work????
+        // 1. if session cookie -> treat as any other form-based auth mech, that is:
+        //      -> auth
+        //      -> allow to send a new request for token if a different principal
+        //      -> allow to accept another token if a different from current principal
+        // 2. if post page -> require token or fail
+        // 3. if token generation path -> require principal or fail!
+        // 4. if no session cookie, redirect to login page or 401
+        // 5. on auth failure etc. redirect to error page
 
         if (context.normalizedPath().endsWith(postLocation) && context.request().method().equals(HttpMethod.POST)) {
             //we always re-auth if it is a post to the auth URL
@@ -331,6 +355,10 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
                             return addRoutingCtxToIdentityIfMissing(identity, context);
                         }
                     });
+        } else if (authTokenMode && context.normalizedPath().endsWith(authTokenGenerationLocation)
+                && context.request().method().equals(HttpMethod.POST)) {
+            // FIXME: generate token asynchronously
+            return Uni.createFrom().nullItem();
         } else {
             PersistentLoginManager.RestoreResult result = loginManager.restore(context);
             if (result != null) {
