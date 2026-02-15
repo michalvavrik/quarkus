@@ -2,6 +2,7 @@ package io.quarkus.mailer.runtime;
 
 import java.util.Map;
 
+import io.quarkus.mailer.runtime.security.MailerFormAuthenticationTokenConfig;
 import io.quarkus.runtime.annotations.ConfigDocMapKey;
 import io.quarkus.runtime.annotations.ConfigDocSection;
 import io.quarkus.runtime.annotations.ConfigPhase;
@@ -24,4 +25,11 @@ public interface MailersRuntimeConfig {
     @WithDefaults
     @WithUnnamedKey(Mailers.DEFAULT_MAILER_NAME)
     Map<String, MailerRuntimeConfig> mailers();
+
+    /**
+     * Configuration for the default form authentication token sender implementation.
+     * This sender is used together with form-based authentication mechanism.
+     */
+    @ConfigDocSection
+    MailerFormAuthenticationTokenConfig formTokenSender();
 }
