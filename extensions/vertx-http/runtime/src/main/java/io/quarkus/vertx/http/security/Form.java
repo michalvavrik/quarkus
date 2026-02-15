@@ -7,10 +7,12 @@ import java.util.Set;
 
 import org.eclipse.microprofile.config.ConfigProvider;
 
+import io.quarkus.security.spi.runtime.FormAuthenticationTokenSender;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.security.FormAuthenticationMechanism;
 import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;
+import io.quarkus.vertx.http.security.form.token.FormAuthenticationTokenStorage;
 import io.smallrye.common.annotation.Experimental;
 import io.smallrye.config.SmallRyeConfig;
 
@@ -62,13 +64,16 @@ public interface Form {
         private Optional<Set<String>> errorPageQueryParams;
         private Optional<Set<String>> loginPageQueryParams;
         private int priority;
+        private FormAuthenticationTokenSender tokenSender;
+        private FormAuthenticationTokenStorage tokenStorage;
+        private FormAuthConfig.FormAuthenticationToken token;
 
         public Builder() {
             this(ConfigProvider.getConfig().unwrap(SmallRyeConfig.class).getConfigMapping(VertxHttpConfig.class));
         }
 
-        private Builder(VertxHttpConfig vertxHttpConfig) {
-            FormAuthConfig formAuthConfig = vertxHttpConfig.auth().form();
+        public Builder(VertxHttpConfig vertxHttpConfig) {
+            var formAuthConfig = vertxHttpConfig.auth().form();
             this.postLocation = formAuthConfig.postLocation();
             this.loginPage = formAuthConfig.loginPage();
             this.usernameParameter = formAuthConfig.usernameParameter();
@@ -89,6 +94,9 @@ public interface Form {
             this.errorPageQueryParams = formAuthConfig.errorPageQueryParams();
             this.loginPageQueryParams = formAuthConfig.loginPageQueryParams();
             this.priority = formAuthConfig.priority();
+            this.tokenSender = null;
+            this.tokenStorage = null;
+            this.token = formAuthConfig.token();
         }
 
         /**
@@ -355,23 +363,191 @@ public interface Form {
             return this;
         }
 
-        public HttpAuthenticationMechanism build() {
-            return new FormAuthenticationMechanism(createFormConfig(), encryptionKey);
+        /**
+         * Configures {@link FormAuthConfig.FormAuthenticationToken}.
+         *
+         * @param tokenConfig {@link FormAuthConfig.FormAuthenticationToken}; must not be null
+         * @return Builder
+         */
+        public Builder token(FormAuthConfig.FormAuthenticationToken tokenConfig) {
+            this.token = Objects.requireNonNull(tokenConfig);
+            return this;
         }
 
-        private FormAuthConfig createFormConfig() {
-            record FormConfigImpl(Optional<String> loginPage, String usernameParameter, String passwordParameter,
-                    Optional<String> errorPage, Optional<String> landingPage,
-                    String locationCookie, Duration timeout, Duration newCookieInterval, String cookieName,
-                    Optional<String> cookiePath, Optional<String> cookieDomain, boolean httpOnlyCookie,
-                    CookieSameSite cookieSameSite, Optional<Duration> cookieMaxAge, String postLocation,
-                    Optional<Set<String>> landingPageQueryParams, Optional<Set<String>> errorPageQueryParams,
-                    Optional<Set<String>> loginPageQueryParams, int priority) implements FormAuthConfig {
-            }
-            return new FormConfigImpl(loginPage, usernameParameter, passwordParameter, errorPage,
+        /**
+         * Form authentication token configuration builder.
+         *
+         * @return FormAuthenticationTokenBuilder
+         */
+        public FormAuthenticationTokenBuilder token() {
+            return new FormAuthenticationTokenBuilder(token);
+        }
+
+        /**
+         * Configures {@link FormAuthenticationTokenSender} and {@link FormAuthenticationTokenStorage}.
+         *
+         * @param tokenSender {@link FormAuthenticationTokenSender}; nullable
+         * @param tokenStorage {@link FormAuthenticationTokenStorage}; nullable
+         * @return Builder
+         */
+        public Builder token(FormAuthenticationTokenSender tokenSender,
+                FormAuthenticationTokenStorage tokenStorage) {
+            this.tokenSender = tokenSender;
+            this.tokenStorage = tokenStorage;
+            return this;
+        }
+
+        public FormAuthenticationMechanism build() {
+            return new FormAuthenticationMechanism(createFormConfig());
+        }
+
+        private ExtendedFormAuthConfig createFormConfig() {
+            return new ExtendedConfigImpl(loginPage, usernameParameter, passwordParameter, errorPage,
                     landingPage, locationCookie, timeout, newCookieInterval, cookieName, cookiePath,
                     cookieDomain, httpOnlyCookie, cookieSameSite, cookieMaxAge, postLocation, landingPageQueryParams,
-                    errorPageQueryParams, loginPageQueryParams, priority);
+                    errorPageQueryParams, loginPageQueryParams, priority, token, tokenSender, tokenStorage, encryptionKey);
         }
+
+        private record ExtendedConfigImpl(Optional<String> loginPage, String usernameParameter, String passwordParameter,
+                Optional<String> errorPage, Optional<String> landingPage,
+                String locationCookie, Duration timeout, Duration newCookieInterval, String cookieName,
+                Optional<String> cookiePath, Optional<String> cookieDomain, boolean httpOnlyCookie,
+                CookieSameSite cookieSameSite, Optional<Duration> cookieMaxAge, String postLocation,
+                Optional<Set<String>> landingPageQueryParams, Optional<Set<String>> errorPageQueryParams,
+                Optional<Set<String>> loginPageQueryParams, int priority,
+                FormAuthenticationToken token, FormAuthenticationTokenSender tokenSender,
+                FormAuthenticationTokenStorage tokenStorage, Optional<String> encryptionKey) implements ExtendedFormAuthConfig {
+        }
+
+        public final class FormAuthenticationTokenBuilder {
+
+            private Optional<String> tokenPage;
+            private String tokenParameter;
+            private int tokenLength;
+            private Duration expiresIn;
+            private String cookieName;
+
+            private FormAuthenticationTokenBuilder(FormAuthConfig.FormAuthenticationToken token) {
+                this.tokenPage = token.tokenPage();
+                this.tokenParameter = token.tokenParameter();
+                this.tokenLength = token.tokenLength();
+                this.expiresIn = token.expiresIn();
+                this.cookieName = token.cookieName();
+            }
+
+            /**
+             * Configures token request cookie name.
+             *
+             * @param cookieName {@link FormAuthConfig.FormAuthenticationToken#cookieName()}
+             * @return FormAuthenticationTokenBuilder
+             */
+            public FormAuthenticationTokenBuilder cookieName(String cookieName) {
+                this.cookieName = Objects.requireNonNull(cookieName);
+                return this;
+            }
+
+            /**
+             * Configures token request cookie expiration time.
+             *
+             * @param expiresIn {@link FormAuthConfig.FormAuthenticationToken#expiresIn()}
+             * @return FormAuthenticationTokenBuilder
+             */
+            public FormAuthenticationTokenBuilder expiresIn(Duration expiresIn) {
+                this.expiresIn = Objects.requireNonNull(expiresIn);
+                return this;
+            }
+
+            /**
+             * Configures token length.
+             *
+             * @param tokenLength {@link FormAuthConfig.FormAuthenticationToken#tokenLength()}
+             * @return FormAuthenticationTokenBuilder
+             */
+            public FormAuthenticationTokenBuilder tokenLength(int tokenLength) {
+                this.tokenLength = tokenLength;
+                return this;
+            }
+
+            /**
+             * Configures token form parameter name.
+             *
+             * @param tokenParameter {@link FormAuthConfig.FormAuthenticationToken#tokenParameter()}
+             * @return FormAuthenticationTokenBuilder
+             */
+            public FormAuthenticationTokenBuilder tokenParameter(String tokenParameter) {
+                this.tokenParameter = Objects.requireNonNull(tokenParameter);
+                return this;
+            }
+
+            /**
+             * Configures token page.
+             *
+             * @param tokenPage {@link FormAuthConfig.FormAuthenticationToken#tokenPage()}
+             * @return FormAuthenticationTokenBuilder
+             */
+            public FormAuthenticationTokenBuilder tokenPage(String tokenPage) {
+                this.tokenPage = Optional.ofNullable(tokenPage);
+                return this;
+            }
+
+            /**
+             * Form authentication token storage. By default, cookie-based token storage is used.
+             *
+             * @param tokenStorage {@link FormAuthenticationTokenStorage}
+             * @return FormAuthenticationTokenBuilder
+             */
+            public FormAuthenticationTokenBuilder tokenStorage(FormAuthenticationTokenStorage tokenStorage) {
+                Builder.this.tokenStorage = tokenStorage;
+                return this;
+            }
+
+            /**
+             * Form authentication token sender.
+             *
+             * @param tokenSender {@link FormAuthenticationTokenSender}
+             * @return FormAuthenticationTokenBuilder
+             */
+            public FormAuthenticationTokenBuilder tokenSender(FormAuthenticationTokenSender tokenSender) {
+                Builder.this.tokenSender = tokenSender;
+                return this;
+            }
+
+            /**
+             * Builds {@link FormAuthConfig.FormAuthenticationToken}.
+             *
+             * @return FormAuthConfig.FormAuthenticationToken
+             */
+            public FormAuthConfig.FormAuthenticationToken build() {
+                record FormAuthenticationTokenImpl(Optional<String> tokenPage, String tokenParameter, int tokenLength,
+                        Duration expiresIn, String cookieName) implements FormAuthConfig.FormAuthenticationToken {
+                }
+                return new FormAuthenticationTokenImpl(tokenPage, tokenParameter, tokenLength, expiresIn, cookieName);
+            }
+
+            /**
+             * Builds {@link FormAuthConfig.FormAuthenticationToken} and returns {@link Builder}.
+             *
+             * @return {@link Builder}
+             */
+            public Builder end() {
+                Builder.this.token = build();
+                return Builder.this;
+            }
+        }
+    }
+
+    /**
+     * Contains both runtime {@link FormAuthConfig}, configuration from other classes we need in order to create
+     * the form-based mechanism (like the encryption key) and other components that can be provided either
+     * by CDI container or programmatically via {@link Builder}. This configuration can only be created with the builder.
+     */
+    sealed interface ExtendedFormAuthConfig extends FormAuthConfig {
+
+        FormAuthenticationTokenSender tokenSender();
+
+        FormAuthenticationTokenStorage tokenStorage();
+
+        Optional<String> encryptionKey();
+
     }
 }

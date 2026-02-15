@@ -166,4 +166,51 @@ public interface FormAuthConfig {
      */
     @WithDefault(HttpAuthenticationMechanism.DEFAULT_PRIORITY + "")
     int priority();
+
+    /**
+     * Form authentication token configuration. This feature is enabled automatically when there
+     * is resolvable {@link io.quarkus.security.spi.runtime.FormAuthenticationTokenSender} CDI bean.
+     * When enabled, Quarkus accepts the token form parameter instead of the password parameter.
+     */
+    FormAuthenticationToken token();
+
+    /**
+     * Form authentication token configuration.
+     */
+    interface FormAuthenticationToken {
+
+        /**
+         * Path of the page where users should be redirected when the token was generated and sent.
+         * Redirect to this page can be disabled by setting `quarkus.http.auth.form.token.token-page=`.
+         */
+        @WithDefault("/token.html")
+        Optional<String> tokenPage();
+
+        /**
+         * The token field name.
+         */
+        @WithDefault("j_token")
+        String tokenParameter();
+
+        /**
+         * The generated token length.
+         */
+        @WithDefault("15")
+        int tokenLength();
+
+        /**
+         * The form authentication token expiration time used by
+         * the default implementation of {@link io.quarkus.vertx.http.security.form.token.FormAuthenticationTokenStorage}.
+         */
+        @WithDefault("5M")
+        Duration expiresIn();
+
+        /**
+         * The name of the cookie used to store the token request by
+         * the default implementation of {@link io.quarkus.vertx.http.security.form.token.FormAuthenticationTokenStorage}.
+         */
+        @WithDefault("quarkus-form-token-request")
+        String cookieName();
+
+    }
 }
