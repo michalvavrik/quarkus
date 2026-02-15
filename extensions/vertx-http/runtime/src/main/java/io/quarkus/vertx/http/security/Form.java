@@ -7,6 +7,7 @@ import java.util.Set;
 
 import org.eclipse.microprofile.config.ConfigProvider;
 
+import io.quarkus.security.spi.runtime.FormAuthenticationTokenSender;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.security.FormAuthenticationMechanism;
@@ -62,12 +63,14 @@ public interface Form {
         private Optional<Set<String>> errorPageQueryParams;
         private Optional<Set<String>> loginPageQueryParams;
         private int priority;
+        private FormAuthenticationTokenSender tokenSender;
+        private FormAuthConfig.FormAuthenticationToken token;
 
         public Builder() {
             this(ConfigProvider.getConfig().unwrap(SmallRyeConfig.class).getConfigMapping(VertxHttpConfig.class));
         }
 
-        private Builder(VertxHttpConfig vertxHttpConfig) {
+        public Builder(VertxHttpConfig vertxHttpConfig) {
             FormAuthConfig formAuthConfig = vertxHttpConfig.auth().form();
             this.postLocation = formAuthConfig.postLocation();
             this.loginPage = formAuthConfig.loginPage();
@@ -89,6 +92,8 @@ public interface Form {
             this.errorPageQueryParams = formAuthConfig.errorPageQueryParams();
             this.loginPageQueryParams = formAuthConfig.loginPageQueryParams();
             this.priority = formAuthConfig.priority();
+            this.tokenSender = null;
+            this.token = formAuthConfig.token();
         }
 
         /**
@@ -356,7 +361,7 @@ public interface Form {
         }
 
         public HttpAuthenticationMechanism build() {
-            return new FormAuthenticationMechanism(createFormConfig(), encryptionKey);
+            return new FormAuthenticationMechanism(createFormConfig(), encryptionKey, tokenSender);
         }
 
         private FormAuthConfig createFormConfig() {
@@ -366,12 +371,13 @@ public interface Form {
                     Optional<String> cookiePath, Optional<String> cookieDomain, boolean httpOnlyCookie,
                     CookieSameSite cookieSameSite, Optional<Duration> cookieMaxAge, String postLocation,
                     Optional<Set<String>> landingPageQueryParams, Optional<Set<String>> errorPageQueryParams,
-                    Optional<Set<String>> loginPageQueryParams, int priority) implements FormAuthConfig {
+                    Optional<Set<String>> loginPageQueryParams, int priority,
+                    FormAuthenticationToken token) implements FormAuthConfig {
             }
             return new FormConfigImpl(loginPage, usernameParameter, passwordParameter, errorPage,
                     landingPage, locationCookie, timeout, newCookieInterval, cookieName, cookiePath,
                     cookieDomain, httpOnlyCookie, cookieSameSite, cookieMaxAge, postLocation, landingPageQueryParams,
-                    errorPageQueryParams, loginPageQueryParams, priority);
+                    errorPageQueryParams, loginPageQueryParams, priority, token);
         }
     }
 }

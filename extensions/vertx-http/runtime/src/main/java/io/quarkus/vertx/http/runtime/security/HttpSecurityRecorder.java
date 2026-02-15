@@ -109,39 +109,47 @@ public class HttpSecurityRecorder {
     public void formAuthPostHandler(RuntimeValue<Router> httpRouter) {
         HttpSecurityConfiguration config = HttpSecurityConfiguration.get();
         if (config.formAuthEnabled()) {
+            final Handler<RoutingContext> formAuthPostHandler = new Handler<RoutingContext>() {
+                @Override
+                public void handle(RoutingContext event) {
+                    Uni<SecurityIdentity> user = event.get(QuarkusHttpUser.DEFERRED_IDENTITY_KEY);
+                    user.subscribe().withSubscriber(new UniSubscriber<SecurityIdentity>() {
+                        @Override
+                        public void onSubscribe(UniSubscription uniSubscription) {
+
+                        }
+
+                        @Override
+                        public void onItem(SecurityIdentity securityIdentity) {
+                            // we expect that form-based authentication mechanism to recognize the post-location,
+                            // authenticate and if user provided credentials in form attribute, response will be ended
+                            if (!event.response().ended()) {
+                                event.response().end();
+                            }
+                        }
+
+                        @Override
+                        public void onFailure(Throwable throwable) {
+                            // with current builtin implementation if only form-based authentication mechanism the event here
+                            // won't be ended or failed, but we check in case there is custom implementation that differs
+                            if (!event.response().ended() && !event.failed()) {
+                                event.fail(throwable);
+                            }
+                        }
+                    });
+                }
+            };
             httpRouter.getValue()
                     .post(config.formPostLocation())
                     .order(-1 * SecurityHandlerPriorities.FORM_AUTHENTICATION)
-                    .handler(new Handler<RoutingContext>() {
-                        @Override
-                        public void handle(RoutingContext event) {
-                            Uni<SecurityIdentity> user = event.get(QuarkusHttpUser.DEFERRED_IDENTITY_KEY);
-                            user.subscribe().withSubscriber(new UniSubscriber<SecurityIdentity>() {
-                                @Override
-                                public void onSubscribe(UniSubscription uniSubscription) {
-
-                                }
-
-                                @Override
-                                public void onItem(SecurityIdentity securityIdentity) {
-                                    // we expect that form-based authentication mechanism to recognize the post-location,
-                                    // authenticate and if user provided credentials in form attribute, response will be ended
-                                    if (!event.response().ended()) {
-                                        event.response().end();
-                                    }
-                                }
-
-                                @Override
-                                public void onFailure(Throwable throwable) {
-                                    // with current builtin implementation if only form-based authentication mechanism the event here
-                                    // won't be ended or failed, but we check in case there is custom implementation that differs
-                                    if (!event.response().ended() && !event.failed()) {
-                                        event.fail(throwable);
-                                    }
-                                }
-                            });
-                        }
-                    });
+                    .handler(formAuthPostHandler);
+            if (config.getFormPostTokenGenerationLocation() != null) {
+                // this makes sure that token can be generated when proactive authentication is disabled
+                httpRouter.getValue()
+                        .post(config.getFormPostTokenGenerationLocation())
+                        .order(-1 * SecurityHandlerPriorities.FORM_AUTHENTICATION)
+                        .handler(formAuthPostHandler);
+            }
         }
     }
 
