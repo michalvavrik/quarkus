@@ -30,6 +30,7 @@ import io.quarkus.runtime.LaunchMode;
 import io.quarkus.security.identity.IdentityProvider;
 import io.quarkus.security.identity.request.AuthenticationRequest;
 import io.quarkus.security.identity.request.UsernamePasswordAuthenticationRequest;
+import io.quarkus.security.spi.runtime.FormAuthenticationTokenSender;
 import io.quarkus.vertx.http.runtime.AuthRuntimeConfig;
 import io.quarkus.vertx.http.runtime.PolicyMappingConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
@@ -38,7 +39,9 @@ import io.quarkus.vertx.http.runtime.cors.CORSConfig;
 import io.quarkus.vertx.http.runtime.options.HttpServerTlsConfig;
 import io.quarkus.vertx.http.runtime.security.annotation.BasicAuthentication;
 import io.quarkus.vertx.http.security.CSRF;
+import io.quarkus.vertx.http.security.Form;
 import io.quarkus.vertx.http.security.HttpSecurity;
+import io.quarkus.vertx.http.security.form.token.FormAuthenticationTokenStorage;
 import io.smallrye.config.SmallRyeConfig;
 import io.vertx.core.http.ClientAuth;
 
@@ -55,6 +58,7 @@ public final class HttpSecurityConfiguration {
     private final Optional<Boolean> basicAuthEnabled;
     private final boolean formAuthEnabled;
     private final String formPostLocation;
+    private final String formPostTokenGenerationLocation;
     private final List<HttpAuthenticationMechanism> additionalMechanisms;
     private final VertxHttpConfig httpConfig;
     private final VertxHttpBuildTimeConfig httpBuildTimeConfig;
@@ -63,6 +67,7 @@ public final class HttpSecurityConfiguration {
 
     private HttpSecurityConfiguration(RolesMapping rolesMapping, List<HttpPermissionCarrier> httpPermissions,
             Optional<Boolean> basicAuthEnabled, boolean formAuthEnabled, String formPostLocation,
+            String formPostTokenGenerationLocation,
             List<HttpAuthenticationMechanism> additionalMechanisms, VertxHttpConfig httpConfig,
             VertxHttpBuildTimeConfig httpBuildTimeConfig, CORSConfig corsConfig, CSRF csrf) {
         this.rolesMapping = rolesMapping;
@@ -70,6 +75,7 @@ public final class HttpSecurityConfiguration {
         this.basicAuthEnabled = basicAuthEnabled;
         this.formAuthEnabled = formAuthEnabled;
         this.formPostLocation = formPostLocation;
+        this.formPostTokenGenerationLocation = formPostTokenGenerationLocation;
         this.additionalMechanisms = additionalMechanisms;
         this.httpConfig = httpConfig;
         this.httpBuildTimeConfig = httpBuildTimeConfig;
@@ -152,7 +158,11 @@ public final class HttpSecurityConfiguration {
                 return (FormAuthenticationMechanism) additionalMechanism;
             }
         }
-        return new FormAuthenticationMechanism(httpConfig.auth().form(), httpConfig.encryptionKey());
+        var container = Arc.requireContainer();
+        return new Form.Builder(httpConfig)
+                .tokenSender(container.select(FormAuthenticationTokenSender.class).orNull())
+                .tokenStorage(container.select(FormAuthenticationTokenStorage.class).orNull())
+                .build();
     }
 
     MtlsAuthenticationMechanism getMtlsAuthenticationMechanism() {
@@ -262,20 +272,23 @@ public final class HttpSecurityConfiguration {
 
             boolean formAuthEnabled = vertxHttpBuildTimeConfig.auth().form();
             String formPostLocation = vertxHttpConfig.auth().form().postLocation();
+            String formPostTokenGenerationLocation = null;
             if (!formAuthEnabled) {
                 for (HttpAuthenticationMechanism mechanism : mechanisms) {
                     // not using instance of as we are not considering subclasses
                     if (mechanism.getClass() == FormAuthenticationMechanism.class) {
                         formAuthEnabled = true;
-                        formPostLocation = ((FormAuthenticationMechanism) mechanism).getPostLocation();
+                        FormAuthenticationMechanism formMechanism = (FormAuthenticationMechanism) mechanism;
+                        formPostLocation = formMechanism.getPostLocation();
+                        formPostTokenGenerationLocation = formMechanism.getPostTokenGenerationLocation();
                         break;
                     }
                 }
             }
 
             instance = new HttpSecurityConfiguration(httpSecurity.getRolesMapping(), httpSecurity.getHttpPermissions(),
-                    basicAuthEnabled, formAuthEnabled, formPostLocation, mechanisms, vertxHttpConfig,
-                    vertxHttpBuildTimeConfig, httpSecurity.getCorsConfig(), httpSecurity.getCsrf());
+                    basicAuthEnabled, formAuthEnabled, formPostLocation, formPostTokenGenerationLocation, mechanisms,
+                    vertxHttpConfig, vertxHttpBuildTimeConfig, httpSecurity.getCorsConfig(), httpSecurity.getCsrf());
             HttpServerTlsConfig.setConfiguration(
                     new ProgrammaticTlsConfig(httpSecurity.getClientAuth(), httpSecurity.getHttpServerTlsConfigName()));
         }
@@ -460,6 +473,10 @@ public final class HttpSecurityConfiguration {
 
     String formPostLocation() {
         return formPostLocation;
+    }
+
+    String getFormPostTokenGenerationLocation() {
+        return formPostTokenGenerationLocation;
     }
 
     CORSConfig getCorsConfig() {
