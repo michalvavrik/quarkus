@@ -7,10 +7,12 @@ import java.util.Set;
 
 import org.eclipse.microprofile.config.ConfigProvider;
 
+import io.quarkus.security.spi.runtime.FormAuthenticationTokenSender;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.security.FormAuthenticationMechanism;
 import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;
+import io.quarkus.vertx.http.security.form.token.FormAuthenticationTokenStorage;
 import io.smallrye.common.annotation.Experimental;
 import io.smallrye.config.SmallRyeConfig;
 
@@ -62,13 +64,16 @@ public interface Form {
         private Optional<Set<String>> errorPageQueryParams;
         private Optional<Set<String>> loginPageQueryParams;
         private int priority;
+        private FormAuthenticationTokenSender tokenSender;
+        private FormAuthenticationTokenStorage tokenStorage;
+        private FormAuthConfig.FormAuthenticationToken token;
 
         public Builder() {
             this(ConfigProvider.getConfig().unwrap(SmallRyeConfig.class).getConfigMapping(VertxHttpConfig.class));
         }
 
-        private Builder(VertxHttpConfig vertxHttpConfig) {
-            FormAuthConfig formAuthConfig = vertxHttpConfig.auth().form();
+        public Builder(VertxHttpConfig vertxHttpConfig) {
+            var formAuthConfig = vertxHttpConfig.auth().form();
             this.postLocation = formAuthConfig.postLocation();
             this.loginPage = formAuthConfig.loginPage();
             this.usernameParameter = formAuthConfig.usernameParameter();
@@ -89,6 +94,9 @@ public interface Form {
             this.errorPageQueryParams = formAuthConfig.errorPageQueryParams();
             this.loginPageQueryParams = formAuthConfig.loginPageQueryParams();
             this.priority = formAuthConfig.priority();
+            this.tokenSender = null;
+            this.tokenStorage = null;
+            this.token = formAuthConfig.token();
         }
 
         /**
@@ -355,23 +363,63 @@ public interface Form {
             return this;
         }
 
-        public HttpAuthenticationMechanism build() {
-            return new FormAuthenticationMechanism(createFormConfig(), encryptionKey);
+        /**
+         * Form authentication token storage. By default, cookie-based token storage is used.
+         *
+         * @param tokenStorage {@link FormAuthenticationTokenStorage}
+         * @return Builder
+         */
+        public Builder tokenStorage(FormAuthenticationTokenStorage tokenStorage) {
+            this.tokenStorage = tokenStorage;
+            return this;
         }
 
-        private FormAuthConfig createFormConfig() {
-            record FormConfigImpl(Optional<String> loginPage, String usernameParameter, String passwordParameter,
-                    Optional<String> errorPage, Optional<String> landingPage,
-                    String locationCookie, Duration timeout, Duration newCookieInterval, String cookieName,
-                    Optional<String> cookiePath, Optional<String> cookieDomain, boolean httpOnlyCookie,
-                    CookieSameSite cookieSameSite, Optional<Duration> cookieMaxAge, String postLocation,
-                    Optional<Set<String>> landingPageQueryParams, Optional<Set<String>> errorPageQueryParams,
-                    Optional<Set<String>> loginPageQueryParams, int priority) implements FormAuthConfig {
-            }
-            return new FormConfigImpl(loginPage, usernameParameter, passwordParameter, errorPage,
+        /**
+         * Form authentication token sender.
+         *
+         * @param tokenSender {@link FormAuthenticationTokenSender}
+         * @return Builder
+         */
+        public Builder tokenSender(FormAuthenticationTokenSender tokenSender) {
+            this.tokenSender = tokenSender;
+            return this;
+        }
+
+        public FormAuthenticationMechanism build() {
+            return new FormAuthenticationMechanism(createFormConfig());
+        }
+
+        private ExtendedFormAuthConfig createFormConfig() {
+            return new ExtendedConfigImpl(loginPage, usernameParameter, passwordParameter, errorPage,
                     landingPage, locationCookie, timeout, newCookieInterval, cookieName, cookiePath,
                     cookieDomain, httpOnlyCookie, cookieSameSite, cookieMaxAge, postLocation, landingPageQueryParams,
-                    errorPageQueryParams, loginPageQueryParams, priority);
+                    errorPageQueryParams, loginPageQueryParams, priority, token, tokenSender, tokenStorage, encryptionKey);
         }
+
+        private record ExtendedConfigImpl(Optional<String> loginPage, String usernameParameter, String passwordParameter,
+                Optional<String> errorPage, Optional<String> landingPage,
+                String locationCookie, Duration timeout, Duration newCookieInterval, String cookieName,
+                Optional<String> cookiePath, Optional<String> cookieDomain, boolean httpOnlyCookie,
+                CookieSameSite cookieSameSite, Optional<Duration> cookieMaxAge, String postLocation,
+                Optional<Set<String>> landingPageQueryParams, Optional<Set<String>> errorPageQueryParams,
+                Optional<Set<String>> loginPageQueryParams, int priority,
+                FormAuthenticationToken token, FormAuthenticationTokenSender tokenSender,
+                FormAuthenticationTokenStorage tokenStorage, Optional<String> encryptionKey) implements ExtendedFormAuthConfig {
+        }
+    }
+
+    /**
+     * Contains both runtime {@link FormAuthConfig}, configuration from other classes we need in order to create
+     * the form-based mechanism (like the encryption key) and other components that can be provided either
+     * by CDI container or programmatically via {@link Builder}. This configuration can only be created with the builder.
+     */
+    sealed interface ExtendedFormAuthConfig extends FormAuthConfig {
+
+        FormAuthenticationTokenSender tokenSender();
+
+        FormAuthenticationTokenStorage tokenStorage();
+
+        Optional<String> encryptionKey();
+
     }
 }
