@@ -30,7 +30,9 @@ import io.quarkus.runtime.LaunchMode;
 import io.quarkus.security.identity.IdentityProvider;
 import io.quarkus.security.identity.request.AuthenticationRequest;
 import io.quarkus.security.identity.request.UsernamePasswordAuthenticationRequest;
+import io.quarkus.security.spi.runtime.FormAuthenticationTokenSender;
 import io.quarkus.vertx.http.runtime.AuthRuntimeConfig;
+import io.quarkus.vertx.http.runtime.FormAuthConfig;
 import io.quarkus.vertx.http.runtime.PolicyMappingConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
@@ -38,7 +40,9 @@ import io.quarkus.vertx.http.runtime.cors.CORSConfig;
 import io.quarkus.vertx.http.runtime.options.HttpServerTlsConfig;
 import io.quarkus.vertx.http.runtime.security.annotation.BasicAuthentication;
 import io.quarkus.vertx.http.security.CSRF;
+import io.quarkus.vertx.http.security.Form;
 import io.quarkus.vertx.http.security.HttpSecurity;
+import io.quarkus.vertx.http.security.form.token.FormAuthenticationTokenStorage;
 import io.smallrye.config.SmallRyeConfig;
 import io.vertx.core.http.ClientAuth;
 
@@ -53,8 +57,7 @@ public final class HttpSecurityConfiguration {
     private final RolesMapping rolesMapping;
     private final List<HttpPermissionCarrier> httpPermissions;
     private final Optional<Boolean> basicAuthEnabled;
-    private final boolean formAuthEnabled;
-    private final String formPostLocation;
+    private final ActiveFormAuthMechanismConfig activeFormAuthMechanismConfig;
     private final List<HttpAuthenticationMechanism> additionalMechanisms;
     private final VertxHttpConfig httpConfig;
     private final VertxHttpBuildTimeConfig httpBuildTimeConfig;
@@ -62,14 +65,13 @@ public final class HttpSecurityConfiguration {
     private final CSRF csrf;
 
     private HttpSecurityConfiguration(RolesMapping rolesMapping, List<HttpPermissionCarrier> httpPermissions,
-            Optional<Boolean> basicAuthEnabled, boolean formAuthEnabled, String formPostLocation,
+            Optional<Boolean> basicAuthEnabled, ActiveFormAuthMechanismConfig activeFormAuthMechanismConfig,
             List<HttpAuthenticationMechanism> additionalMechanisms, VertxHttpConfig httpConfig,
             VertxHttpBuildTimeConfig httpBuildTimeConfig, CORSConfig corsConfig, CSRF csrf) {
         this.rolesMapping = rolesMapping;
         this.httpPermissions = httpPermissions;
         this.basicAuthEnabled = basicAuthEnabled;
-        this.formAuthEnabled = formAuthEnabled;
-        this.formPostLocation = formPostLocation;
+        this.activeFormAuthMechanismConfig = activeFormAuthMechanismConfig;
         this.additionalMechanisms = additionalMechanisms;
         this.httpConfig = httpConfig;
         this.httpBuildTimeConfig = httpBuildTimeConfig;
@@ -142,7 +144,7 @@ public final class HttpSecurityConfiguration {
                 return (BasicAuthenticationMechanism) additionalMechanism;
             }
         }
-        return new BasicAuthenticationMechanism(httpConfig.auth().realm().orElse(null), formAuthEnabled,
+        return new BasicAuthenticationMechanism(httpConfig.auth().realm().orElse(null), activeFormAuthMechanismConfig != null,
                 httpConfig.auth().basicPriority());
     }
 
@@ -152,7 +154,11 @@ public final class HttpSecurityConfiguration {
                 return (FormAuthenticationMechanism) additionalMechanism;
             }
         }
-        return new FormAuthenticationMechanism(httpConfig.auth().form(), httpConfig.encryptionKey());
+        var container = Arc.requireContainer();
+        return new Form.Builder(httpConfig)
+                .tokenSender(container.select(FormAuthenticationTokenSender.class).orNull())
+                .tokenStorage(container.select(FormAuthenticationTokenStorage.class).orNull())
+                .build();
     }
 
     MtlsAuthenticationMechanism getMtlsAuthenticationMechanism() {
@@ -260,21 +266,27 @@ public final class HttpSecurityConfiguration {
                 }
             }
 
-            boolean formAuthEnabled = vertxHttpBuildTimeConfig.auth().form();
-            String formPostLocation = vertxHttpConfig.auth().form().postLocation();
-            if (!formAuthEnabled) {
+            ActiveFormAuthMechanismConfig activeFormAuthMechanismConfig = null;
+            if (vertxHttpBuildTimeConfig.auth().form()) {
+                // configuration via SmallRye Config
+                var defaultFormConfig = vertxHttpConfig.auth().form();
+                activeFormAuthMechanismConfig = new ActiveFormAuthMechanismConfig(
+                        defaultFormConfig.postLocation(), defaultFormConfig.token());
+            } else {
+                // programmatic configuration
                 for (HttpAuthenticationMechanism mechanism : mechanisms) {
                     // not using instance of as we are not considering subclasses
                     if (mechanism.getClass() == FormAuthenticationMechanism.class) {
-                        formAuthEnabled = true;
-                        formPostLocation = ((FormAuthenticationMechanism) mechanism).getPostLocation();
+                        FormAuthenticationMechanism formMechanism = (FormAuthenticationMechanism) mechanism;
+                        activeFormAuthMechanismConfig = new ActiveFormAuthMechanismConfig(
+                                formMechanism.getPostLocation(), formMechanism.getTokenConfig());
                         break;
                     }
                 }
             }
 
             instance = new HttpSecurityConfiguration(httpSecurity.getRolesMapping(), httpSecurity.getHttpPermissions(),
-                    basicAuthEnabled, formAuthEnabled, formPostLocation, mechanisms, vertxHttpConfig,
+                    basicAuthEnabled, activeFormAuthMechanismConfig, mechanisms, vertxHttpConfig,
                     vertxHttpBuildTimeConfig, httpSecurity.getCorsConfig(), httpSecurity.getCsrf());
             HttpServerTlsConfig.setConfiguration(
                     new ProgrammaticTlsConfig(httpSecurity.getClientAuth(), httpSecurity.getHttpServerTlsConfigName()));
@@ -455,11 +467,16 @@ public final class HttpSecurityConfiguration {
     }
 
     boolean formAuthEnabled() {
-        return formAuthEnabled;
+        return activeFormAuthMechanismConfig != null;
     }
 
     String formPostLocation() {
-        return formPostLocation;
+        return activeFormAuthMechanismConfig == null ? null : activeFormAuthMechanismConfig.formPostLocation();
+    }
+
+    String getFormPostTokenGenerationLocation() {
+        return activeFormAuthMechanismConfig == null ? null
+                : activeFormAuthMechanismConfig.tokenConfig.tokenPage().orElse(null);
     }
 
     CORSConfig getCorsConfig() {
@@ -519,5 +536,20 @@ public final class HttpSecurityConfiguration {
             this.tlsClientAuth = tlsClientAuth;
             this.tlsConfigName = Objects.requireNonNull(tlsConfigName);
         }
+    }
+
+    public static FormAuthenticationTokenStorage createDefaultFormAuthenticationTokenStorage() {
+        var anInstance = instance;
+        if (anInstance == null) {
+            throw new RuntimeException(
+                    "HTTP Security configuration is not ready, this method can only be called after Quarkus application has started");
+        }
+        if (anInstance.activeFormAuthMechanismConfig == null) {
+            throw new RuntimeException("Form-based authentication mechanism is not enabled");
+        }
+        return new CookieFormAuthenticationTokenStorage(anInstance.activeFormAuthMechanismConfig.tokenConfig);
+    }
+
+    private record ActiveFormAuthMechanismConfig(String formPostLocation, FormAuthConfig.FormAuthenticationToken tokenConfig) {
     }
 }
