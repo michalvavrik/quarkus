@@ -28,14 +28,19 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.quarkus.arc.Arc;
 import io.quarkus.security.AuthenticationCompletionException;
+import io.quarkus.security.AuthenticationException;
+import io.quarkus.security.AuthenticationFailedException;
 import io.quarkus.security.credential.PasswordCredential;
 import io.quarkus.security.identity.IdentityProviderManager;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.identity.request.AuthenticationRequest;
 import io.quarkus.security.identity.request.TrustedAuthenticationRequest;
 import io.quarkus.security.identity.request.UsernamePasswordAuthenticationRequest;
+import io.quarkus.security.spi.runtime.FormAuthenticationTokenSender;
 import io.quarkus.security.spi.runtime.SecurityEventHelper;
 import io.quarkus.vertx.http.runtime.FormAuthConfig;
+import io.quarkus.vertx.http.security.Form;
+import io.quarkus.vertx.http.security.form.token.FormAuthenticationTokenStorage;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.UniEmitter;
 import io.vertx.core.Handler;
@@ -72,11 +77,31 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
     private final Set<String> errorPageQueryParams;
     private final Set<String> loginPageQueryParams;
     private final int priority;
+    private final FormAuthenticationTokenHandler authenticationTokenHandler;
 
     //the temp encryption key, persistent across dev mode restarts
     static volatile String encryptionKey;
 
+    /**
+     * @deprecated this class should be created with the {@link Form} API; if you need extend this class, use
+     *             {@link FormAuthenticationMechanism#FormAuthenticationMechanism(FormAuthConfig, Optional, FormAuthenticationTokenSender, FormAuthenticationTokenStorage)}
+     */
+    @Deprecated(since = "3.34", forRemoval = true)
     public FormAuthenticationMechanism(FormAuthConfig runtimeForm, Optional<String> encKey) {
+        this(runtimeForm, encKey, null, null);
+    }
+
+    public FormAuthenticationMechanism(Form.ExtendedFormAuthConfig extendedConfig) {
+        this(extendedConfig, extendedConfig.encryptionKey(), extendedConfig.tokenSender(), extendedConfig.tokenStorage());
+    }
+
+    /**
+     * This constructor can be used by subclasses, however, if we need to extend this class functionality, we may change
+     * it without introducing yet another constructor. If that is an issue for you, please consider building this class
+     * with the {@link Form} API and use the delegation pattern.
+     */
+    protected FormAuthenticationMechanism(FormAuthConfig runtimeForm, Optional<String> encKey,
+            FormAuthenticationTokenSender tokenSender, FormAuthenticationTokenStorage tokenStorage) {
         final String key;
         if (encKey.isEmpty()) {
             if (encryptionKey != null) {
@@ -118,36 +143,8 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         this.loginPageQueryParams = runtimeForm.loginPageQueryParams().filter(p -> !p.isEmpty()).orElse(null);
         this.errorPageQueryParams = runtimeForm.errorPageQueryParams().filter(p -> !p.isEmpty()).orElse(null);
         this.priority = runtimeForm.priority();
-    }
-
-    /**
-     * @deprecated use {@link #FormAuthenticationMechanism(FormAuthConfig, Optional)}
-     */
-    @Deprecated(forRemoval = true, since = "3.25")
-    public FormAuthenticationMechanism(String loginPage, String postLocation,
-            String usernameParameter, String passwordParameter, String errorPage, String landingPage,
-            boolean redirectAfterLogin, String locationCookie, String cookieSameSite, String cookiePath,
-            String cookieDomain, PersistentLoginManager loginManager) {
-        this.loginPage = loginPage;
-        this.postLocation = postLocation;
-        this.usernameParameter = usernameParameter;
-        this.passwordParameter = passwordParameter;
-        this.locationCookie = locationCookie;
-        this.errorPage = errorPage;
-        this.landingPage = landingPage;
-        this.redirectToLandingPage = landingPage != null && redirectAfterLogin;
-        this.redirectToLoginPage = loginPage != null;
-        this.redirectToErrorPage = errorPage != null;
-        this.cookieSameSite = CookieSameSite.valueOf(cookieSameSite);
-        this.cookiePath = cookiePath;
-        this.cookieDomain = cookieDomain;
-        this.loginManager = loginManager;
-        this.isFormAuthEventObserver = false;
-        this.formAuthEvent = null;
-        this.landingPageQueryParams = null;
-        this.loginPageQueryParams = null;
-        this.errorPageQueryParams = null;
-        this.priority = HttpAuthenticationMechanism.DEFAULT_PRIORITY;
+        this.authenticationTokenHandler = FormAuthenticationTokenHandler.of(runtimeForm, tokenSender, formAuthEvent,
+                loginManager, tokenStorage);
     }
 
     public Uni<SecurityIdentity> runFormAuth(final RoutingContext exchange,
@@ -162,19 +159,34 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
                         try {
                             MultiMap res = exchange.request().formAttributes();
 
-                            final String jUsername = res.get(usernameParameter);
-                            final String jPassword = res.get(passwordParameter);
-                            if (jUsername == null || jPassword == null) {
-                                log.debugf(
-                                        "Could not authenticate as username or password was not present in the posted result for %s",
+                            final Uni<SecurityIdentity> securityIdentityUni;
+                            if (authenticationTokenHandler != null) {
+                                final String jToken = res.get(authenticationTokenHandler.getTokenFormParameter());
+                                if (jToken == null || jToken.isEmpty()) {
+                                    log.debugf("Could not authenticate as token was not present in the posted result for %s",
+                                            exchange);
+                                    uniEmitter.complete(null);
+                                    return;
+                                }
+                                securityIdentityUni = authenticationTokenHandler.authenticateUsingToken(jToken, securityContext,
                                         exchange);
-                                uniEmitter.complete(null);
-                                return;
+                            } else {
+                                final String jUsername = res.get(usernameParameter);
+                                final String jPassword = res.get(passwordParameter);
+                                if (jUsername == null || jPassword == null) {
+                                    log.debugf(
+                                            "Could not authenticate as username or password was not present in the posted result for %s",
+                                            exchange);
+                                    uniEmitter.complete(null);
+                                    return;
+                                }
+                                securityIdentityUni = securityContext
+                                        .authenticate(HttpSecurityUtils
+                                                .setRoutingContextAttribute(new UsernamePasswordAuthenticationRequest(jUsername,
+                                                        new PasswordCredential(jPassword.toCharArray())), exchange));
                             }
-                            securityContext
-                                    .authenticate(HttpSecurityUtils
-                                            .setRoutingContextAttribute(new UsernamePasswordAuthenticationRequest(jUsername,
-                                                    new PasswordCredential(jPassword.toCharArray())), exchange))
+                            securityIdentityUni
+                                    .onItem().ifNull().failWith(AuthenticationFailedException::new)
                                     .subscribe().with(new Consumer<SecurityIdentity>() {
                                         @Override
                                         public void accept(SecurityIdentity identity) {
@@ -260,22 +272,6 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         exchange.response().addCookie(cookie);
     }
 
-    /**
-     * @deprecated this method hasn't been used by this class for some time now; if you implement this mechanism
-     *             and have a use case with this method, please let us no so that we can document and test it
-     */
-    @Deprecated(since = "3.31", forRemoval = true)
-    protected void servePage(final RoutingContext exchange, final String location) {
-        sendRedirect(exchange, location);
-    }
-
-    static void sendRedirect(final RoutingContext exchange, final String location) {
-        String loc = assembleRedirectLocation(exchange, location, null);
-        exchange.response().headers().add(HttpHeaderNames.LOCATION, loc);
-        exchange.response().setStatusCode(302);
-        exchange.response().end();
-    }
-
     static Uni<ChallengeData> getRedirect(final RoutingContext exchange, final String location,
             Set<String> redirectQueryParams) {
         String loc = assembleRedirectLocation(exchange, location, redirectQueryParams);
@@ -331,6 +327,29 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
                             return addRoutingCtxToIdentityIfMissing(identity, context);
                         }
                     });
+        } else if (authenticationTokenHandler != null && authenticationTokenHandler.isTokenGenerationPath(context)) {
+            return authenticationTokenHandler.generateAndSendToken(context, identityProviderManager).map(ignored -> {
+                if (context.response().ended() || context.failed()) {
+                    // just to stay safe; we recommend to return Uni failure if the request to send the token was rejected
+                    return null;
+                }
+                String postTokenGenerationLocation = authenticationTokenHandler.getPostTokenGenerationLocation();
+                if (postTokenGenerationLocation == null) {
+                    context.response().setStatusCode(200);
+                    context.response().end();
+                } else {
+                    String location = assembleRedirectLocation(context, postTokenGenerationLocation, null);
+                    context.response().setStatusCode(302);
+                    context.response().headers().add(HttpHeaderNames.LOCATION, location);
+                    context.response().end();
+                }
+                return (SecurityIdentity) null;
+            }).onFailure().transform(f -> {
+                if (f instanceof AuthenticationException) {
+                    return f;
+                }
+                return new AuthenticationFailedException(f);
+            });
         } else {
             PersistentLoginManager.RestoreResult result = loginManager.restore(context);
             if (result != null) {
@@ -365,6 +384,11 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
                 // This method would no longer be called if authentication had already occurred.
                 return getRedirect(context, errorPage, errorPageQueryParams);
             }
+        } else if (authenticationTokenHandler != null && authenticationTokenHandler.isTokenGenerationPath(context)) {
+            if (redirectToErrorPage) {
+                log.debugf("Serving form auth error page %s for %s", errorPage, context.normalizedPath());
+                return getRedirect(context, errorPage, errorPageQueryParams);
+            }
         } else {
             if (redirectToLoginPage) {
                 log.debugf("Serving login form %s for %s", loginPage, context);
@@ -397,6 +421,10 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         return postLocation;
     }
 
+    FormAuthConfig.FormAuthenticationToken getTokenConfig() {
+        return authenticationTokenHandler == null ? null : authenticationTokenHandler.getTokenConfig();
+    }
+
     public static void logout(SecurityIdentity securityIdentity) {
         RoutingContext routingContext = HttpSecurityUtils.getRoutingContextAttribute(securityIdentity);
         logout(routingContext);
@@ -418,4 +446,5 @@ public class FormAuthenticationMechanism implements HttpAuthenticationMechanism 
         }
         return page.startsWith("/") ? page : "/" + page;
     }
+
 }
