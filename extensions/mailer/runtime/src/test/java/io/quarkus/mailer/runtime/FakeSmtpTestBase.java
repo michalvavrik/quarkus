@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 
 import io.quarkus.mailer.Mail;
 import io.quarkus.mailer.reactive.ReactiveMailer;
+import io.quarkus.mailer.runtime.security.MailerFormAuthenticationTokenConfig;
 import io.quarkus.runtime.LaunchMode;
 import io.quarkus.tls.BaseTlsConfiguration;
 import io.quarkus.tls.TlsConfiguration;
@@ -136,6 +137,11 @@ public class FakeSmtpTestBase {
         @Override
         public Map<String, MailerRuntimeConfig> mailers() {
             return Map.of(Mailers.DEFAULT_MAILER_NAME, defaultMailerRuntimeConfig);
+        }
+
+        @Override
+        public MailerFormAuthenticationTokenConfig formTokenSender() {
+            return null;
         }
 
     }

@@ -1,5 +1,7 @@
 package io.quarkus.mailer.deployment;
 
+import static io.quarkus.arc.processor.DotNames.APPLICATION_SCOPED;
+
 import java.io.File;
 import java.lang.reflect.Modifier;
 import java.util.Collection;
@@ -28,6 +30,8 @@ import io.quarkus.arc.deployment.ValidationPhaseBuildItem;
 import io.quarkus.arc.deployment.ValidationPhaseBuildItem.ValidationErrorBuildItem;
 import io.quarkus.arc.processor.BuildExtension;
 import io.quarkus.arc.processor.InjectionPointInfo;
+import io.quarkus.deployment.Capabilities;
+import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.Feature;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
@@ -52,10 +56,12 @@ import io.quarkus.mailer.runtime.MailerRecorder;
 import io.quarkus.mailer.runtime.MailerSupport;
 import io.quarkus.mailer.runtime.Mailers;
 import io.quarkus.mailer.runtime.MailersBuildTimeConfig;
+import io.quarkus.mailer.runtime.security.MailerFormAuthenticationTokenSender;
 import io.quarkus.qute.CheckedTemplate;
 import io.quarkus.qute.deployment.CheckedTemplateAdapterBuildItem;
 import io.quarkus.qute.deployment.QuteProcessor;
 import io.quarkus.qute.deployment.TemplatePathBuildItem;
+import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.tls.deployment.spi.TlsRegistryBuildItem;
 import io.vertx.ext.mail.MailClient;
 
@@ -318,6 +324,27 @@ public class MailerProcessor {
                     }
                 }
             }
+        }
+    }
+
+    @BuildStep
+    void registerFormAuthenticationTokenBean(Capabilities capabilities, MailersBuildTimeConfig config,
+            BuildProducer<AdditionalBeanBuildItem> additionalBeanProducer) {
+        if (config.formTokenSenderEnabled()) {
+            if (capabilities.isMissing(Capability.SECURITY)) {
+                throw new ConfigurationException(
+                        "Form authentication token sender is enabled, but the Quarkus Security extension is missing.",
+                        Set.of("quarkus.mailer.form-token-sender.enabled"));
+            }
+            if (capabilities.isMissing(Capability.VERTX_HTTP)) {
+                throw new ConfigurationException(
+                        "Form authentication token sender is enabled, but the Quarkus Vert.x HTTP extension is missing.",
+                        Set.of("quarkus.mailer.form-token-sender.enabled"));
+            }
+            additionalBeanProducer.produce(AdditionalBeanBuildItem.builder()
+                    .addBeanClass(MailerFormAuthenticationTokenSender.class)
+                    .setUnremovable().setDefaultScope(APPLICATION_SCOPED)
+                    .build());
         }
     }
 }
