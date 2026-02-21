@@ -1,0 +1,14 @@
+////
+This document is maintained in the main Quarkus repository, and pull requests should be submitted there:
+https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
+////
+[id="security-email-authentication"]
+= Email authentication
+include::_attributes.adoc[]
+:summary: A complete reference guide for the email authentication mechanism
+:diataxis-type: reference
+:categories: security
+:extension-status: "experimental"
+:topics: security,authentication,mail,mailer
+:extensions: io.quarkus:quarkus-email-authentication
+
