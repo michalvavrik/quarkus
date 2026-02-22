@@ -121,6 +121,11 @@ public class PersistentLoginManager {
 
     public void save(String value, RoutingContext context, String cookieName, RestoreResult restoreResult,
             boolean secureCookie) {
+        save(value, context, cookieName, restoreResult, secureCookie, timeoutMillis, maxAgeSeconds);
+    }
+
+    public void save(String value, RoutingContext context, String cookieName, RestoreResult restoreResult,
+            boolean secureCookie, long timeoutMillis, long maxAgeSeconds) {
         if (restoreResult != null) {
             if (!restoreResult.newCookieNeeded) {
                 return;
@@ -163,6 +168,10 @@ public class PersistentLoginManager {
     }
 
     public void clear(RoutingContext ctx) {
+        clear(ctx, cookieName);
+    }
+
+    private static void clear(RoutingContext ctx, String cookieName) {
         // Vert.x sends back a set-cookie with max-age and expiry but no path, so we have to set it first,
         // otherwise web clients don't clear it
         Cookie cookie = ctx.request().getCookie(cookieName);
@@ -174,6 +183,19 @@ public class PersistentLoginManager {
 
     String getCookieName() {
         return cookieName;
+    }
+
+    public String getAndRemoveCookie(String cookieName, RoutingContext routingContext) {
+        if (routingContext.request().getCookie(cookieName) == null) {
+            return null;
+        }
+        String result = null;
+        var restoreResult = restore(routingContext, cookieName);
+        if (restoreResult != null && restoreResult.principal != null && !restoreResult.principal.isEmpty()) {
+            result = restoreResult.principal;
+        }
+        clear(routingContext, cookieName);
+        return result;
     }
 
     public static class RestoreResult {
