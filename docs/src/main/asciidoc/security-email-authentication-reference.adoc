@@ -1,0 +1,97 @@
+////
+This document is maintained in the main Quarkus repository, and pull requests should be submitted there:
+https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
+////
+[id="security-email-authentication"]
+= Email authentication
+include::_attributes.adoc[]
+:summary: A complete reference guide for the Email authentication mechanism
+:diataxis-type: reference
+:categories: security
+:extension-status: "experimental"
+:topics: security,authentication,mail,mailer
+:extensions: io.quarkus:quarkus-email-authentication
+
+Email authentication is an authentication mechanism that authenticates users based on their access to their email.
+It is an alternative to basic and form-based authentication for small Quarkus applications without access to Keycloak or other OpenID Connect Providers.
+
+== Learn how Email authentication works
+
+If anonymous users tries to access secured page, Quarkus redirects them to the login page (configured by the `quarkus.email-authentication.login-page` configuration property).
+That means you need to create a login page, for example Jakarta REST endpoint, that returns a login page with a form.
+The login form can look like this:
+
+[source,html]
+----
+<form action="/generate-email-authentication-token" method="post">  <1>
+    <label>Username</label>
+    <input type="text" placeholder="Username" name="j_username" required>   <2> <3>
+    <button type="submit">Send token</button>    <4>
+</form>
+----
+<1> The post location configured by the `quarkus.email-authentication.token-generation-location` configuration property.
+<2> Inserted username must correspond to the `SecurityIdentity` principal name.
+<3> The `j_username` parameter name can be configured with the `quarkus.email-authentication.username-parameter` configuration property.
+<4> A submit button that sends the email authentication token.
+
+Once you request the email authentication token using the form shown above, Quarkus redirects you to the page where you can enter the token.
+The page where Quarkus redirects you is determined by the `quarkus.email-authentication.token-page` configuration property.
+If the inserted username can be resolved by Quarkus to the `SecurityIdentity` principal name, and the `SecurityIdentity` has either `email` attribute, or its principal is valid e-mail address, Quarkus generates an email authentication token and sends it.
+Otherwise, if Quarkus could not resolve valid e-mail address, nothing happens.
+Page, where you can insert the received email authentication token can look like this:
+
+[source,html]
+----
+<form action="/j_security_check" method="post">  <1>
+    <label>Email authentication token</label>
+    <input type="text" placeholder="Token" name="j_token" required>   <2> <3>
+    <button type="submit">Login</button>
+</form>
+----
+<1> The post location is configured by the `quarkus.email-authentication.post-location` configuration property.
+<2> Here you can insert the email authentication token.
+<3> The `j_token` form parameter name is configured by the `quarkus.email-authentication.token-parameter` configuration property.
+
+Once you successfully log in, Quarkus redirects you to the original location.
+For example, if you went to the `/secured` page and were redirected to the login page, you will be redirected back to the `/secured` page.
+If you went directly to the login page, you will be redirected to the landing page (configured by the `quarkus.email-authentication.landing-page` configuration property).
+
+== Enable Email authentication in your Quarkus project
+
+TODO: text
+
+:add-extension-extensions: email-authentication
+include::{includes}/devtools/extension-add.adoc[]
+
+=== Configure Quarkus Mailer extension
+
+TODO: why you need to configure the mailer?
+TODO: link mailer and explain what can be configured in our extension and give some minimal other example
+
+=== Add identity provider
+
+TODO: what is it and WHY?
+
+TODO: link https://quarkus.io/guides/security-identity-providers and security jpa and elytron security properties and JDBC?? or even link to how they write it themselves?
+TODO: make a list with explanation that email comes either from principal name or "email" identity attribute and mention augmentor can be used for that purpose!!
+
+== Configure Email authentication
+
+TODO: configuration options and forms, get inspired by the form authentication and how to select it via HTTP permissions
+
+== Customize sending or storing of Email authentication tokens
+
+== Mitigate security risks
+
+== Debug and test Email authentication
+
+TODO: events, refer to mock mailbox, enable logging
+
+== References
+
+* xref:mailer-reference.adoc[Quarkus Mailer Reference documentation]
+* xref:security-authentication-mechanisms.adoc[Authentication mechanisms in Quarkus]
+* xref:security-identity-providers.adoc[Identity providers]
+* xref:security-jpa.adoc[Quarkus Security with Jakarta Persistence]
+* xref:security-jdbc.adoc[JDBC identity provider]
+* xref:security-properties.adoc[Elytron security properties identity provider`]
