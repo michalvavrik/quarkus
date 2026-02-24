@@ -1,0 +1,222 @@
+////
+This document is maintained in the main Quarkus repository, and pull requests should be submitted there:
+https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
+////
+[id="security-email-authentication"]
+= Email authentication
+include::_attributes.adoc[]
+:summary: A complete reference guide for the Email authentication mechanism
+:diataxis-type: reference
+:categories: security
+:extension-status: "experimental"
+:topics: security,authentication,mail,mailer
+:extensions: io.quarkus:quarkus-email-authentication
+
+Email authentication is an authentication mechanism that authenticates users based on their access to their email.
+It is an alternative to basic and form-based authentication for small Quarkus applications without access to Keycloak or other OpenID Connect Providers.
+
+== Learn how Email authentication works
+
+If anonymous users tries to access secured page, Quarkus redirects them to the login page (configured by the `quarkus.email-authentication.login-page` configuration property).
+That means you need to create a login page, for example Jakarta REST endpoint, that returns a login page with a form.
+The login form can look like this:
+
+[source,html]
+----
+<form action="/generate-email-authentication-token" method="post">  <1>
+    <label>Username</label>
+    <input type="text" placeholder="Username" name="j_username" required>   <2> <3>
+    <button type="submit">Send token</button>    <4>
+</form>
+----
+<1> The post location configured by the `quarkus.email-authentication.token-generation-location` configuration property.
+<2> Inserted username must correspond to the `SecurityIdentity` principal name.
+<3> The `j_username` parameter name can be configured with the `quarkus.email-authentication.username-parameter` configuration property.
+<4> A submit button that sends the email authentication token.
+
+Once you request the email authentication token using the form shown above, Quarkus redirects you to the page where you can enter the token.
+The page where Quarkus redirects you is determined by the `quarkus.email-authentication.token-page` configuration property.
+If the inserted username can be resolved by Quarkus to the `SecurityIdentity` principal name, and the `SecurityIdentity` has either `email` attribute, or its principal is valid e-mail address, Quarkus generates an email authentication token and sends it.
+Otherwise, if Quarkus could not resolve valid e-mail address, nothing happens.
+The fact that inserted username is not valid cannot be recognized by the HTTP response code, however, Quarkus fires a security event that you can observe.
+Page, where you can insert the received email authentication token can look like this:
+
+[source,html]
+----
+<form action="/j_security_check" method="post">  <1>
+    <label>Email authentication token</label>
+    <input type="text" placeholder="Token" name="j_token" required>   <2> <3>
+    <button type="submit">Login</button>    <4>
+</form>
+----
+<1> The post location is configured by the `quarkus.email-authentication.post-location` configuration property.
+<2> Here you can insert the email authentication token.
+<3> The `j_token` form parameter name is configured by the `quarkus.email-authentication.token-parameter` configuration property.
+<4> It is important that you log in from the same device and browser, from which you requested the email authentication token, because the default implementation relies on cookies.
+
+Once you are logged in, Quarkus redirects you to the original location.
+For example, if you went to the `/secured` page and were redirected to the login page, you will be redirected back to the `/secured` page.
+On the other hand, if you entered the application directly on the login page, you will be redirected to the landing page (configured by the `quarkus.email-authentication.landing-page` configuration property).
+
+Your user credentials are stored in a session cookie, by default the cookie name is `quarkus-credential`.
+The session cookie name can be changed with the `quarkus.email-authentication.session-cookie` configuration property.
+Credentials are valid as long as valid cookie is present.
+The cookie is renewed automatically according to the new session cookie internal (see the `quarkus.email-authentication.new-session-cookie-interval` configuration property).
+If the cookie is not renewed due within the idle timeout (see the `quarkus.email-authentication.timeout` configuration property), for example due to the user inactivity, the session cookie is not valid and user is redirected to the login page.
+
+By default, the logout happens simple because user closed browser.
+This is due to the session cookie max age, which is by default `-1`.
+You can change the session cookie max age with the `quarkus.email-authentication.session-cookie-max-age` configuration property.
+
+Manual logout is possible as well, simply remove the session cookie.
+
+== Enable Email authentication in your Quarkus project
+
+Enable the email authentication by adding the `quarkus-email-authentication` extension into your project:
+
+:add-extension-extensions: email-authentication
+include::{includes}/devtools/extension-add.adoc[]
+
+=== Configure Quarkus Mailer extension
+
+This email authentication mechanism sends emails using the xref:mailer-reference.adoc[Quarkus Mailer extension].
+You don't need any special configuration for this email authentication mechanism, therefore you con follow the Mailer reference.
+For example, configure the default mailer `from` field.
+
+[source,properties]
+----
+quarkus.mailer.from=security@quarkus.io <1>
+----
+<1> Email authentication token will be send from the `security@quarkus.io`.
+
+If you don't want to mix sending of security emails with other emails, you can configure this mechanism to use other mailer:
+
+[source,properties]
+----
+quarkus.email-authentication.mailer-name=security-mailer <1>
+quarkus.mailer.security-mailer.from=security@quarkus.io
+----
+<1> Use the `security-mailer` for sending of email authentication tokens.
+
+The Mailer extension can be configured to send emails with Gmail, Amazon SES and other xref:mailer-reference.adoc#popular[popular email services].
+For more information how to configure the Mailer extension, please refer to its xref:mailer-reference.adoc[reference].
+
+=== Add identity provider
+
+The email authentication mechanism relies on identity providers based on username (`io.quarkus.security.identity.request.TrustedAuthenticationRequest`).
+Luckily, we already support couple of builtin xref:security-identity-providers.adoc[identity providers]:
+
+* xref:security-jpa.adoc[Quarkus Security Jakarta Persistence extensions (`quarkus-security-jpa` or `quarkus-security-jpa-reactive`)]
+* xref:security-properties.adoc[Elytron security properties file extension `(quarkus-elytron-security-properties-file)`]
+* xref:security-jdbc.adoc[Elytron security JDBC extension `(quarkus-elytron-security-jdbc)`]
+
+The way it works is straightforward: users submit username, we find the `SecurityIdentity` with matching username and if that identity has attribute `email` or its principal is a valid e-mail address, we use it.
+Some identity providers currently do no provide a way how to add the `email` attribute, like the `quarkus-security-jpa`.
+If setting the e-mail address as the principal name is not suitable, you can create custom `SecurityIdentityAugmentor` and add the `email` attribute manually.
+For more information, see the xref:security-customization.adoc#security-identity-customization[Security Identity Customization] section of the "Security Tips and Tricks" guide.
+
+== Customize sending or storing of Email authentication tokens
+
+=== Provide custom sender of the email authentication tokens
+
+You may want to customize sent emails, for example to leverage Qute templates and so on.
+In that case, register a custom `io.quarkus.email.authentication.EmailAuthenticationTokenSender` implementation as a CDI bean:
+
+[source,java]
+----
+package org.acme.email.authentication;
+
+import io.quarkus.email.authentication.EmailAuthenticationTokenSender;
+import io.quarkus.mailer.Mail;
+import io.quarkus.mailer.reactive.ReactiveMailer;
+import io.quarkus.security.identity.SecurityIdentity;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+import static io.quarkus.email.authentication.EmailAuthenticationTokenSender.EMAIL;
+
+@ApplicationScoped
+class CustomEmailAuthenticationTokenSender implements EmailAuthenticationTokenSender {
+
+    @Inject
+    ReactiveMailer mailer;
+
+    @Override
+    public Uni<Void> sendToken(char[] token, SecurityIdentity securityIdentity) {
+        String emailAddress = securityIdentity.getAttribute(EMAIL);
+        Mail email = Mail.withText(emailAddress, "Your token", new String(token));
+        return mailer.send(email);
+    }
+}
+----
+
+=== Provide custom email authentication token storage
+
+Default email authentication token storage relies solely on cookies, which comes with certain limitations.
+More about that in the <<mitigate-security-risks,next section>>.
+You may decide to store tokens in memory, cache etc.
+It can be done by registering a custom `io.quarkus.email.authentication.EmailAuthenticationTokenStorage` as a CDI bean:
+
+[source,java]
+----
+package org.acme.email.authentication;
+
+import io.quarkus.email.authentication.EmailAuthenticationTokenStorage;
+import io.quarkus.security.AuthenticationFailedException;
+import io.smallrye.mutiny.Uni;
+import io.vertx.ext.web.RoutingContext;
+import jakarta.enterprise.context.ApplicationScoped;
+
+@ApplicationScoped
+class CustomEmailAuthenticationTokenStorage implements EmailAuthenticationTokenStorage {
+
+    private final EmailAuthenticationTokenStorage delegate; <1>
+
+    public CustomEmailAuthenticationTokenStorage(DefaultEmailAuthenticationTokenStorage delegate) {
+        this.delegate = delegate;
+    }
+
+    @Override
+    public Uni<Void> storeToken(EmailAuthenticationTokenRequest tokenRequest, String principalName, RoutingContext routingContext) {
+        if (exceededNumberOfRequests(principalName) || isBlacklistedIpAddress(routingContext)) {
+            return Uni.createFrom().failure(new AuthenticationFailedException("..."));
+        }
+        return delegate.storeToken(tokenRequest, principalName, routingContext);
+    }
+
+    @Override
+    public Uni<String> findPrincipalNameByToken(String token, RoutingContext routingContext) {
+        if (isTokenAlreadyUsed(token)) {
+            return Uni.createFrom().failure(new AuthenticationFailedException("..."));
+        }
+        return delegate.findPrincipalNameByToken(token, routingContext);
+    }
+
+    // here comes your implementation
+
+}
+----
+<1> Optionally, you can delegate to the default storage implementation.
+
+[[mitigate-security-risks]]
+== Mitigate security risks
+
+== Debug and test Email authentication
+
+TODO: events, refer to mock mailbox, enable logging
+
+== Configure Email authentication
+
+The following properties can be used to configure the email authentication:
+
+include::{generated-dir}/config/quarkus-email-authentication_quarkus.email-authentication.adoc[opts=optional, leveloffset=+1]
+
+== References
+
+* xref:mailer-reference.adoc[Quarkus Mailer Reference documentation]
+* xref:security-authentication-mechanisms.adoc[Authentication mechanisms in Quarkus]
+* xref:security-identity-providers.adoc[Identity providers]
+* xref:security-jpa.adoc[Quarkus Security with Jakarta Persistence]
+* xref:security-jdbc.adoc[JDBC identity provider]
+* xref:security-properties.adoc[Elytron security properties identity provider`]
