@@ -1236,6 +1236,26 @@ final class OidcTenantConfigImpl implements OidcTenantConfig {
                     }
                 };
             }
+
+            @Override
+            public Spiffe spiffe() {
+                return new Spiffe() {
+                    @Override
+                    public Optional<String> endpointSocket() {
+                        return Optional.empty();
+                    }
+
+                    @Override
+                    public Optional<List<String>> audience() {
+                        return Optional.empty();
+                    }
+
+                    @Override
+                    public Optional<String> spiffeId() {
+                        return Optional.empty();
+                    }
+                };
+            }
         };
     }
 

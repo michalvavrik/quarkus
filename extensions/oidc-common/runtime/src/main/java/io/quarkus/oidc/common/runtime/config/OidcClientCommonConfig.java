@@ -1,6 +1,7 @@
 package io.quarkus.oidc.common.runtime.config;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -67,6 +68,11 @@ public interface OidcClientCommonConfig extends OidcCommonConfig {
          * Client JSON Web Token (JWT) authentication methods
          */
         Jwt jwt();
+
+        /**
+         * SPIFFE JWT-SVID client assertion configuration.
+         */
+        Spiffe spiffe();
 
         /**
          * Supports the client authentication methods that involve sending a client secret.
@@ -141,7 +147,12 @@ public interface OidcClientCommonConfig extends OidcCommonConfig {
                 /**
                  * JWT bearer token is used as a client assertion: https://www.rfc-editor.org/rfc/rfc7523#section-2.2.
                  */
-                BEARER
+                BEARER,
+                /**
+                 * JWT-SVID is fetched from the SPIFFE Workload API and used as a client assertion.
+                 * Requires the {@code quarkus-oidc-spiffe} extension.
+                 */
+                SPIFFE
             }
 
             /**
@@ -286,6 +297,28 @@ public interface OidcClientCommonConfig extends OidcCommonConfig {
              */
             Optional<String> key();
 
+        }
+
+        /**
+         * SPIFFE JWT-SVID configuration for client assertion.
+         */
+        interface Spiffe {
+
+            /**
+             * SPIFFE Workload API endpoint socket path.
+             * Defaults to the {@code SPIFFE_ENDPOINT_SOCKET} environment variable if not set.
+             */
+            Optional<String> endpointSocket();
+
+            /**
+             * Audience values for the JWT-SVID.
+             */
+            Optional<List<String>> audience();
+
+            /**
+             * SPIFFE ID to request. If not set, the default identity is used.
+             */
+            Optional<String> spiffeId();
         }
     }
 

@@ -13,6 +13,7 @@ import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.
 import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Provider;
 import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Secret;
 import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Secret.Method;
+import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Spiffe;
 import io.smallrye.config.SmallRyeConfigBuilder;
 
 public abstract class OidcClientCommonConfigBuilder<T> extends OidcCommonConfigBuilder<T> {
@@ -161,13 +162,15 @@ public abstract class OidcClientCommonConfigBuilder<T> extends OidcCommonConfigB
      */
     public static final class CredentialsBuilder<T> {
 
-        private record CredentialsImpl(Optional<String> secret, Secret clientSecret, Jwt jwt) implements Credentials {
+        private record CredentialsImpl(Optional<String> secret, Secret clientSecret, Jwt jwt,
+                Spiffe spiffe) implements Credentials {
         }
 
         private final OidcClientCommonConfigBuilder<T> builder;
         private Optional<String> secret;
         private Secret clientSecret;
         private Jwt jwt;
+        private Spiffe spiffe;
 
         public CredentialsBuilder() {
             this(getConfigBuilderWithDefaults());
@@ -178,6 +181,7 @@ public abstract class OidcClientCommonConfigBuilder<T> extends OidcCommonConfigB
             this.secret = builder.credentials.secret();
             this.clientSecret = builder.credentials.clientSecret();
             this.jwt = builder.credentials.jwt();
+            this.spiffe = builder.credentials.spiffe();
         }
 
         /**
@@ -263,8 +267,17 @@ public abstract class OidcClientCommonConfigBuilder<T> extends OidcCommonConfigB
         /**
          * @return Credentials
          */
+        /**
+         * @param spiffe {@link Credentials#spiffe()} created with SmallRye Config
+         * @return this builder
+         */
+        public CredentialsBuilder<T> spiffe(Spiffe spiffe) {
+            this.spiffe = Objects.requireNonNull(spiffe);
+            return this;
+        }
+
         public Credentials build() {
-            return new CredentialsImpl(secret, clientSecret, jwt);
+            return new CredentialsImpl(secret, clientSecret, jwt, spiffe);
         }
 
         private static <T> OidcClientCommonConfigBuilder<T> getConfigBuilderWithDefaults() {

@@ -2,6 +2,7 @@ package io.quarkus.oidc.common.runtime;
 
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -118,6 +119,11 @@ public abstract class OidcClientCommonConfig extends OidcCommonConfig
          */
         public Jwt jwt = new Jwt();
 
+        /**
+         * SPIFFE JWT-SVID client assertion configuration.
+         */
+        public Spiffe spiffe = new Spiffe();
+
         public Optional<String> getSecret() {
             return secret;
         }
@@ -142,10 +148,19 @@ public abstract class OidcClientCommonConfig extends OidcCommonConfig
             this.jwt = jwt;
         }
 
+        public Spiffe getSpiffe() {
+            return spiffe;
+        }
+
+        public void setSpiffe(Spiffe spiffe) {
+            this.spiffe = spiffe;
+        }
+
         private void addConfigMappingValues(io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials mapping) {
             secret = mapping.secret();
             clientSecret.addConfigMappingValues(mapping.clientSecret());
             jwt.addConfigMappingValues(mapping.jwt());
+            spiffe.addConfigMappingValues(mapping.spiffe());
         }
 
         @Override
@@ -161,6 +176,11 @@ public abstract class OidcClientCommonConfig extends OidcCommonConfig
         @Override
         public io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Jwt jwt() {
             return jwt;
+        }
+
+        @Override
+        public io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Spiffe spiffe() {
+            return spiffe;
         }
 
         /**
@@ -378,7 +398,10 @@ public abstract class OidcClientCommonConfig extends OidcCommonConfig
                 CLIENT,
                 // JWT bearer token as used as a client assertion: https://www.rfc-editor.org/rfc/rfc7523#section-2.2
                 // This option is only supported by the OIDC client extension.
-                BEARER
+                BEARER,
+                // JWT-SVID is fetched from the SPIFFE Workload API and used as a client assertion.
+                // Requires the quarkus-oidc-spiffe extension.
+                SPIFFE
             }
 
             /**
@@ -667,6 +690,36 @@ public abstract class OidcClientCommonConfig extends OidcCommonConfig
             @Override
             public Optional<String> key() {
                 return key;
+            }
+        }
+
+        public static class Spiffe
+                implements io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Spiffe {
+
+            public Optional<String> endpointSocket = Optional.empty();
+            public Optional<List<String>> audience = Optional.empty();
+            public Optional<String> spiffeId = Optional.empty();
+
+            @Override
+            public Optional<String> endpointSocket() {
+                return endpointSocket;
+            }
+
+            @Override
+            public Optional<List<String>> audience() {
+                return audience;
+            }
+
+            @Override
+            public Optional<String> spiffeId() {
+                return spiffeId;
+            }
+
+            private void addConfigMappingValues(
+                    io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Spiffe mapping) {
+                endpointSocket = mapping.endpointSocket();
+                audience = mapping.audience();
+                spiffeId = mapping.spiffeId();
             }
         }
     }

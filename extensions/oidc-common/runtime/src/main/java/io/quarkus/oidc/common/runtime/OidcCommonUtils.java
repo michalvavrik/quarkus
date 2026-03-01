@@ -913,8 +913,8 @@ public class OidcCommonUtils {
         });
     }
 
-    public static ClientAssertionProvider getClientAssertionProvider(io.vertx.core.Vertx vertx, Credentials credentialsConfig,
-            Function<String, RuntimeException> exceptionCreator) {
+    public static Uni<ClientAssertionProvider> getClientAssertionProvider(io.vertx.core.Vertx vertx,
+            Credentials credentialsConfig, Function<String, RuntimeException> exceptionCreator) {
         var jwtConfig = credentialsConfig.jwt();
         if (jwtConfig.source() == Source.BEARER && jwtConfig.tokenPath().isPresent()) {
             var clientAssertionProvider = new KubernetesServiceClientAssertionProvider(vertx, jwtConfig.tokenPath().get());
@@ -922,9 +922,18 @@ public class OidcCommonUtils {
                 throw exceptionCreator
                         .apply("Cannot find a valid JWT bearer token at path: " + jwtConfig.tokenPath().get());
             }
-            return clientAssertionProvider;
+            return Uni.createFrom().item(clientAssertionProvider);
         }
-        return null;
+        if (jwtConfig.source() == Source.SPIFFE) {
+            return SpiffeJwtSvidClientAssertionProvider.create(vertx, credentialsConfig.spiffe())
+                    .map(provider -> {
+                        if (provider.getClientAssertion() == null) {
+                            throw exceptionCreator.apply("Failed to fetch a JWT-SVID from the SPIFFE Workload API");
+                        }
+                        return provider;
+                    });
+        }
+        return Uni.createFrom().nullItem();
     }
 
 }

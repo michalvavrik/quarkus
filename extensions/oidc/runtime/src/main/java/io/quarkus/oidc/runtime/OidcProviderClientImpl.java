@@ -29,7 +29,7 @@ import io.quarkus.oidc.common.runtime.ClientAssertionProvider;
 import io.quarkus.oidc.common.runtime.OidcClientRedirectException;
 import io.quarkus.oidc.common.runtime.OidcCommonUtils;
 import io.quarkus.oidc.common.runtime.OidcConstants;
-import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig;
+import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Jwt.Source;
 import io.quarkus.oidc.common.runtime.config.OidcClientCommonConfig.Credentials.Secret.Method;
 import io.quarkus.security.credential.TokenCredential;
 import io.smallrye.mutiny.Uni;
@@ -90,6 +90,7 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
 
     private OidcProviderClientImpl(WebClient client, Vertx vertx, OidcConfigurationMetadata metadata,
             OidcTenantConfig oidcConfig, ClientCredentials clientCredentials,
+            ClientAssertionProvider clientAssertionProvider,
             Map<OidcEndpoint.Type, List<OidcRequestFilter>> requestFilters,
             Map<OidcEndpoint.Type, List<OidcResponseFilter>> responseFilters) {
         this.client = client;
@@ -97,9 +98,9 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         this.metadata = metadata;
         this.oidcConfig = oidcConfig;
         this.clientSecretBasicAuthScheme = clientCredentials.clientSecretBasicAuthScheme;
-        this.jwtBearerAuthentication = oidcConfig.credentials().jwt()
-                .source() == OidcClientCommonConfig.Credentials.Jwt.Source.BEARER;
-        this.clientAssertionProvider = getClientAssertionProvider(vertx, oidcConfig.credentials(), OIDCException::new);
+        Source source = oidcConfig.credentials().jwt().source();
+        this.jwtBearerAuthentication = source == Source.BEARER || source == Source.SPIFFE;
+        this.clientAssertionProvider = clientAssertionProvider;
         this.clientJwtKey = jwtBearerAuthentication ? null : clientCredentials.clientJwtKey;
         this.introspectionBasicAuthScheme = initIntrospectionBasicAuthScheme(oidcConfig);
         this.requestFilters = requestFilters;
@@ -638,8 +639,10 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
                         .onItem().ifNull()
                         .switchTo(() -> OidcCommonUtils.jwtSecret(oidcConfig.credentials()).map(ClientCredentials::new)))
                 .onFailure().invoke(t -> LOG.error("Failed to create OidcProviderClientImpl", t))
-                .map(clientCredentials -> new OidcProviderClientImpl(client, vertx, metadata, oidcConfig,
-                        clientCredentials, requestFilters, responseFilters));
+                .flatMap(clientCredentials -> getClientAssertionProvider(vertx, oidcConfig.credentials(),
+                        OIDCException::new)
+                        .map(provider -> new OidcProviderClientImpl(client, vertx, metadata, oidcConfig,
+                                clientCredentials, provider, requestFilters, responseFilters)));
     }
 
     String getClientOrJwtSecret() {

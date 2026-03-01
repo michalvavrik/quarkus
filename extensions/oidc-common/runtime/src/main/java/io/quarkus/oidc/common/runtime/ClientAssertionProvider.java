@@ -3,7 +3,8 @@ package io.quarkus.oidc.common.runtime;
 /**
  * Client assertion provider.
  */
-public sealed interface ClientAssertionProvider permits KubernetesServiceClientAssertionProvider {
+public sealed interface ClientAssertionProvider
+        permits KubernetesServiceClientAssertionProvider, SpiffeJwtSvidClientAssertionProvider {
 
     /**
      * Gets current client assertion. This method should not block. If the client assertion is retrieved with blocking

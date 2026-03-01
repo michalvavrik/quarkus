@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package spiffe.workload;
+
+option java_package = "io.quarkus.oidc.spiffe.runtime.internal.grpc";
+option java_multiple_files = true;
+
+service SpiffeWorkloadAPI {
+    // Fetch JWT-SVIDs for all SPIFFE identities the workload is entitled to,
+    // for the requested audience.
+    rpc FetchJWTSVID(JWTSVIDRequest) returns (JWTSVIDResponse);
+}
+
+message JWTSVIDRequest {
+    // Required. The audience(s) the workload intends to present the JWT-SVID to.
+    repeated string audience = 1;
+
+    // Optional. The requested SPIFFE ID for the JWT-SVID.
+    // If unset, all identities the workload is entitled to are requested.
+    string spiffe_id = 2;
+}
+
+message JWTSVIDResponse {
+    // The list of returned JWT-SVIDs.
+    repeated JWTSVID svids = 1;
+}
+
+message JWTSVID {
+    // The SPIFFE ID of the JWT-SVID.
+    string spiffe_id = 1;
+
+    // Encoded JWT-SVID token.
+    string svid = 2;
+}
