@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 import io.quarkus.runtime.annotations.ConfigDocDefault;
+import io.quarkus.runtime.configuration.TrimmedStringConverter;
 import io.quarkus.vertx.http.runtime.TrustedProxyCheck.TrustedProxyCheckPart;
 import io.smallrye.config.WithConverter;
 import io.smallrye.config.WithDefault;
@@ -145,4 +146,14 @@ public interface ProxyConfig {
      */
     @ConfigDocDefault("All proxy addresses are trusted")
     Optional<List<@WithConverter(TrustedProxyCheckPartConverter.class) TrustedProxyCheckPart>> trustedProxies();
+
+    /**
+     * Configure the list of trusted proxy certificate Subject Distinguished Names (DNs).
+     * When set, the proxy is trusted if its TLS client certificate Subject DN matches any of the configured values.
+     * The DN must be specified in RFC 2253 format (e.g., {@code CN=envoy-client,O=MyOrg}).
+     * <p>
+     * This option is mutually exclusive with {@link #trustedProxies()} and requires
+     * {@code quarkus.http.ssl.client-auth} to be set to {@code REQUEST} or {@code REQUIRED}.
+     */
+    Optional<List<@WithConverter(TrimmedStringConverter.class) String>> trustedProxyDn();
 }

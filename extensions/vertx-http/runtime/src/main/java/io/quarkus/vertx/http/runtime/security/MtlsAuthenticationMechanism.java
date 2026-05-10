@@ -87,6 +87,12 @@ public final class MtlsAuthenticationMechanism implements HttpAuthenticationMech
             return Uni.createFrom().nullItem();
         }
 
+        // TODO: re-check this null check is required in future Vert.x versions by running
+        //      the TrustedProxyCertificateDnRequestTest#testHttpConnectionForwardedIgnored without this IF block
+        if (request.sslSession() == null) {
+            return Uni.createFrom().nullItem();
+        }
+
         Certificate certificate;
 
         try {

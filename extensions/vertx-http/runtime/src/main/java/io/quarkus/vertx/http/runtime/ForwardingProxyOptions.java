@@ -2,10 +2,14 @@ package io.quarkus.vertx.http.runtime;
 
 import java.util.List;
 
+import javax.security.auth.x500.X500Principal;
+
 import io.netty.util.AsciiString;
+import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.vertx.http.runtime.ProxyConfig.ForwardedPrecedence;
 import io.quarkus.vertx.http.runtime.TrustedProxyCheck.TrustedProxyCheckBuilder;
 import io.quarkus.vertx.http.runtime.TrustedProxyCheck.TrustedProxyCheckPart;
+import io.vertx.core.http.ClientAuth;
 
 public class ForwardingProxyOptions {
     public final boolean proxyAddressForwarding;
@@ -19,6 +23,7 @@ public class ForwardingProxyOptions {
     final ForwardedPrecedence forwardedPrecedence;
     public final TrustedProxyCheckBuilder trustedProxyCheckBuilder;
     final boolean enableTrustedProxyHeader;
+    public final List<X500Principal> trustedProxyDns;
 
     public ForwardingProxyOptions(final boolean proxyAddressForwarding,
             boolean allowForwarded,
@@ -30,7 +35,8 @@ public class ForwardingProxyOptions {
             boolean strictForwardedControl,
             ForwardedPrecedence forwardedPrecedence,
             AsciiString forwardedPrefixHeader,
-            TrustedProxyCheckBuilder trustedProxyCheckBuilder) {
+            TrustedProxyCheckBuilder trustedProxyCheckBuilder,
+            List<X500Principal> trustedProxyDns) {
         this.proxyAddressForwarding = proxyAddressForwarding;
         this.allowForwarded = allowForwarded;
         this.allowXForwarded = allowXForwarded;
@@ -42,9 +48,10 @@ public class ForwardingProxyOptions {
         this.forwardedPrecedence = forwardedPrecedence;
         this.trustedProxyCheckBuilder = trustedProxyCheckBuilder;
         this.enableTrustedProxyHeader = enableTrustedProxyHeader;
+        this.trustedProxyDns = trustedProxyDns;
     }
 
-    public static ForwardingProxyOptions from(ProxyConfig proxyConfig) {
+    public static ForwardingProxyOptions from(ProxyConfig proxyConfig, ClientAuth clientAuth) {
         final boolean proxyAddressForwarding = proxyConfig.proxyAddressForwarding();
         final boolean allowForwarded = proxyConfig.allowForwarded();
         final boolean allowXForwarded = proxyConfig.allowXForwarded().orElse(!allowForwarded);
@@ -58,11 +65,47 @@ public class ForwardingProxyOptions {
 
         final List<TrustedProxyCheckPart> parts = proxyConfig.trustedProxies()
                 .isPresent() ? List.copyOf(proxyConfig.trustedProxies().get()) : List.of();
+
+        final List<X500Principal> trustedProxyDns = collectAndValidateTrustedProxyDns(proxyConfig, clientAuth, parts,
+                allowXForwarded, allowForwarded);
+
         final var proxyCheckBuilder = (!allowXForwarded && !allowForwarded)
                 || parts.isEmpty() ? null : TrustedProxyCheckBuilder.builder(parts);
 
         return new ForwardingProxyOptions(proxyAddressForwarding, allowForwarded, allowXForwarded, enableForwardedHost,
                 enableTrustedProxyHeader, forwardedHostHeader, enableForwardedPrefix, strictForwardedControl,
-                forwardedPrecedence, forwardedPrefixHeader, proxyCheckBuilder);
+                forwardedPrecedence, forwardedPrefixHeader, proxyCheckBuilder, trustedProxyDns);
+    }
+
+    private static List<X500Principal> collectAndValidateTrustedProxyDns(ProxyConfig proxyConfig, ClientAuth clientAuth,
+            List<TrustedProxyCheckPart> parts, boolean allowXForwarded, boolean allowForwarded) {
+        final List<String> dnStrings = proxyConfig.trustedProxyDn().orElse(List.of());
+        if (dnStrings.isEmpty()) {
+            return null;
+        }
+
+        if (!parts.isEmpty()) {
+            throw new ConfigurationException(
+                    "'quarkus.http.proxy.trusted-proxies' and 'quarkus.http.proxy.trusted-proxy-dn' are mutually exclusive");
+        }
+
+        if (clientAuth == ClientAuth.NONE) {
+            throw new ConfigurationException(
+                    "'quarkus.http.proxy.trusted-proxy-dn' requires 'quarkus.http.ssl.client-auth' to be set "
+                            + "to 'request' or 'required'");
+        }
+
+        if (!allowXForwarded && !allowForwarded) {
+            return null;
+        }
+
+        return dnStrings.stream().map(dn -> {
+            try {
+                return new X500Principal(dn);
+            } catch (IllegalArgumentException e) {
+                throw new ConfigurationException("Invalid 'quarkus.http.proxy.trusted-proxy-dn' value '" + dn
+                        + "': not a valid RFC 2253 Distinguished Name", e);
+            }
+        }).toList();
     }
 }
