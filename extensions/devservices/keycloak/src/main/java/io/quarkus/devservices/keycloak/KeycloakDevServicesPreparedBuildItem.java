@@ -11,12 +11,18 @@ import io.quarkus.deployment.builditem.DevServicesResultBuildItem;
 public final class KeycloakDevServicesPreparedBuildItem extends SimpleBuildItem {
 
     private final String devServiceConfigHashCode;
+    private final boolean containerOwned;
 
-    KeycloakDevServicesPreparedBuildItem(String devServiceConfigHashCode) {
+    KeycloakDevServicesPreparedBuildItem(String devServiceConfigHashCode, boolean containerOwned) {
         this.devServiceConfigHashCode = devServiceConfigHashCode;
+        this.containerOwned = containerOwned;
     }
 
     public String getDevServiceConfigHashCode() {
         return devServiceConfigHashCode;
+    }
+
+    boolean isContainerOwned() {
+        return containerOwned;
     }
 }
