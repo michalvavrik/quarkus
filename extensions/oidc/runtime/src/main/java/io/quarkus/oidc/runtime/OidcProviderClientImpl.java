@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.jboss.logging.Logger;
 import org.jose4j.lang.UnresolvableKeyException;
@@ -150,11 +151,34 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
         if (!cookies.isEmpty()) {
             request.putHeader(OidcCommonUtils.COOKIE_REQUEST_HEADER, cookies);
         }
-        return filterHttpRequest(requestProps, OidcEndpoint.Type.JWKS, request, null)
-                .flatMap(httpRequest -> OidcCommonUtils
-                        .sendRequest(vertx, httpRequest, oidcConfig.useBlockingDnsLookup()))
-                .onItem()
-                .transformToUni(resp -> getJsonWebKeySet(requestProps, resp));
+        final UniOnItem<HttpResponse<Buffer>> httpResponse;
+        if (oidcConfig.credentials().requiredForAllEndpoints()) {
+            var requestPropsCopy = new OidcRequestContextProperties(requestProps.getAll());
+            var preparedRequest = prepareGetJsonWebKeySetRequest(requestProps, cookies, true);
+            httpResponse = withCredentialsRetry(preparedRequest,
+                    () -> prepareGetJsonWebKeySetRequest(requestPropsCopy, cookies, true));
+        } else {
+            httpResponse = prepareGetJsonWebKeySetRequest(requestProps, cookies, false).httpRequestUni.onItem();
+        }
+        return httpResponse.transformToUni(resp -> getJsonWebKeySet(requestProps, resp));
+    }
+
+    private PreparedHttpRequest prepareGetJsonWebKeySetRequest(OidcRequestContextProperties requestProps, List<String> cookies,
+            boolean addCredentials) {
+        LOG.debugf("Get verification JWT Key Set at %s", metadata.getJsonWebKeySetUri());
+        HttpRequest<Buffer> request = client.getAbs(metadata.getJsonWebKeySetUri());
+        if (!cookies.isEmpty()) {
+            request.putHeader(OidcCommonUtils.COOKIE_REQUEST_HEADER, cookies);
+        }
+        PreparedHttpRequest.CredentialsToRetry credentialsToRetry = null;
+        if (addCredentials) {
+            credentialsToRetry = setGetRequestCredentials(request, clientSecretBasicAuthScheme,
+                    jwtAssertionProvided, clientAssertionProvider, clientSecretQueryAuthentication,
+                    oidcConfig.clientId().get(), clientSecret, oidcConfig);
+        }
+        var filteredRequest = filterHttpRequest(requestProps, OidcEndpoint.Type.JWKS, request, null)
+                .flatMap(httpRequest -> OidcCommonUtils.sendRequest(vertx, httpRequest, oidcConfig.useBlockingDnsLookup()));
+        return new PreparedHttpRequest(filteredRequest, credentialsToRetry);
     }
 
     public Uni<UserInfo> getUserInfo(final String accessToken) {
@@ -467,44 +491,8 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
 
         var preparedRequest = prepareHttpRequest(requestProps, uri, newFormBody, op, endpointType, bodyBuffer);
         if (hasClientSecretProvider && preparedRequest.credentialsToRetry != null) {
-            return preparedRequest.httpRequestUni.flatMap(httpResponse -> {
-                if (httpResponse.statusCode() == 401) {
-                    // here we need to deal with error responses (like unauthorized_client) possibly caused by
-                    // invalid credentialsToRetry; if credentialsToRetry provider updated credentialsToRetry, we should retry
-                    var credentialsRefresh = switch (preparedRequest.credentialsToRetry) {
-                        case CLIENT_SECRET -> OidcCommonUtils.clientSecret(oidcConfig.credentials())
-                                .map(newClientSecret -> {
-                                    if (newClientSecret != null && !newClientSecret.equals(clientSecret)) {
-                                        this.clientSecret = newClientSecret;
-                                        return true;
-                                    }
-                                    return false;
-                                });
-                        case CLIENT_SECRET_BASIC_AUTH_SCHEME -> OidcCommonUtils.clientSecret(oidcConfig.credentials())
-                                .map(newClientSecret -> {
-                                    var newClientSecretBasicAuthScheme = OidcCommonUtils.initClientSecretBasicAuth(oidcConfig,
-                                            newClientSecret);
-                                    if (newClientSecretBasicAuthScheme != null
-                                            && !newClientSecretBasicAuthScheme.equals(clientSecretBasicAuthScheme)) {
-                                        this.clientSecret = newClientSecret;
-                                        this.clientSecretBasicAuthScheme = newClientSecretBasicAuthScheme;
-                                        return true;
-                                    }
-                                    return false;
-                                });
-                    };
-
-                    return credentialsRefresh.flatMap(credentialsRefreshed -> {
-                        if (Boolean.TRUE.equals(credentialsRefreshed)) {
-                            LOG.debug("HTTP request failed with response status code 401 and the CredentialsProvider"
-                                    + " provided new credentials, retrying the request with new credentials");
-                            return prepareHttpRequest(requestProps, uri, formBody, op, endpointType, bodyBuffer).httpRequestUni;
-                        }
-                        return Uni.createFrom().item(httpResponse);
-                    });
-                }
-                return Uni.createFrom().item(httpResponse);
-            }).onItem();
+            return withCredentialsRetry(preparedRequest,
+                    () -> prepareHttpRequest(requestProps, uri, formBody, op, endpointType, bodyBuffer));
         }
         return preparedRequest.httpRequestUni.onItem();
     }
@@ -653,6 +641,76 @@ public class OidcProviderClientImpl implements OidcProviderClient, Closeable {
     }
 
     record UserInfoResponse(String contentType, String data) {
+    }
+
+    static PreparedHttpRequest.CredentialsToRetry setGetRequestCredentials(HttpRequest<Buffer> request,
+            String clientSecretBasicAuthScheme,
+            boolean jwtAssertionProvided, ClientAssertionProvider clientAssertionProvider,
+            boolean clientSecretQueryAuthentication, String clientId, String clientSecret,
+            OidcClientCommonConfig oidcConfig) {
+        PreparedHttpRequest.CredentialsToRetry credentialsToRetry = null;
+        if (clientSecretQueryAuthentication) {
+            request.addQueryParam(OidcConstants.CLIENT_ID, OidcCommonUtils.urlEncode(clientId));
+            request.addQueryParam(OidcConstants.CLIENT_SECRET, OidcCommonUtils.urlEncode(clientSecret));
+            credentialsToRetry = PreparedHttpRequest.CredentialsToRetry.CLIENT_SECRET;
+        } else {
+            if (clientSecretBasicAuthScheme != null) {
+                request.putHeader(AUTHORIZATION_HEADER, clientSecretBasicAuthScheme);
+                credentialsToRetry = PreparedHttpRequest.CredentialsToRetry.CLIENT_SECRET_BASIC_AUTH_SCHEME;
+            } else if (jwtAssertionProvided && clientAssertionProvider != null
+                    && oidcConfig.credentials().jwt().source() == OidcClientCommonConfig.Credentials.Jwt.Source.BEARER) {
+                final String clientAssertion = clientAssertionProvider.getClientAssertion();
+                if (clientAssertion == null) {
+                    throw new OIDCException(String.format(
+                            "Cannot access endpoint for client '%s' because a JWT bearer client_assertion is not available",
+                            clientId));
+                }
+                request.putHeader(AUTHORIZATION_HEADER, OidcConstants.BEARER_SCHEME + " " + clientAssertion);
+            }
+        }
+        return credentialsToRetry;
+    }
+
+    private UniOnItem<HttpResponse<Buffer>> withCredentialsRetry(PreparedHttpRequest preparedRequest,
+            Supplier<PreparedHttpRequest> refreshRequestSupplier) {
+        return preparedRequest.httpRequestUni.flatMap(httpResponse -> {
+            if (httpResponse.statusCode() == 401) {
+                // here we need to deal with error responses (like unauthorized_client) possibly caused by
+                // invalid credentialsToRetry; if credentialsToRetry provider updated credentialsToRetry, we should retry
+                var credentialsRefresh = switch (preparedRequest.credentialsToRetry) {
+                    case CLIENT_SECRET -> OidcCommonUtils.clientSecret(oidcConfig.credentials())
+                            .map(newClientSecret -> {
+                                if (newClientSecret != null && !newClientSecret.equals(clientSecret)) {
+                                    this.clientSecret = newClientSecret;
+                                    return true;
+                                }
+                                return false;
+                            });
+                    case CLIENT_SECRET_BASIC_AUTH_SCHEME -> OidcCommonUtils.clientSecret(oidcConfig.credentials())
+                            .map(newClientSecret -> {
+                                var newClientSecretBasicAuthScheme = OidcCommonUtils.initClientSecretBasicAuth(oidcConfig,
+                                        newClientSecret);
+                                if (newClientSecretBasicAuthScheme != null
+                                        && !newClientSecretBasicAuthScheme.equals(clientSecretBasicAuthScheme)) {
+                                    this.clientSecret = newClientSecret;
+                                    this.clientSecretBasicAuthScheme = newClientSecretBasicAuthScheme;
+                                    return true;
+                                }
+                                return false;
+                            });
+                };
+
+                return credentialsRefresh.flatMap(credentialsRefreshed -> {
+                    if (Boolean.TRUE.equals(credentialsRefreshed)) {
+                        LOG.debug("HTTP request failed with response status code 401 and the CredentialsProvider"
+                                + " provided new credentials, retrying the request with new credentials");
+                        return refreshRequestSupplier.get().httpRequestUni;
+                    }
+                    return Uni.createFrom().item(httpResponse);
+                });
+            }
+            return Uni.createFrom().item(httpResponse);
+        }).onItem();
     }
 
     static boolean isIntrospection(TokenOperation op) {
