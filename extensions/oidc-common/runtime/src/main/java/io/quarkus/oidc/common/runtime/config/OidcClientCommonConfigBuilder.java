@@ -161,13 +161,15 @@ public abstract class OidcClientCommonConfigBuilder<T> extends OidcCommonConfigB
      */
     public static final class CredentialsBuilder<T> {
 
-        private record CredentialsImpl(Optional<String> secret, Secret clientSecret, Jwt jwt) implements Credentials {
+        private record CredentialsImpl(Optional<String> secret, Secret clientSecret, Jwt jwt,
+                boolean requiredForAllEndpoints) implements Credentials {
         }
 
         private final OidcClientCommonConfigBuilder<T> builder;
         private Optional<String> secret;
         private Secret clientSecret;
         private Jwt jwt;
+        private boolean requiredForAllEndpoints;
 
         public CredentialsBuilder() {
             this(getConfigBuilderWithDefaults());
@@ -178,6 +180,7 @@ public abstract class OidcClientCommonConfigBuilder<T> extends OidcCommonConfigB
             this.secret = builder.credentials.secret();
             this.clientSecret = builder.credentials.clientSecret();
             this.jwt = builder.credentials.jwt();
+            this.requiredForAllEndpoints = builder.credentials.requiredForAllEndpoints();
         }
 
         /**
@@ -251,6 +254,15 @@ public abstract class OidcClientCommonConfigBuilder<T> extends OidcCommonConfigB
         }
 
         /**
+         * @return this builder
+         * @see Credentials#requiredForAllEndpoints()
+         */
+        public CredentialsBuilder<T> requiredForAllEndpoints() {
+            this.requiredForAllEndpoints = true;
+            return this;
+        }
+
+        /**
          * Builds {@link Credentials} and returns the builder.
          *
          * @return T builder
@@ -264,7 +276,7 @@ public abstract class OidcClientCommonConfigBuilder<T> extends OidcCommonConfigB
          * @return Credentials
          */
         public Credentials build() {
-            return new CredentialsImpl(secret, clientSecret, jwt);
+            return new CredentialsImpl(secret, clientSecret, jwt, requiredForAllEndpoints);
         }
 
         private static <T> OidcClientCommonConfigBuilder<T> getConfigBuilderWithDefaults() {
