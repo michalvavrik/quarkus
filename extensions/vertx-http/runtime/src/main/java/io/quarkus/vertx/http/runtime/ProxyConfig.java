@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Optional;
 
 import io.quarkus.runtime.annotations.ConfigDocDefault;
-import io.quarkus.runtime.configuration.TrimmedStringConverter;
 import io.quarkus.vertx.http.runtime.TrustedProxyCheck.TrustedProxyCheckPart;
 import io.smallrye.config.WithConverter;
 import io.smallrye.config.WithDefault;
@@ -148,17 +147,30 @@ public interface ProxyConfig {
     Optional<List<@WithConverter(TrustedProxyCheckPartConverter.class) TrustedProxyCheckPart>> trustedProxies();
 
     /**
-     * Configure the list of trusted proxy Distinguished Names (DNs).
-     * The proxy is trusted when its TLS client certificate's Subject DN contains all
-     * the components specified in any single configured value. For example, configuring
-     * {@code CN=my-proxy,O=MyOrg} matches a certificate with Subject DN {@code CN=my-proxy,O=MyOrg,C=US}.
-     * <p>
-     * DNs must be in RFC 2253 format.
-     * Use the indexed property format to avoid multi-component DN values being split on commas:
-     * {@code quarkus.http.proxy.trusted-proxy-dns[0]=CN=envoy-client,O=MyOrg}.
+     * Identify trusted proxies by their TLS client certificate Subject DN, truststore alias, or both.
+     * Each entry defines a trusted proxy whose forwarded headers are honored when the client certificate matches.
      * <p>
      * This option is mutually exclusive with {@link #trustedProxies()} and requires
      * {@code quarkus.http.ssl.client-auth} to be set to {@code REQUEST} or {@code REQUIRED}.
      */
-    Optional<List<@WithConverter(TrimmedStringConverter.class) String>> trustedProxyDns();
+    List<TrustedProxyConfig> trustedProxy();
+
+    /**
+     * Trusted proxy configuration.
+     */
+    interface TrustedProxyConfig {
+
+        /**
+         * The trusted proxy's Subject Distinguished Name (DN) in RFC 2253 format.
+         * The proxy is trusted when its TLS client certificate's Subject DN contains all
+         * the components specified in this value.
+         */
+        Optional<String> subjectDn();
+
+        /**
+         * Alias of a certificate entry in the TLS registry truststore used by the HTTP server.
+         * When set, the client's certificate chain is validated against the certificate stored under this alias.
+         */
+        Optional<String> truststoreAlias();
+    }
 }

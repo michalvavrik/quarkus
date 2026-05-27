@@ -109,7 +109,7 @@ public class HttpServerOptionsUtils {
         return serverOptions;
     }
 
-    private static TlsConfiguration getTlsConfiguration(Optional<String> tlsConfigurationName,
+    public static TlsConfiguration getTlsConfiguration(Optional<String> tlsConfigurationName,
             TlsConfigurationRegistry registry) {
         TlsConfiguration bucket = null;
         if (tlsConfigurationName.isPresent()) {
