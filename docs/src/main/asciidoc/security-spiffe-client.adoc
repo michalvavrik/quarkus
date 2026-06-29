@@ -1,0 +1,134 @@
+////
+This guide is maintained in the main Quarkus repository
+and pull requests should be submitted there:
+https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
+////
+= SPIFFE Client
+:extension-status: experimental
+include::_attributes.adoc[]
+:categories: security
+:topics: security,spiffe,spire,workload-identity,zero-trust
+:extensions: io.quarkus:quarkus-spiffe-client
+
+https://spiffe.io/[SPIFFE] (Secure Production Identity Framework for Everyone) provides cryptographic workload identities in zero-trust environments.
+The SPIFFE client extension communicates directly with the local https://spiffe.io/docs/latest/spire-about/spire-concepts/[SPIRE Agent] via the Workload API to fetch JWT-SVIDs, eliminating the need for a spiffe-helper sidecar.
+
+include::{includes}/extension-status.adoc[]
+
+== Adding the extension
+
+Add the `quarkus-spiffe-client` extension to your project:
+
+[source,xml,role="primary asciidoc-tabs-target-sync-cli asciidoc-tabs-target-sync-maven"]
+.pom.xml
+----
+<dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-spiffe-client</artifactId>
+</dependency>
+----
+
+[source,gradle,role="secondary asciidoc-tabs-target-sync-gradle"]
+.build.gradle
+----
+implementation("io.quarkus:quarkus-spiffe-client")
+----
+
+== Configuration
+
+The extension requires the URI of the SPIRE Agent's Workload Endpoint socket:
+
+[source,properties]
+----
+quarkus.spiffe-client.endpoint-socket=unix:///run/spire/sockets/agent.sock
+----
+
+The URI must use one of the following schemes, as defined by the https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_Endpoint.md[SPIFFE Workload Endpoint] specification:
+
+* `unix://` for Unix Domain Sockets (production default), for example `unix:///run/spire/sockets/agent.sock`
+* `tcp://` for TCP connections (development and testing), for example `tcp://127.0.0.1:8080`
+
+For the `tcp` scheme, the host must be an IP address and a port is required.
+Hostnames are not accepted.
+
+== Fetching JWT-SVIDs
+
+Inject the `SpiffeClient` CDI bean to fetch JWT-SVIDs from the SPIRE Agent.
+The following example fetches a single JWT-SVID for one audience:
+
+[source,java]
+----
+import io.quarkus.spiffe.client.api.JwtSvid;
+import io.quarkus.spiffe.client.api.JwtSvidRequest;
+import io.quarkus.spiffe.client.api.SpiffeClient;
+
+@ApplicationScoped
+public class MyService {
+
+    @Inject
+    SpiffeClient spiffeClient;
+
+    public Uni<String> getToken() {
+        return spiffeClient.fetchJwtSvid(JwtSvidRequest.forAudience("https://my-audience"))
+                .map(JwtSvid::token);
+    }
+}
+----
+
+Use the builder to specify multiple audiences or restrict the request to a specific SPIFFE ID:
+
+[source,java]
+----
+import java.util.Set;
+
+import io.quarkus.spiffe.client.api.JwtSvid;
+import io.quarkus.spiffe.client.api.JwtSvidRequest;
+import io.quarkus.spiffe.client.api.SpiffeClient;
+import io.smallrye.mutiny.Uni;
+
+public Uni<JwtSvid> getSpecificToken() {
+    JwtSvidRequest request = JwtSvidRequest.builder()
+            .audiences(Set.of("https://audience-a", "https://audience-b"))
+            .spiffeId("spiffe://example.org/specific-service")
+            .build();
+    return spiffeClient.fetchJwtSvid(request);
+}
+----
+
+=== Multi-identity workloads
+
+A workload may have multiple SPIFFE identities if it matches several SPIRE registration entries.
+Use `fetchJwtSvids()` to retrieve all authorized identities and `hint()` to distinguish between them:
+
+[source,java]
+----
+import io.quarkus.spiffe.client.api.JwtSvid;
+import io.quarkus.spiffe.client.api.JwtSvidRequest;
+import io.smallrye.mutiny.Uni;
+
+public Uni<String> getWebTierToken() {
+    return spiffeClient.fetchJwtSvids(JwtSvidRequest.forAudience("https://my-audience"))
+            .select().where(svid -> "web-tier".equals(svid.hint()))
+            .toUni()
+            .map(JwtSvid::token);
+}
+----
+
+Calls are not retried automatically; implement your own retry logic if your use case requires it.
+
+== Testing
+
+In dev and test modes, the extension provides a Dev Service that emulates the SPIFFE Workload API with a pre-configured identity and a locally generated key pair.
+While it does not support custom authorization policies or registration entries, it is sufficient for verifying that your application correctly fetches and uses JWT-SVIDs without requiring external SPIRE infrastructure.
+You can choose the transport protocol with the `quarkus.spiffe-client.devservices.transport` property, which accepts `unix` (default) or `tcp`.
+
+== OIDC integration
+
+When combined with `quarkus-oidc` or `quarkus-oidc-client`, this extension can supply JWT-SVIDs as client assertions automatically:
+
+* To authenticate the OIDC provider client during the authorization code exchange, see the xref:security-oidc-code-flow-authentication.adoc#oidc-provider-client-authentication[OIDC provider client authentication] section of the OIDC code flow guide.
+* To authenticate an `OidcClient` for `client_credentials` or other grant types, see the xref:security-openid-connect-client-reference.adoc#oidc-client-authentication[OidcClient authentication] section of the OIDC client reference.
+
+== Configuration reference
+
+include::{generated-dir}/config/quarkus-spiffe-client.adoc[opts=optional, leveloffset=+1]
