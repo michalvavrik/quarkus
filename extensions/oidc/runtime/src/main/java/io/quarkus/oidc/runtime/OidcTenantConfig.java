@@ -1196,6 +1196,28 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
         Optional<Duration> refreshTokenTimeSkew();
 
         /**
+         * Duration for which a completed token refresh result is kept in memory.
+         * <p>
+         * When multiple concurrent requests carry the same expired session, each independently
+         * attempts to refresh the token. This cache ensures only one refresh call is made —
+         * subsequent requests reuse the cached result. This is critical for OIDC providers
+         * that issue single-use refresh tokens, where a duplicate
+         * refresh is rejected by the provider.
+         * <p>
+         * Keep this value short (a few seconds) — it only needs to cover the window between
+         * concurrent requests arriving at the server. The cached tokens begin aging immediately,
+         * so longer values serve increasingly stale tokens without benefit.
+         * <p>
+         * Set to {@code 0S} to disable the cache.
+         * <p>
+         * The cache is per application instance with up to 10,000 entries.
+         * <p>
+         * This property is only effective when {@link #refreshExpired()} is enabled.
+         */
+        @WithDefault("5S")
+        Duration refreshTokenCacheTimeToLive();
+
+        /**
          * The forced JWK set refresh interval in minutes.
          */
         @WithDefault("10M")
