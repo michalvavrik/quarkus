@@ -458,7 +458,7 @@ public class OidcClientResource {
 
 
 [[named-oidc-clients]]
-=== Inject named OidcClient and tokens
+=== Inject named OidcClient, Tokens, and TokenProvider
 
 If multiple `OidcClient` objects are configured, you can specify the `OidcClient` injection target with the `@NamedOidcClient` qualifier instead of working with `OidcClients`:
 
@@ -532,6 +532,15 @@ public class OidcClientRequestCustomFilter implements ClientRequestFilter {
         requestContext.getHeaders().add(HttpHeaders.AUTHORIZATION, "Bearer " + tokens.getAccessToken());
     }
 }
+----
+
+The same qualifier can also be used to specify the `OidcClient` used for a `TokenProvider` injection:
+
+[source,java]
+----
+@Inject
+@NamedOidcClient("jwt-secret")
+TokenProvider tokenProvider;
 ----
 
 Additionally, if you want to do a programmatic lookup of an `OidcClient`,
@@ -1280,7 +1289,7 @@ public class ExtensionOAuth2Support {
 }
 ----
 +
-Currently, `io.quarkus.oidc.client.spi.TokenProvider` is available only for default OIDC clients because custom extensions are unlikely to be aware of multiple named OIDC clients.
+To use a named OIDC client, qualify the injection point with `@NamedOidcClient` (see <<named-oidc-clients>>).
 
 [[integration-testing-oidc-client]]
 === Testing
