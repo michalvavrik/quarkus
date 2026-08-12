@@ -1561,6 +1561,8 @@ You will need to configure this URL in the admin console of your OIDC provider.
 You will also need to configure a token age property for the logout token verification to succeed if your OIDC provider does not set an expiry claim in the current logout token.
 For example, set `quarkus.oidc.token.age=10S` to ensure that no more than 10 seconds elapse since the logout token's `iat` (issued at) time.
 
+NOTE: If you know that neither static nor dynamic OIDC tenants will require back-channel logout, you can disable its registration to avoid unnecessary overhead, see xref:security-oidc-expanded-configuration.adoc#allowed-routes-properties[Allowed Routes] for more information.
+
 [[front-channel-logout]]
 ==== Front-channel logout
 
