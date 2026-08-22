@@ -166,13 +166,24 @@ class PermissionToActionUtilTest {
     }
 
     @Test
-    void trailingBackslashFails() {
-        assertThrows(IllegalArgumentException.class, () -> parse("read\\"));
+    void trailingBackslashIsLiteral() {
+        var result = parse("read\\");
+        assertEquals("read\\", result.name());
+        assertNull(result.action());
     }
 
     @Test
-    void standaloneBackslashFails() {
-        assertThrows(IllegalArgumentException.class, () -> parse("\\"));
+    void standaloneBackslashIsLiteral() {
+        var result = parse("\\");
+        assertEquals("\\", result.name());
+        assertNull(result.action());
+    }
+
+    @Test
+    void backslashBeforeRegularCharIsLiteral() {
+        var result = parse("perm\\name");
+        assertEquals("perm\\name", result.name());
+        assertNull(result.action());
     }
 
     @Test

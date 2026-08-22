@@ -57,25 +57,27 @@ class EscapedColonPermissionCheckerTest {
     }
 
     @Test
-    void backwardsCompatCheckerWithColon() {
-        assertSuccess(() -> bean.backwardsCompatChecker(true), "backwardsCompatChecker", USER_WITH_AUGMENTORS);
-        assertFailureFor(() -> bean.backwardsCompatChecker(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
+    void unescapedColonCheckerMatchesWithoutParsing() {
+        assertSuccess(() -> bean.unescapedColonChecker(true), "unescapedColonChecker", USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.unescapedColonChecker(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
     }
 
     @Test
-    void noCheckerFallsThroughToParsing() {
-        assertSuccess(() -> bean.noCheckerEscapedFallthrough(), "noCheckerEscapedFallthrough",
+    void escapedColonWithoutCheckerGrantedByIdentityPermission() {
+        assertSuccess(() -> bean.escapedColonNoChecker(), "escapedColonNoChecker",
                 withPerms(new StringPermission("ns:perm")));
-        assertFailureFor(() -> bean.noCheckerEscapedFallthrough(), ForbiddenException.class, USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.escapedColonNoChecker(), ForbiddenException.class, USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.escapedColonNoChecker(), ForbiddenException.class,
+                withPerms(new StringPermission("ns", "perm")));
     }
 
     @Test
-    void mixedCheckerAndEscapedParsed() {
-        assertSuccess(() -> bean.mixedCheckerAndParsed(true), "mixedCheckerAndParsed", USER_WITH_AUGMENTORS);
-        assertSuccess(() -> bean.mixedCheckerAndParsed(false), "mixedCheckerAndParsed",
+    void checkerAndIdentityPermissionInOneOfRelation() {
+        assertSuccess(() -> bean.checkerOrIdentityPerm(true), "checkerOrIdentityPerm", USER_WITH_AUGMENTORS);
+        assertSuccess(() -> bean.checkerOrIdentityPerm(false), "checkerOrIdentityPerm",
                 withPerms(new StringPermission("scope:admin:read")));
-        assertFailureFor(() -> bean.mixedCheckerAndParsed(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
-        assertFailureFor(() -> bean.mixedCheckerAndParsed(false), ForbiddenException.class,
+        assertFailureFor(() -> bean.checkerOrIdentityPerm(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.checkerOrIdentityPerm(false), ForbiddenException.class,
                 withPerms(new StringPermission("scope", "read")));
     }
 
@@ -109,18 +111,18 @@ class EscapedColonPermissionCheckerTest {
         }
 
         @PermissionsAllowed("read:write")
-        String backwardsCompatChecker(boolean allow) {
-            return "backwardsCompatChecker";
+        String unescapedColonChecker(boolean allow) {
+            return "unescapedColonChecker";
         }
 
         @PermissionsAllowed("ns" + EC + "perm")
-        String noCheckerEscapedFallthrough() {
-            return "noCheckerEscapedFallthrough";
+        String escapedColonNoChecker() {
+            return "escapedColonNoChecker";
         }
 
         @PermissionsAllowed({ "scope:read", "scope" + EC + "admin" + EC + "read" })
-        String mixedCheckerAndParsed(boolean scopeRead) {
-            return "mixedCheckerAndParsed";
+        String checkerOrIdentityPerm(boolean scopeRead) {
+            return "checkerOrIdentityPerm";
         }
 
         @PermissionsAllowed("perm" + EC + "a")
