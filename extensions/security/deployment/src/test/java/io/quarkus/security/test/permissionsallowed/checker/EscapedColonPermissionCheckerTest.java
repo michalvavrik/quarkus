@@ -4,6 +4,7 @@ import static io.quarkus.security.test.utils.IdentityMock.USER;
 import static io.quarkus.security.test.utils.SecurityTestUtils.assertFailureFor;
 import static io.quarkus.security.test.utils.SecurityTestUtils.assertSuccess;
 
+import java.security.Permission;
 import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -36,12 +37,23 @@ class EscapedColonPermissionCheckerTest {
     SecuredBean bean;
 
     @Test
-    void checkerMatchesRawEscapedValue() {
-        assertSuccess(() -> bean.rawCheckerMatch(true), "rawCheckerMatch", USER_WITH_AUGMENTORS);
-        assertFailureFor(() -> bean.rawCheckerMatch(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
+    void checkerMatchesRawEscapedValueInName() {
+        assertSuccess(() -> bean.checkerEscapedName(true), "checkerEscapedName", USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.checkerEscapedName(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.checkerEscapedName(false), ForbiddenException.class,
+                withPerms(new StringPermission("org:acme:service")));
+    }
 
-        var userWithPerm = new AuthData(USER, true, new StringPermission("org:acme:service"));
-        assertFailureFor(() -> bean.rawCheckerMatch(false), ForbiddenException.class, userWithPerm);
+    @Test
+    void checkerMatchesRawEscapedValueInAction() {
+        assertSuccess(() -> bean.checkerEscapedAction(true), "checkerEscapedAction", USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.checkerEscapedAction(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
+    }
+
+    @Test
+    void checkerMatchesRawEscapedValueInBothNameAndAction() {
+        assertSuccess(() -> bean.checkerEscapedBoth(true), "checkerEscapedBoth", USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.checkerEscapedBoth(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
     }
 
     @Test
@@ -51,35 +63,49 @@ class EscapedColonPermissionCheckerTest {
     }
 
     @Test
-    void checkerDoesNotMatchDifferentEscaping() {
-        var userWithPerm = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("ns:perm")), true);
-        assertSuccess(() -> bean.noCheckerEscapedFallthrough(), "noCheckerEscapedFallthrough", userWithPerm);
-
+    void noCheckerFallsThroughToParsing() {
+        assertSuccess(() -> bean.noCheckerEscapedFallthrough(), "noCheckerEscapedFallthrough",
+                withPerms(new StringPermission("ns:perm")));
         assertFailureFor(() -> bean.noCheckerEscapedFallthrough(), ForbiddenException.class, USER_WITH_AUGMENTORS);
     }
 
     @Test
     void mixedCheckerAndEscapedParsed() {
         assertSuccess(() -> bean.mixedCheckerAndParsed(true), "mixedCheckerAndParsed", USER_WITH_AUGMENTORS);
-
-        var userWithPerm = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("scope:admin:read")), true);
-        assertSuccess(() -> bean.mixedCheckerAndParsed(false), "mixedCheckerAndParsed", userWithPerm);
-
+        assertSuccess(() -> bean.mixedCheckerAndParsed(false), "mixedCheckerAndParsed",
+                withPerms(new StringPermission("scope:admin:read")));
         assertFailureFor(() -> bean.mixedCheckerAndParsed(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.mixedCheckerAndParsed(false), ForbiddenException.class,
+                withPerms(new StringPermission("scope", "read")));
+    }
 
-        var userWithSplitPerm = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("scope", "read")), true);
-        assertFailureFor(() -> bean.mixedCheckerAndParsed(false), ForbiddenException.class, userWithSplitPerm);
+    @Test
+    void repeatedPermissionsWithCheckers() {
+        assertSuccess(() -> bean.repeatedCheckerEscaped(true, true), "repeatedCheckerEscaped", USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.repeatedCheckerEscaped(true, false), ForbiddenException.class, USER_WITH_AUGMENTORS);
+        assertFailureFor(() -> bean.repeatedCheckerEscaped(false, true), ForbiddenException.class, USER_WITH_AUGMENTORS);
+    }
+
+    private static AuthData withPerms(Permission... perms) {
+        return new AuthData(Set.of("user"), false, "user", Set.of(perms), true);
     }
 
     @ApplicationScoped
     public static class SecuredBean {
 
         @PermissionsAllowed("org" + EC + "acme" + EC + "service")
-        String rawCheckerMatch(boolean allow) {
-            return "rawCheckerMatch";
+        String checkerEscapedName(boolean allow) {
+            return "checkerEscapedName";
+        }
+
+        @PermissionsAllowed("scope:act" + EC + "ion")
+        String checkerEscapedAction(boolean allow) {
+            return "checkerEscapedAction";
+        }
+
+        @PermissionsAllowed("ns" + EC + "scope:act" + EC + "ion")
+        String checkerEscapedBoth(boolean allow) {
+            return "checkerEscapedBoth";
         }
 
         @PermissionsAllowed("read:write")
@@ -96,6 +122,12 @@ class EscapedColonPermissionCheckerTest {
         String mixedCheckerAndParsed(boolean scopeRead) {
             return "mixedCheckerAndParsed";
         }
+
+        @PermissionsAllowed("perm" + EC + "a")
+        @PermissionsAllowed("perm" + EC + "b")
+        String repeatedCheckerEscaped(boolean a, boolean b) {
+            return "repeatedCheckerEscaped";
+        }
     }
 
     @ApplicationScoped
@@ -103,6 +135,16 @@ class EscapedColonPermissionCheckerTest {
 
         @PermissionChecker("org" + EC + "acme" + EC + "service")
         boolean canAccessOrgAcmeService(boolean allow) {
+            return allow;
+        }
+
+        @PermissionChecker("scope:act" + EC + "ion")
+        boolean canScopeAction(boolean allow) {
+            return allow;
+        }
+
+        @PermissionChecker("ns" + EC + "scope:act" + EC + "ion")
+        boolean canNsScopeAction(boolean allow) {
             return allow;
         }
 
@@ -114,6 +156,16 @@ class EscapedColonPermissionCheckerTest {
         @PermissionChecker("scope:read")
         boolean canScopeRead(boolean scopeRead) {
             return scopeRead;
+        }
+
+        @PermissionChecker("perm" + EC + "a")
+        boolean canPermA(boolean a) {
+            return a;
+        }
+
+        @PermissionChecker("perm" + EC + "b")
+        boolean canPermB(boolean b) {
+            return b;
         }
     }
 }

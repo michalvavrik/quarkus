@@ -1,5 +1,6 @@
 package io.quarkus.security.test.permissionsallowed;
 
+import static io.quarkus.security.spi.runtime.PermissionToActionUtil.parse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -7,193 +8,180 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
 
-import io.quarkus.security.spi.runtime.PermissionToActionUtil;
-
 class PermissionToActionUtilTest {
 
-    private static final String EC = "\\:";
-    private static final String EB = "\\\\";
+    private static final String ESCAPED_COLON = "\\:";
+    private static final String ESCAPED_BACKSLASH = "\\\\";
 
     @Test
     void nameOnly() {
-        var result = PermissionToActionUtil.parse("read");
+        var result = parse("read");
         assertEquals("read", result.name());
         assertNull(result.action());
     }
 
     @Test
     void nameAndAction() {
-        var result = PermissionToActionUtil.parse("read:write");
+        var result = parse("read:write");
         assertEquals("read", result.name());
         assertEquals("write", result.action());
     }
 
     @Test
     void nameWithHyphens() {
-        var result = PermissionToActionUtil.parse("my-permission-name");
+        var result = parse("my-permission-name");
         assertEquals("my-permission-name", result.name());
         assertNull(result.action());
     }
 
     @Test
     void actionWithHyphens() {
-        var result = PermissionToActionUtil.parse("perm:my-action");
+        var result = parse("perm:my-action");
         assertEquals("perm", result.name());
         assertEquals("my-action", result.action());
     }
 
     @Test
     void singleEscapedColonInName() {
-        var result = PermissionToActionUtil.parse("system" + EC + "role");
+        var result = parse("system" + ESCAPED_COLON + "role");
         assertEquals("system:role", result.name());
         assertNull(result.action());
     }
 
     @Test
     void multipleEscapedColonsInName() {
-        var result = PermissionToActionUtil.parse("a" + EC + "b" + EC + "c");
+        var result = parse("a" + ESCAPED_COLON + "b" + ESCAPED_COLON + "c");
         assertEquals("a:b:c", result.name());
         assertNull(result.action());
     }
 
     @Test
     void escapedColonInNameWithSeparatorAndAction() {
-        var result = PermissionToActionUtil.parse("system" + EC + "role:query");
+        var result = parse("system" + ESCAPED_COLON + "role:query");
         assertEquals("system:role", result.name());
         assertEquals("query", result.action());
     }
 
     @Test
     void multipleEscapedColonsInNameWithAction() {
-        var result = PermissionToActionUtil.parse("a" + EC + "b" + EC + "c:act");
+        var result = parse("a" + ESCAPED_COLON + "b" + ESCAPED_COLON + "c:act");
         assertEquals("a:b:c", result.name());
         assertEquals("act", result.action());
     }
 
     @Test
     void escapedColonInAction() {
-        var result = PermissionToActionUtil.parse("name:a" + EC + "b");
+        var result = parse("name:a" + ESCAPED_COLON + "b");
         assertEquals("name", result.name());
         assertEquals("a:b", result.action());
     }
 
     @Test
     void multipleEscapedColonsInAction() {
-        var result = PermissionToActionUtil.parse("name:a" + EC + "b" + EC + "c");
+        var result = parse("name:a" + ESCAPED_COLON + "b" + ESCAPED_COLON + "c");
         assertEquals("name", result.name());
         assertEquals("a:b:c", result.action());
     }
 
     @Test
     void escapedColonsInBothNameAndAction() {
-        var result = PermissionToActionUtil.parse("n" + EC + "ame:act" + EC + "ion");
+        var result = parse("n" + ESCAPED_COLON + "ame:act" + ESCAPED_COLON + "ion");
         assertEquals("n:ame", result.name());
         assertEquals("act:ion", result.action());
     }
 
     @Test
     void literalBackslashInName() {
-        var result = PermissionToActionUtil.parse("read" + EB + "write");
+        var result = parse("read" + ESCAPED_BACKSLASH + "write");
         assertEquals("read\\write", result.name());
         assertNull(result.action());
     }
 
     @Test
     void literalBackslashBeforeSeparator() {
-        var result = PermissionToActionUtil.parse("read" + EB + ":write");
+        var result = parse("read" + ESCAPED_BACKSLASH + ":write");
         assertEquals("read\\", result.name());
         assertEquals("write", result.action());
     }
 
     @Test
     void literalBackslashFollowedByEscapedColon() {
-        var result = PermissionToActionUtil.parse("read" + EB + EC + "write");
+        var result = parse("read" + ESCAPED_BACKSLASH + ESCAPED_COLON + "write");
         assertEquals("read\\:write", result.name());
         assertNull(result.action());
     }
 
     @Test
     void twoLiteralBackslashes() {
-        var result = PermissionToActionUtil.parse("a" + EB + EB + "b");
+        var result = parse("a" + ESCAPED_BACKSLASH + ESCAPED_BACKSLASH + "b");
         assertEquals("a\\\\b", result.name());
         assertNull(result.action());
     }
 
     @Test
     void multipleUnescapedColonsFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse("a:b:c"));
+        assertThrows(IllegalArgumentException.class, () -> parse("a:b:c"));
     }
 
     @Test
     void threeUnescapedColonsFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse("a:b:c:d"));
+        assertThrows(IllegalArgumentException.class, () -> parse("a:b:c:d"));
     }
 
     @Test
     void mixedEscapedAndMultipleUnescapedColonsFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse("a:b" + EC + "c:d"));
+        assertThrows(IllegalArgumentException.class, () -> parse("a:b" + ESCAPED_COLON + "c:d"));
     }
 
     @Test
     void firstEscapedThenMultipleUnescapedFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse("a" + EC + "b:c:d"));
+        assertThrows(IllegalArgumentException.class, () -> parse("a" + ESCAPED_COLON + "b:c:d"));
     }
 
     @Test
     void emptyStringFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse(""));
+        assertThrows(IllegalArgumentException.class, () -> parse(""));
     }
 
     @Test
     void onlySeparatorFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse(":"));
+        assertThrows(IllegalArgumentException.class, () -> parse(":"));
     }
 
     @Test
     void leadingColonFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse(":action"));
+        assertThrows(IllegalArgumentException.class, () -> parse(":action"));
     }
 
     @Test
     void trailingColon() {
-        var result = PermissionToActionUtil.parse("name:");
+        var result = parse("name:");
         assertEquals("name", result.name());
         assertEquals("", result.action());
     }
 
     @Test
-    void escapedColonAsEntireName() {
-        var result = PermissionToActionUtil.parse(EC);
-        assertEquals(":", result.name());
-        assertNull(result.action());
+    void standaloneEscapedColonFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse(ESCAPED_COLON));
     }
 
     @Test
     void trailingBackslashFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse("read\\"));
+        assertThrows(IllegalArgumentException.class, () -> parse("read\\"));
     }
 
     @Test
-    void onlyBackslashFails() {
-        assertThrows(IllegalArgumentException.class,
-                () -> PermissionToActionUtil.parse("\\"));
+    void standaloneBackslashFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse("\\"));
     }
 
     @Test
     void escapedVsUnescapedColonProduceDifferentResults() {
-        var escaped = PermissionToActionUtil.parse("admin" + EC + "read");
+        var escaped = parse("admin" + ESCAPED_COLON + "read");
         assertEquals("admin:read", escaped.name());
         assertNull(escaped.action());
 
-        var unescaped = PermissionToActionUtil.parse("admin:read");
+        var unescaped = parse("admin:read");
         assertEquals("admin", unescaped.name());
         assertEquals("read", unescaped.action());
 
@@ -201,51 +189,35 @@ class PermissionToActionUtilTest {
     }
 
     @Test
-    void escapedColonSeparatorEscapedColon() {
-        var result = PermissionToActionUtil.parse(EC + ":" + EC);
-        assertEquals(":", result.name());
-        assertEquals(":", result.action());
+    void separatorOnlyNameAndActionFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse(ESCAPED_COLON + ":" + ESCAPED_COLON));
     }
 
     @Test
     void onlyEscapedBackslashes() {
-        var result = PermissionToActionUtil.parse(EB + EB);
+        var result = parse(ESCAPED_BACKSLASH + ESCAPED_BACKSLASH);
         assertEquals("\\\\", result.name());
         assertNull(result.action());
     }
 
     @Test
-    void complexRealWorldPermissionName() {
-        var result = PermissionToActionUtil.parse("org" + EC + "acme" + EC + "service:read");
+    void namespacedPermissionWithAction() {
+        var result = parse("org" + ESCAPED_COLON + "acme" + ESCAPED_COLON + "service:read");
         assertEquals("org:acme:service", result.name());
         assertEquals("read", result.action());
     }
 
     @Test
-    void complexRealWorldPermissionNameNoAction() {
-        var result = PermissionToActionUtil.parse("org" + EC + "acme" + EC + "service" + EC + "read");
+    void namespacedPermissionAllEscaped() {
+        var result = parse("org" + ESCAPED_COLON + "acme" + ESCAPED_COLON + "service" + ESCAPED_COLON + "read");
         assertEquals("org:acme:service:read", result.name());
         assertNull(result.action());
     }
 
     @Test
     void backslashInActionPart() {
-        var result = PermissionToActionUtil.parse("name:path" + EB + "to" + EB + "resource");
+        var result = parse("name:path" + ESCAPED_BACKSLASH + "to" + ESCAPED_BACKSLASH + "resource");
         assertEquals("name", result.name());
         assertEquals("path\\to\\resource", result.action());
-    }
-
-    @Test
-    void originalIssueScenario() {
-        var result = PermissionToActionUtil.parse("system" + EC + "role" + EC + "query1");
-        assertEquals("system:role:query1", result.name());
-        assertNull(result.action());
-    }
-
-    @Test
-    void originalIssueScenarioWithAction() {
-        var result = PermissionToActionUtil.parse("system" + EC + "role:query1");
-        assertEquals("system:role", result.name());
-        assertEquals("query1", result.action());
     }
 }

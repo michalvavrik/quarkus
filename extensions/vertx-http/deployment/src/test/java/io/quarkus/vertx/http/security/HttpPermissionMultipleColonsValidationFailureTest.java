@@ -33,12 +33,10 @@ class HttpPermissionMultipleColonsValidationFailureTest {
                     e = e.getCause();
                 }
                 assertNotNull(ce, "Expected ConfigurationException but got: " + t);
+                assertTrue(ce.getMessage().contains("Invalid permission format"),
+                        "Error should mention invalid format: " + ce.getMessage());
                 assertTrue(ce.getMessage().contains("system:role:query1"),
                         "Error should reference the invalid value: " + ce.getMessage());
-                assertTrue(
-                        ce.getMessage().contains("Invalid permission format")
-                                || ce.getMessage().contains("separator"),
-                        "Error should mention the separator issue: " + ce.getMessage());
             });
 
     @Test

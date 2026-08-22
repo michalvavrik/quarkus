@@ -17,7 +17,7 @@ import io.quarkus.arc.Arc;
 import io.quarkus.security.ForbiddenException;
 import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.security.UnauthorizedException;
-import io.quarkus.security.runtime.SecurityIdentityAssociation;
+import io.quarkus.security.identity.CurrentIdentityAssociation;
 import io.quarkus.security.test.utils.TestIdentityController;
 import io.quarkus.security.test.utils.TestIdentityProvider;
 import io.quarkus.test.QuarkusExtensionTest;
@@ -208,7 +208,7 @@ class EscapedColonHttpPermissionTest {
         public void handle(RoutingContext event) {
             Arc.container().requestContext().activate();
             QuarkusHttpUser user = (QuarkusHttpUser) event.user();
-            Arc.container().instance(SecurityIdentityAssociation.class).get()
+            Arc.container().instance(CurrentIdentityAssociation.class).get()
                     .setIdentity(user.getSecurityIdentity());
             callService.get().subscribe().with(unused -> {
                 String ret = user.getSecurityIdentity().getPrincipal().getName()

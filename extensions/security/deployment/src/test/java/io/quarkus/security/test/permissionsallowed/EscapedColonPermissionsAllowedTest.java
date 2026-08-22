@@ -3,6 +3,7 @@ package io.quarkus.security.test.permissionsallowed;
 import static io.quarkus.security.test.utils.SecurityTestUtils.assertFailureFor;
 import static io.quarkus.security.test.utils.SecurityTestUtils.assertSuccess;
 
+import java.security.Permission;
 import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -34,84 +35,66 @@ class EscapedColonPermissionsAllowedTest {
 
     @Test
     void escapedColonsInNameNoAction() {
-        var userWithPerm = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system:role:query1")), true);
-        assertSuccess(() -> bean.escapedColonNameOnly(), "escapedColonNameOnly", userWithPerm);
-
-        var userWithWrongPerm = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system")), true);
-        assertFailureFor(() -> bean.escapedColonNameOnly(), ForbiddenException.class, userWithWrongPerm);
-
-        var userWithPartialName = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system", "role:query1")), true);
-        assertFailureFor(() -> bean.escapedColonNameOnly(), ForbiddenException.class, userWithPartialName);
+        assertSuccess(() -> bean.escapedColonNameOnly(), "escapedColonNameOnly",
+                withPerms(new StringPermission("system:role:query1")));
+        assertFailureFor(() -> bean.escapedColonNameOnly(), ForbiddenException.class,
+                withPerms(new StringPermission("system")));
+        assertFailureFor(() -> bean.escapedColonNameOnly(), ForbiddenException.class,
+                withPerms(new StringPermission("system", "role:query1")));
     }
 
     @Test
     void escapedColonInNameWithAction() {
-        var userWithPerm = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system:role", "query")), true);
-        assertSuccess(() -> bean.escapedColonNameWithAction(), "escapedColonNameWithAction", userWithPerm);
-
-        var userNameOnly = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system:role")), true);
-        assertFailureFor(() -> bean.escapedColonNameWithAction(), ForbiddenException.class, userNameOnly);
-
-        var userWrongSplit = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system", "role")), true);
-        assertFailureFor(() -> bean.escapedColonNameWithAction(), ForbiddenException.class, userWrongSplit);
+        assertSuccess(() -> bean.escapedColonNameWithAction(), "escapedColonNameWithAction",
+                withPerms(new StringPermission("system:role", "query")));
+        assertFailureFor(() -> bean.escapedColonNameWithAction(), ForbiddenException.class,
+                withPerms(new StringPermission("system:role")));
+        assertFailureFor(() -> bean.escapedColonNameWithAction(), ForbiddenException.class,
+                withPerms(new StringPermission("system", "role")));
     }
 
     @Test
     void escapedColonInAction() {
-        var userWithPerm = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("perm", "role:query")), true);
-        assertSuccess(() -> bean.escapedColonInAction(), "escapedColonInAction", userWithPerm);
-
-        var userPartialAction = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("perm", "role")), true);
-        assertFailureFor(() -> bean.escapedColonInAction(), ForbiddenException.class, userPartialAction);
+        assertSuccess(() -> bean.escapedColonInAction(), "escapedColonInAction",
+                withPerms(new StringPermission("perm", "role:query")));
+        assertFailureFor(() -> bean.escapedColonInAction(), ForbiddenException.class,
+                withPerms(new StringPermission("perm", "role")));
     }
 
     @Test
     void escapedBackslashBeforeSeparator() {
-        var userWithPerm = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("read\\", "write")), true);
-        assertSuccess(() -> bean.escapedBackslashBeforeSeparator(), "escapedBackslashBeforeSeparator", userWithPerm);
+        assertSuccess(() -> bean.escapedBackslashBeforeSeparator(), "escapedBackslashBeforeSeparator",
+                withPerms(new StringPermission("read\\", "write")));
     }
 
     @Test
     void mixedEscapedAndPlainValues() {
-        var userEscaped = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system:role:query1")), true);
-        assertSuccess(() -> bean.mixedValues(), "mixedValues", userEscaped);
-
-        var userSimple = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("simple")), true);
-        assertSuccess(() -> bean.mixedValues(), "mixedValues", userSimple);
-
-        var userWithAction = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("name", "action")), true);
-        assertSuccess(() -> bean.mixedValues(), "mixedValues", userWithAction);
-
-        var userWrong = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system")), true);
-        assertFailureFor(() -> bean.mixedValues(), ForbiddenException.class, userWrong);
+        assertSuccess(() -> bean.mixedValues(), "mixedValues", withPerms(new StringPermission("system:role:query1")));
+        assertSuccess(() -> bean.mixedValues(), "mixedValues", withPerms(new StringPermission("simple")));
+        assertSuccess(() -> bean.mixedValues(), "mixedValues", withPerms(new StringPermission("name", "action")));
+        assertFailureFor(() -> bean.mixedValues(), ForbiddenException.class, withPerms(new StringPermission("system")));
     }
 
     @Test
     void inclusiveWithEscapedColons() {
-        var userWithBoth = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system:role", "read"), new StringPermission("system:role")), true);
-        assertSuccess(() -> bean.inclusiveEscaped(), "inclusiveEscaped", userWithBoth);
+        assertSuccess(() -> bean.inclusiveEscaped(), "inclusiveEscaped",
+                withPerms(new StringPermission("system:role", "read"), new StringPermission("system:role")));
+        assertSuccess(() -> bean.inclusiveEscaped(), "inclusiveEscaped",
+                withPerms(new StringPermission("system:role", "read")));
+        assertFailureFor(() -> bean.inclusiveEscaped(), ForbiddenException.class,
+                withPerms(new StringPermission("system:role")));
+    }
 
-        var userWithAction = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system:role", "read")), true);
-        assertSuccess(() -> bean.inclusiveEscaped(), "inclusiveEscaped", userWithAction);
+    @Test
+    void repeatedPermissionsWithEscapedColons() {
+        assertSuccess(() -> bean.repeatedEscaped(), "repeatedEscaped",
+                withPerms(new StringPermission("ns:read"), new StringPermission("ns:write")));
+        assertFailureFor(() -> bean.repeatedEscaped(), ForbiddenException.class, withPerms(new StringPermission("ns:read")));
+        assertFailureFor(() -> bean.repeatedEscaped(), ForbiddenException.class, withPerms(new StringPermission("ns:write")));
+    }
 
-        var userNoAction = new AuthData(Set.of("user"), false, "user",
-                Set.of(new StringPermission("system:role")), true);
-        assertFailureFor(() -> bean.inclusiveEscaped(), ForbiddenException.class, userNoAction);
+    private static AuthData withPerms(Permission... perms) {
+        return new AuthData(Set.of("user"), false, "user", Set.of(perms), true);
     }
 
     @ApplicationScoped
@@ -145,6 +128,12 @@ class EscapedColonPermissionsAllowedTest {
         @PermissionsAllowed(value = { "system" + EC + "role", "system" + EC + "role:read" }, inclusive = true)
         String inclusiveEscaped() {
             return "inclusiveEscaped";
+        }
+
+        @PermissionsAllowed("ns" + EC + "read")
+        @PermissionsAllowed("ns" + EC + "write")
+        String repeatedEscaped() {
+            return "repeatedEscaped";
         }
     }
 }
