@@ -21,14 +21,9 @@ import io.quarkus.security.test.utils.IdentityMock;
 import io.quarkus.security.test.utils.SecurityTestUtils;
 import io.quarkus.test.QuarkusExtensionTest;
 
-/**
- * Tests the interaction between escaped colons in {@code @PermissionsAllowed} values
- * and {@code @PermissionChecker} matching.
- * <p>
- * Key design: {@code @PermissionChecker} matching uses raw (un-parsed) string comparison.
- * The escape-aware parsing only runs when no checker matches the raw value.
- */
-public class EscapedColonPermissionCheckerTest {
+class EscapedColonPermissionCheckerTest {
+
+    private static final String EC = "\\:";
 
     private static final AuthData USER_WITH_AUGMENTORS = new AuthData(USER, true);
 
@@ -41,59 +36,39 @@ public class EscapedColonPermissionCheckerTest {
     SecuredBean bean;
 
     @Test
-    public void checkerMatchesRawEscapedValue() {
-        // @PermissionsAllowed("org\\:acme\\:service") with @PermissionChecker("org\\:acme\\:service")
-        // The raw strings match -> checker handles authorization, no parsing
+    void checkerMatchesRawEscapedValue() {
         assertSuccess(() -> bean.rawCheckerMatch(true), "rawCheckerMatch", USER_WITH_AUGMENTORS);
         assertFailureFor(() -> bean.rawCheckerMatch(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
 
-        // Identity permission cannot grant access when checker exists
         var userWithPerm = new AuthData(USER, true, new StringPermission("org:acme:service"));
         assertFailureFor(() -> bean.rawCheckerMatch(false), ForbiddenException.class, userWithPerm);
     }
 
     @Test
-    public void backwardsCompatCheckerWithColon() {
-        // @PermissionsAllowed("read:write") with @PermissionChecker("read:write")
-        // Existing behavior: raw strings match, checker handles it, no splitting
+    void backwardsCompatCheckerWithColon() {
         assertSuccess(() -> bean.backwardsCompatChecker(true), "backwardsCompatChecker", USER_WITH_AUGMENTORS);
         assertFailureFor(() -> bean.backwardsCompatChecker(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
     }
 
     @Test
-    public void checkerDoesNotMatchDifferentEscaping() {
-        // @PermissionsAllowed("ns\\:perm") — raw string is "ns\:perm"
-        // No @PermissionChecker("ns\\:perm") exists
-        // Falls through to parsing: name="ns:perm", no action
-        // Access granted only by identity permission
+    void checkerDoesNotMatchDifferentEscaping() {
         var userWithPerm = new AuthData(Set.of("user"), false, "user",
                 Set.of(new StringPermission("ns:perm")), true);
         assertSuccess(() -> bean.noCheckerEscapedFallthrough(), "noCheckerEscapedFallthrough", userWithPerm);
 
-        // Without identity permission, access denied
         assertFailureFor(() -> bean.noCheckerEscapedFallthrough(), ForbiddenException.class, USER_WITH_AUGMENTORS);
     }
 
     @Test
-    public void mixedCheckerAndEscapedParsed() {
-        // @PermissionsAllowed({"scope:read", "scope\\:admin\\:read"})
-        // "scope:read" -> exact match with @PermissionChecker("scope:read")
-        // "scope\:admin\:read" -> no checker match, parsed to name="scope:admin:read", no action
-        // One-of semantics: either the checker grants or the identity permission grants
-
-        // Checker grants access
+    void mixedCheckerAndEscapedParsed() {
         assertSuccess(() -> bean.mixedCheckerAndParsed(true), "mixedCheckerAndParsed", USER_WITH_AUGMENTORS);
 
-        // Checker denies but identity permission for the escaped name grants
         var userWithPerm = new AuthData(Set.of("user"), false, "user",
                 Set.of(new StringPermission("scope:admin:read")), true);
         assertSuccess(() -> bean.mixedCheckerAndParsed(false), "mixedCheckerAndParsed", userWithPerm);
 
-        // Both deny
         assertFailureFor(() -> bean.mixedCheckerAndParsed(false), ForbiddenException.class, USER_WITH_AUGMENTORS);
 
-        // Identity permission for "scope" with action "read" should NOT grant access
-        // because "scope:read" is handled exclusively by the checker
         var userWithSplitPerm = new AuthData(Set.of("user"), false, "user",
                 Set.of(new StringPermission("scope", "read")), true);
         assertFailureFor(() -> bean.mixedCheckerAndParsed(false), ForbiddenException.class, userWithSplitPerm);
@@ -102,26 +77,22 @@ public class EscapedColonPermissionCheckerTest {
     @ApplicationScoped
     public static class SecuredBean {
 
-        // raw value "org\:acme\:service" matches @PermissionChecker("org\:acme\:service")
-        @PermissionsAllowed("org\\:acme\\:service")
+        @PermissionsAllowed("org" + EC + "acme" + EC + "service")
         String rawCheckerMatch(boolean allow) {
             return "rawCheckerMatch";
         }
 
-        // backwards-compatible: "read:write" matches @PermissionChecker("read:write")
         @PermissionsAllowed("read:write")
         String backwardsCompatChecker(boolean allow) {
             return "backwardsCompatChecker";
         }
 
-        // no checker for "ns\:perm" -> falls through to escape-aware parsing
-        @PermissionsAllowed("ns\\:perm")
+        @PermissionsAllowed("ns" + EC + "perm")
         String noCheckerEscapedFallthrough() {
             return "noCheckerEscapedFallthrough";
         }
 
-        // "scope:read" has a checker; "scope\:admin\:read" does not
-        @PermissionsAllowed({ "scope:read", "scope\\:admin\\:read" })
+        @PermissionsAllowed({ "scope:read", "scope" + EC + "admin" + EC + "read" })
         String mixedCheckerAndParsed(boolean scopeRead) {
             return "mixedCheckerAndParsed";
         }
@@ -130,7 +101,7 @@ public class EscapedColonPermissionCheckerTest {
     @ApplicationScoped
     public static class PermissionCheckers {
 
-        @PermissionChecker("org\\:acme\\:service")
+        @PermissionChecker("org" + EC + "acme" + EC + "service")
         boolean canAccessOrgAcmeService(boolean allow) {
             return allow;
         }

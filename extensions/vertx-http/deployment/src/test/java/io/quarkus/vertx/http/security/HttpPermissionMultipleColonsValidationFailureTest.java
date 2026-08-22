@@ -11,22 +11,18 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.test.QuarkusExtensionTest;
 
-/**
- * Verifies that HTTP security policy permission values with multiple unescaped colons
- * cause a startup error.
- */
-public class HttpPermissionMultipleColonsValidationFailureTest {
+class HttpPermissionMultipleColonsValidationFailureTest {
 
     @RegisterExtension
     static final QuarkusExtensionTest test = new QuarkusExtensionTest()
             .withApplicationRoot((jar) -> jar
-                    .addAsResource(new StringAsset(
-                            "quarkus.http.auth.basic=true\n"
-                                    + "quarkus.http.auth.policy.bad.roles-allowed=test\n"
-                                    + "quarkus.http.auth.policy.bad.permissions.test=system:role:query1\n"
-                                    + "quarkus.http.auth.permission.bad.paths=/test/bad\n"
-                                    + "quarkus.http.auth.permission.bad.policy=bad\n"),
-                            "application.properties"))
+                    .addAsResource(new StringAsset("""
+                            quarkus.http.auth.basic=true
+                            quarkus.http.auth.policy.bad.roles-allowed=test
+                            quarkus.http.auth.policy.bad.permissions.test=system:role:query1
+                            quarkus.http.auth.permission.bad.paths=/test/bad
+                            quarkus.http.auth.permission.bad.policy=bad
+                            """), "application.properties"))
             .assertException(t -> {
                 Throwable e = t;
                 ConfigurationException ce = null;
@@ -47,7 +43,7 @@ public class HttpPermissionMultipleColonsValidationFailureTest {
             });
 
     @Test
-    public void test() {
-        Assertions.fail();
+    void test() {
+        Assertions.fail("Build was expected to fail due to multiple unescaped colons in permission config");
     }
 }

@@ -9,11 +9,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import io.quarkus.security.PermissionsAllowed;
 import io.quarkus.test.QuarkusExtensionTest;
 
-/**
- * Verifies that {@code @PermissionsAllowed} values with multiple unescaped colons
- * cause a build-time error. Only one unescaped colon (the separator) is allowed.
- */
-public class MultipleUnescapedColonsValidationFailureTest {
+class MultipleUnescapedColonsValidationFailureTest {
 
     @RegisterExtension
     static final QuarkusExtensionTest config = new QuarkusExtensionTest()
@@ -27,8 +23,8 @@ public class MultipleUnescapedColonsValidationFailureTest {
             });
 
     @Test
-    public void test() {
-        Assertions.fail();
+    void test() {
+        Assertions.fail("Build was expected to fail due to multiple unescaped colons");
     }
 
     @Singleton

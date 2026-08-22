@@ -8,6 +8,7 @@ import jakarta.inject.Inject;
 
 import org.hamcrest.Matchers;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
+import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -27,42 +28,54 @@ import io.vertx.core.Handler;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 
-/**
- * Tests that escaped colons in HTTP security policy permission config values
- * are handled correctly at runtime.
- * <p>
- * Config loaded from {@code conf/http-permission-escaped-colon-config.properties}.
- */
-public class EscapedColonHttpPermissionTest {
+class EscapedColonHttpPermissionTest {
+
+    private static final String EC = "\\:";
 
     @RegisterExtension
     static QuarkusExtensionTest test = new QuarkusExtensionTest()
             .setArchiveProducer(() -> ShrinkWrap.create(JavaArchive.class)
                     .addClasses(TestIdentityController.class, TestIdentityProvider.class,
                             PermissionsPathHandler.class, CDIBean.class)
-                    .addAsResource("conf/http-permission-escaped-colon-config.properties",
-                            "application.properties"));
+                    .addAsResource(new StringAsset("""
+                            quarkus.http.auth.basic=true
+
+                            quarkus.http.auth.policy.t1.roles-allowed=test,admin
+                            quarkus.http.auth.policy.t1.permissions.test=system\\:role\\:query1
+                            quarkus.http.auth.permission.t1.paths=/test/escaped-name
+                            quarkus.http.auth.permission.t1.policy=t1
+
+                            quarkus.http.auth.policy.t2.roles-allowed=test,admin
+                            quarkus.http.auth.policy.t2.permissions.test=system\\:role:query
+                            quarkus.http.auth.permission.t2.paths=/test/escaped-name-with-action
+                            quarkus.http.auth.permission.t2.policy=t2
+
+                            quarkus.http.auth.policy.t3.roles-allowed=test,admin
+                            quarkus.http.auth.policy.t3.permissions.test=perm:role\\:query
+                            quarkus.http.auth.permission.t3.paths=/test/escaped-action
+                            quarkus.http.auth.permission.t3.policy=t3
+
+                            quarkus.http.auth.policy.t4.roles-allowed=test,admin
+                            quarkus.http.auth.policy.t4.permissions.test=simple-perm:action1
+                            quarkus.http.auth.permission.t4.paths=/test/plain
+                            quarkus.http.auth.permission.t4.policy=t4
+                            """), "application.properties"));
 
     @Test
-    public void escapedColonsInPermissionName() {
-        // Policy t1: "system\:role\:query1" -> perm name="system:role:query1", no action
-        // 'test' role is granted this permission -> should get 200
+    void escapedColonsInPermissionName() {
         authenticateTest();
         RestAssured.given().auth().basic("test", "test").get("/test/escaped-name")
                 .then().statusCode(200).body(Matchers.is("test:/test/escaped-name"));
 
-        // 'admin' role has path access but no permission -> 403
         authenticateAdmin();
         RestAssured.given().auth().basic("admin", "admin").get("/test/escaped-name")
                 .then().statusCode(403);
 
-        // unauthenticated -> 401
         RestAssured.given().get("/test/escaped-name").then().statusCode(401);
     }
 
     @Test
-    public void escapedColonInNameWithAction() {
-        // Policy t2: "system\:role:query" -> perm name="system:role", action="query"
+    void escapedColonInNameWithAction() {
         authenticateTest();
         RestAssured.given().auth().basic("test", "test").get("/test/escaped-name-with-action")
                 .then().statusCode(200).body(Matchers.is("test:/test/escaped-name-with-action"));
@@ -73,8 +86,7 @@ public class EscapedColonHttpPermissionTest {
     }
 
     @Test
-    public void escapedColonInAction() {
-        // Policy t3: "perm:role\:query" -> perm name="perm", action="role:query"
+    void escapedColonInAction() {
         authenticateTest();
         RestAssured.given().auth().basic("test", "test").get("/test/escaped-action")
                 .then().statusCode(200).body(Matchers.is("test:/test/escaped-action"));
@@ -85,8 +97,7 @@ public class EscapedColonHttpPermissionTest {
     }
 
     @Test
-    public void plainPermissionBackwardsCompat() {
-        // Policy t4: "simple-perm:action1" (no escaping) -> name="simple-perm", action="action1"
+    void plainPermissionBackwardsCompat() {
         authenticateTest();
         RestAssured.given().auth().basic("test", "test").get("/test/plain")
                 .then().statusCode(200).body(Matchers.is("test:/test/plain"));
@@ -122,25 +133,21 @@ public class EscapedColonHttpPermissionTest {
     @ApplicationScoped
     public static class CDIBean {
 
-        // Requires permission name="system:role:query1" (no action)
-        @PermissionsAllowed("system\\:role\\:query1")
+        @PermissionsAllowed("system" + EC + "role" + EC + "query1")
         public Uni<Void> escapedName() {
             return Uni.createFrom().nullItem();
         }
 
-        // Requires permission name="system:role", action="query"
-        @PermissionsAllowed("system\\:role:query")
+        @PermissionsAllowed("system" + EC + "role:query")
         public Uni<Void> escapedNameWithAction() {
             return Uni.createFrom().nullItem();
         }
 
-        // Requires permission name="perm", action="role:query"
-        @PermissionsAllowed("perm:role\\:query")
+        @PermissionsAllowed("perm:role" + EC + "query")
         public Uni<Void> escapedAction() {
             return Uni.createFrom().nullItem();
         }
 
-        // Backwards compat: name="simple-perm", action="action1"
         @PermissionsAllowed("simple-perm:action1")
         public Uni<Void> plainPerm() {
             return Uni.createFrom().nullItem();
