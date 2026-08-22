@@ -17,7 +17,6 @@ class HttpPermissionMultipleColonsValidationFailureTest {
     static final QuarkusExtensionTest test = new QuarkusExtensionTest()
             .withApplicationRoot((jar) -> jar
                     .addAsResource(new StringAsset("""
-                            quarkus.http.auth.basic=true
                             quarkus.http.auth.policy.bad.roles-allowed=test
                             quarkus.http.auth.policy.bad.permissions.test=system:role:query1
                             quarkus.http.auth.permission.bad.paths=/test/bad

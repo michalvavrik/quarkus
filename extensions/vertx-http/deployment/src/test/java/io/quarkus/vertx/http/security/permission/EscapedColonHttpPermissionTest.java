@@ -38,8 +38,6 @@ class EscapedColonHttpPermissionTest {
                     .addClasses(TestIdentityController.class, TestIdentityProvider.class,
                             PermissionsPathHandler.class, CDIBean.class)
                     .addAsResource(new StringAsset("""
-                            quarkus.http.auth.basic=true
-
                             quarkus.http.auth.policy.t1.roles-allowed=test,admin
                             quarkus.http.auth.policy.t1.permissions.test=system\\:role\\:query1
                             quarkus.http.auth.permission.t1.paths=/test/escaped-name
@@ -59,16 +57,26 @@ class EscapedColonHttpPermissionTest {
                             quarkus.http.auth.policy.t4.permissions.test=simple-perm:action1
                             quarkus.http.auth.permission.t4.paths=/test/plain
                             quarkus.http.auth.permission.t4.policy=t4
+
+                            quarkus.http.auth.policy.t5.roles-allowed=test,admin
+                            quarkus.http.auth.policy.t5.permissions.test=a\\:b\\:c\\:d
+                            quarkus.http.auth.permission.t5.paths=/test/multi-escaped-name
+                            quarkus.http.auth.permission.t5.policy=t5
+
+                            quarkus.http.auth.policy.t6.roles-allowed=test,admin
+                            quarkus.http.auth.policy.t6.permissions.test=perm:x\\:y\\:z
+                            quarkus.http.auth.permission.t6.paths=/test/multi-escaped-action
+                            quarkus.http.auth.permission.t6.policy=t6
                             """), "application.properties"));
 
     @Test
     void escapedColonsInPermissionName() {
         authenticateTest();
-        RestAssured.given().auth().basic("test", "test").get("/test/escaped-name")
+        RestAssured.given().auth().preemptive().basic("test", "test").get("/test/escaped-name")
                 .then().statusCode(200).body(Matchers.is("test:/test/escaped-name"));
 
         authenticateAdmin();
-        RestAssured.given().auth().basic("admin", "admin").get("/test/escaped-name")
+        RestAssured.given().auth().preemptive().basic("admin", "admin").get("/test/escaped-name")
                 .then().statusCode(403);
 
         RestAssured.given().get("/test/escaped-name").then().statusCode(401);
@@ -77,33 +85,55 @@ class EscapedColonHttpPermissionTest {
     @Test
     void escapedColonInNameWithAction() {
         authenticateTest();
-        RestAssured.given().auth().basic("test", "test").get("/test/escaped-name-with-action")
+        RestAssured.given().auth().preemptive().basic("test", "test").get("/test/escaped-name-with-action")
                 .then().statusCode(200).body(Matchers.is("test:/test/escaped-name-with-action"));
 
         authenticateAdmin();
-        RestAssured.given().auth().basic("admin", "admin").get("/test/escaped-name-with-action")
+        RestAssured.given().auth().preemptive().basic("admin", "admin").get("/test/escaped-name-with-action")
                 .then().statusCode(403);
     }
 
     @Test
     void escapedColonInAction() {
         authenticateTest();
-        RestAssured.given().auth().basic("test", "test").get("/test/escaped-action")
+        RestAssured.given().auth().preemptive().basic("test", "test").get("/test/escaped-action")
                 .then().statusCode(200).body(Matchers.is("test:/test/escaped-action"));
 
         authenticateAdmin();
-        RestAssured.given().auth().basic("admin", "admin").get("/test/escaped-action")
+        RestAssured.given().auth().preemptive().basic("admin", "admin").get("/test/escaped-action")
                 .then().statusCode(403);
     }
 
     @Test
     void plainPermissionBackwardsCompat() {
         authenticateTest();
-        RestAssured.given().auth().basic("test", "test").get("/test/plain")
+        RestAssured.given().auth().preemptive().basic("test", "test").get("/test/plain")
                 .then().statusCode(200).body(Matchers.is("test:/test/plain"));
 
         authenticateAdmin();
-        RestAssured.given().auth().basic("admin", "admin").get("/test/plain")
+        RestAssured.given().auth().preemptive().basic("admin", "admin").get("/test/plain")
+                .then().statusCode(403);
+    }
+
+    @Test
+    void multipleEscapedColonsInName() {
+        authenticateTest();
+        RestAssured.given().auth().preemptive().basic("test", "test").get("/test/multi-escaped-name")
+                .then().statusCode(200).body(Matchers.is("test:/test/multi-escaped-name"));
+
+        authenticateAdmin();
+        RestAssured.given().auth().preemptive().basic("admin", "admin").get("/test/multi-escaped-name")
+                .then().statusCode(403);
+    }
+
+    @Test
+    void multipleEscapedColonsInAction() {
+        authenticateTest();
+        RestAssured.given().auth().preemptive().basic("test", "test").get("/test/multi-escaped-action")
+                .then().statusCode(200).body(Matchers.is("test:/test/multi-escaped-action"));
+
+        authenticateAdmin();
+        RestAssured.given().auth().preemptive().basic("admin", "admin").get("/test/multi-escaped-action")
                 .then().statusCode(403);
     }
 
@@ -127,6 +157,8 @@ class EscapedColonHttpPermissionTest {
                     .handler(new RouteHandler(cdiBean::escapedNameWithAction));
             router.route("/test/escaped-action").handler(new RouteHandler(cdiBean::escapedAction));
             router.route("/test/plain").handler(new RouteHandler(cdiBean::plainPerm));
+            router.route("/test/multi-escaped-name").handler(new RouteHandler(cdiBean::multiEscapedName));
+            router.route("/test/multi-escaped-action").handler(new RouteHandler(cdiBean::multiEscapedAction));
         }
     }
 
@@ -150,6 +182,16 @@ class EscapedColonHttpPermissionTest {
 
         @PermissionsAllowed("simple-perm:action1")
         public Uni<Void> plainPerm() {
+            return Uni.createFrom().nullItem();
+        }
+
+        @PermissionsAllowed("a" + EC + "b" + EC + "c" + EC + "d")
+        public Uni<Void> multiEscapedName() {
+            return Uni.createFrom().nullItem();
+        }
+
+        @PermissionsAllowed("perm:x" + EC + "y" + EC + "z")
+        public Uni<Void> multiEscapedAction() {
             return Uni.createFrom().nullItem();
         }
     }
