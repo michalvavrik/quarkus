@@ -31,7 +31,7 @@ public final class PermissionToActionUtil {
         for (int i = 0; i < chars.length; i++) {
             switch (chars[i]) {
                 case '\\':
-                    if (++i >= chars.length || chars[i] != ':') {
+                    if (++i == chars.length || chars[i] != ':') {
                         throw new IllegalArgumentException(
                                 "Invalid escape sequence in permission value '" + raw
                                         + "': backslash is only allowed before a colon (\\:)");
