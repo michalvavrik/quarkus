@@ -23,7 +23,6 @@ import io.quarkus.test.QuarkusExtensionTest;
 class EscapedColonPermissionsAllowedTest {
 
     private static final String EC = "\\:";
-    private static final String EB = "\\\\";
 
     @RegisterExtension
     static final QuarkusExtensionTest config = new QuarkusExtensionTest()
@@ -59,12 +58,6 @@ class EscapedColonPermissionsAllowedTest {
                 withPerms(new StringPermission("perm", "role:query")));
         assertFailureFor(() -> bean.escapedColonInAction(), ForbiddenException.class,
                 withPerms(new StringPermission("perm", "role")));
-    }
-
-    @Test
-    void escapedBackslashBeforeSeparator() {
-        assertSuccess(() -> bean.escapedBackslashBeforeSeparator(), "escapedBackslashBeforeSeparator",
-                withPerms(new StringPermission("read\\", "write")));
     }
 
     @Test
@@ -113,11 +106,6 @@ class EscapedColonPermissionsAllowedTest {
         @PermissionsAllowed("perm:role" + EC + "query")
         String escapedColonInAction() {
             return "escapedColonInAction";
-        }
-
-        @PermissionsAllowed("read" + EB + ":write")
-        String escapedBackslashBeforeSeparator() {
-            return "escapedBackslashBeforeSeparator";
         }
 
         @PermissionsAllowed({ "system" + EC + "role" + EC + "query1", "simple", "name:action" })

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 class PermissionToActionUtilTest {
 
     private static final String ESCAPED_COLON = "\\:";
-    private static final String ESCAPED_BACKSLASH = "\\\\";
 
     @Test
     void nameOnly() {
@@ -91,34 +90,6 @@ class PermissionToActionUtilTest {
     }
 
     @Test
-    void literalBackslashInName() {
-        var result = parse("read" + ESCAPED_BACKSLASH + "write");
-        assertEquals("read\\write", result.name());
-        assertNull(result.action());
-    }
-
-    @Test
-    void literalBackslashBeforeSeparator() {
-        var result = parse("read" + ESCAPED_BACKSLASH + ":write");
-        assertEquals("read\\", result.name());
-        assertEquals("write", result.action());
-    }
-
-    @Test
-    void literalBackslashFollowedByEscapedColon() {
-        var result = parse("read" + ESCAPED_BACKSLASH + ESCAPED_COLON + "write");
-        assertEquals("read\\:write", result.name());
-        assertNull(result.action());
-    }
-
-    @Test
-    void twoLiteralBackslashes() {
-        var result = parse("a" + ESCAPED_BACKSLASH + ESCAPED_BACKSLASH + "b");
-        assertEquals("a\\\\b", result.name());
-        assertNull(result.action());
-    }
-
-    @Test
     void multipleUnescapedColonsFails() {
         assertThrows(IllegalArgumentException.class, () -> parse("a:b:c"));
     }
@@ -166,24 +137,8 @@ class PermissionToActionUtilTest {
     }
 
     @Test
-    void trailingBackslashIsLiteral() {
-        var result = parse("read\\");
-        assertEquals("read\\", result.name());
-        assertNull(result.action());
-    }
-
-    @Test
-    void standaloneBackslashIsLiteral() {
-        var result = parse("\\");
-        assertEquals("\\", result.name());
-        assertNull(result.action());
-    }
-
-    @Test
-    void backslashBeforeRegularCharIsLiteral() {
-        var result = parse("perm\\name");
-        assertEquals("perm\\name", result.name());
-        assertNull(result.action());
+    void separatorOnlyNameAndActionFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse(ESCAPED_COLON + ":" + ESCAPED_COLON));
     }
 
     @Test
@@ -200,18 +155,6 @@ class PermissionToActionUtilTest {
     }
 
     @Test
-    void separatorOnlyNameAndActionFails() {
-        assertThrows(IllegalArgumentException.class, () -> parse(ESCAPED_COLON + ":" + ESCAPED_COLON));
-    }
-
-    @Test
-    void onlyEscapedBackslashes() {
-        var result = parse(ESCAPED_BACKSLASH + ESCAPED_BACKSLASH);
-        assertEquals("\\\\", result.name());
-        assertNull(result.action());
-    }
-
-    @Test
     void namespacedPermissionWithAction() {
         var result = parse("org" + ESCAPED_COLON + "acme" + ESCAPED_COLON + "service:read");
         assertEquals("org:acme:service", result.name());
@@ -225,10 +168,35 @@ class PermissionToActionUtilTest {
         assertNull(result.action());
     }
 
+    // backslash is only valid before colon — all other uses are errors
+
     @Test
-    void backslashInActionPart() {
-        var result = parse("name:path" + ESCAPED_BACKSLASH + "to" + ESCAPED_BACKSLASH + "resource");
-        assertEquals("name", result.name());
-        assertEquals("path\\to\\resource", result.action());
+    void trailingBackslashFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse("read\\"));
+    }
+
+    @Test
+    void standaloneBackslashFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse("\\"));
+    }
+
+    @Test
+    void doubleBackslashFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse("a\\\\b"));
+    }
+
+    @Test
+    void backslashBeforeLetterFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse("a\\b"));
+    }
+
+    @Test
+    void backslashBeforeDigitFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse("a\\1"));
+    }
+
+    @Test
+    void backslashBeforeBackslashThenColonFails() {
+        assertThrows(IllegalArgumentException.class, () -> parse("a\\\\:b"));
     }
 }

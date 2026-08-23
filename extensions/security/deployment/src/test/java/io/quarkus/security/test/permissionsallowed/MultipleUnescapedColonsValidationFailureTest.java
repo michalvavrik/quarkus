@@ -17,8 +17,8 @@ class MultipleUnescapedColonsValidationFailureTest {
                 Assertions.assertEquals(RuntimeException.class, t.getClass(), t.getMessage());
                 Assertions.assertTrue(t.getMessage().contains("system:role:query1"),
                         "Error should reference the invalid value: " + t.getMessage());
-                Assertions.assertTrue(t.getMessage().contains("more than one separator"),
-                        "Error should mention multiple separators: " + t.getMessage());
+                Assertions.assertTrue(t.getMessage().contains("more than one unescaped colon"),
+                        "Error should mention multiple unescaped colons: " + t.getMessage());
             });
 
     @Test
