@@ -37,29 +37,20 @@ public final class PermissionToActionUtil {
                 }
                 (buildingAction ? action : name).append(':');
                 i++;
-            } else if (c == ':') {
-                if (buildingAction) {
-                    throw new IllegalArgumentException(
-                            "Permission value '" + raw
-                                    + "' contains more than one unescaped colon separator, use \\: for a literal colon");
-                }
-                if (name.isEmpty() || (name.length() == 1 && name.charAt(0) == ':')) {
-                    throw new IllegalArgumentException(
-                            "Invalid permission name in value '" + raw + "'");
-                }
+            } else if (c == ':' && !buildingAction && !name.isEmpty() && i < raw.length() - 1) {
                 buildingAction = true;
+            } else if (c == ':' && buildingAction) {
+                throw new IllegalArgumentException(
+                        "Permission value '" + raw
+                                + "' contains more than one unescaped colon separator, use \\: for a literal colon");
             } else {
                 (buildingAction ? action : name).append(c);
             }
         }
 
-        if (!buildingAction) {
-            if (name.isEmpty() || (name.length() == 1 && name.charAt(0) == ':')) {
-                throw new IllegalArgumentException(
-                        "Invalid permission name in value '" + raw + "'");
-            }
-            return new ParsedPermissionImpl(name.toString(), null);
+        if (name.isEmpty()) {
+            throw new IllegalArgumentException("Permission value must not be empty");
         }
-        return new ParsedPermissionImpl(name.toString(), action.toString());
+        return new ParsedPermissionImpl(name.toString(), buildingAction ? action.toString() : null);
     }
 }

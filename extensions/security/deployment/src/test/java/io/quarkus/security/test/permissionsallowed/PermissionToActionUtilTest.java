@@ -115,30 +115,38 @@ class PermissionToActionUtilTest {
     }
 
     @Test
-    void onlySeparatorFails() {
-        assertThrows(IllegalArgumentException.class, () -> parse(":"));
+    void onlySeparatorIsName() {
+        var result = parse(":");
+        assertEquals(":", result.name());
+        assertNull(result.action());
     }
 
     @Test
-    void leadingColonFails() {
-        assertThrows(IllegalArgumentException.class, () -> parse(":action"));
+    void leadingColonIsPartOfName() {
+        var result = parse(":read");
+        assertEquals(":read", result.name());
+        assertNull(result.action());
     }
 
     @Test
-    void trailingColon() {
+    void trailingColonIsPartOfName() {
         var result = parse("name:");
-        assertEquals("name", result.name());
-        assertEquals("", result.action());
+        assertEquals("name:", result.name());
+        assertNull(result.action());
     }
 
     @Test
-    void standaloneEscapedColonFails() {
-        assertThrows(IllegalArgumentException.class, () -> parse(ESCAPED_COLON));
+    void standaloneEscapedColonIsName() {
+        var result = parse(ESCAPED_COLON);
+        assertEquals(":", result.name());
+        assertNull(result.action());
     }
 
     @Test
-    void separatorOnlyNameAndActionFails() {
-        assertThrows(IllegalArgumentException.class, () -> parse(ESCAPED_COLON + ":" + ESCAPED_COLON));
+    void escapedColonSeparatorEscapedColon() {
+        var result = parse(ESCAPED_COLON + ":" + ESCAPED_COLON);
+        assertEquals(":", result.name());
+        assertEquals(":", result.action());
     }
 
     @Test

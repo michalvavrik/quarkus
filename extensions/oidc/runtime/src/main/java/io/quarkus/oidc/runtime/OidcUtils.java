@@ -68,6 +68,7 @@ import io.quarkus.oidc.runtime.OidcTenantConfig.Roles;
 import io.quarkus.oidc.runtime.OidcTenantConfig.Token;
 import io.quarkus.oidc.runtime.providers.KnownOidcProviders;
 import io.quarkus.security.AuthenticationFailedException;
+import io.quarkus.security.StringPermission;
 import io.quarkus.security.credential.TokenCredential;
 import io.quarkus.security.identity.AuthenticationRequestContext;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -433,7 +434,15 @@ public final class OidcUtils {
 
     static void addTokenScopesAsPermissions(Builder builder, Collection<String> scopes) {
         if (scopes != null && !scopes.isEmpty()) {
-            builder.addPermissionsAsString(new HashSet<>(scopes));
+            for (String scope : scopes) {
+                try {
+                    builder.addPermissionAsString(scope);
+                } catch (IllegalArgumentException e) {
+                    LOG.debugf("Token scope '%s' could not be parsed as 'name:action', "
+                            + "using it as a permission name: %s", scope, e.getMessage());
+                    builder.addPermission(new StringPermission(scope));
+                }
+            }
         }
     }
 

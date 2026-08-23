@@ -186,6 +186,13 @@ public class ProtectedResource {
         return List.of(new Order("1"));
     }
 
+    @PermissionsAllowed("api\\:v1\\:read") <3>
+    @GET
+    @Path("/api")
+    public String api() {
+        return "api";
+    }
+
     public static class Order {
         String id;
         public Order() {
@@ -204,6 +211,7 @@ public class ProtectedResource {
 ----
 <1> Only requests with OpenID Connect scope `email` will be granted access.
 <2> The read access is limited to the client requests with the `orders_read` scope.
+<3> Scopes with multiple colons such as `api:v1:read` require escaped colons (`\\:`) in the annotation value because only one permission-to-action separator is allowed and there is no way to determine which colon to use.
 
 For more information about the `io.quarkus.security.PermissionsAllowed` annotation, see the xref:security-authorize-web-endpoints-reference.adoc#permission-annotation[Permission annotation] section of the "Authorization of web endpoints" guide.
 
