@@ -1,6 +1,7 @@
 package io.quarkus.tls;
 
 import static io.smallrye.certs.Format.JKS;
+import static io.smallrye.certs.Format.PEM;
 import static io.smallrye.certs.Format.PKCS12;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import io.quarkus.test.QuarkusExtensionTest;
-import io.smallrye.certs.junit5.Alias;
 import io.smallrye.certs.junit5.Certificate;
 import io.smallrye.certs.junit5.Certificates;
 import io.vertx.core.Vertx;
@@ -29,25 +29,23 @@ import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
 
 @Certificates(baseDir = "target/certs", certificates = {
-        @Certificate(name = "test-sni-alias", password = "sni", formats = { PKCS12, JKS }, aliases = {
-                @Alias(name = "sni-1", password = "sni", cn = "acme.org"),
-                @Alias(name = "sni-2", password = "sni", cn = "example.com"),
-        })
+        @Certificate(name = "test-sni-single", password = "sni", formats = { PKCS12, JKS,
+                PEM }, cn = "localhost", subjectAlternativeNames = "DNS:localhost")
 })
-public class KeyStoreWithSniAndAliasSetTest {
+public class KeyStoreWithSniAndOneAliasTest {
 
     private static final String configuration = """
-            quarkus.tls.key-store.p12.path=target/certs/test-sni-alias-keystore.p12
+            quarkus.tls.key-store.p12.path=target/certs/test-sni-single-keystore.p12
             quarkus.tls.key-store.p12.password=sni
-            quarkus.tls.key-store.p12.alias-password=sni
-            quarkus.tls.key-store.p12.alias=sni-1
             quarkus.tls.key-store.sni=true
 
-            quarkus.tls.jks.key-store.jks.path=target/certs/test-sni-alias-keystore.jks
+            quarkus.tls.jks.key-store.jks.path=target/certs/test-sni-single-keystore.jks
             quarkus.tls.jks.key-store.jks.password=sni
-            quarkus.tls.jks.key-store.jks.alias-password=sni
-            quarkus.tls.jks.key-store.jks.alias=sni-1
             quarkus.tls.jks.key-store.sni=true
+
+            quarkus.tls.pem.key-store.pem.a.cert=target/certs/test-sni-single.crt
+            quarkus.tls.pem.key-store.pem.a.key=target/certs/test-sni-single.key
+            quarkus.tls.pem.key-store.sni=true
             """;
 
     @RegisterExtension
@@ -71,7 +69,7 @@ public class KeyStoreWithSniAndAliasSetTest {
     }
 
     @Test
-    void testP12WithExplicitAliasAndSni() throws KeyStoreException, InterruptedException {
+    void testP12SingleAliasWithSni() throws KeyStoreException, InterruptedException {
         TlsConfiguration tlsConfiguration = registry.getDefault().orElseThrow();
         assertThat(tlsConfiguration.usesSni()).isTrue();
         assertThat(tlsConfiguration.getKeyStore().size()).isEqualTo(1);
@@ -106,7 +104,7 @@ public class KeyStoreWithSniAndAliasSetTest {
             assertThat(ar.succeeded()).isTrue();
             String[] parts = ar.result().bodyAsString().split("\\|");
             assertThat(parts[0]).isEqualTo("localhost");
-            assertThat(parts[1]).contains("acme.org");
+            assertThat(parts[1]).contains("localhost");
             latch.countDown();
         });
 
@@ -114,8 +112,15 @@ public class KeyStoreWithSniAndAliasSetTest {
     }
 
     @Test
-    void testJksWithExplicitAliasAndSni() throws KeyStoreException {
+    void testJksSingleAliasWithSni() throws KeyStoreException {
         TlsConfiguration tlsConfiguration = registry.get("jks").orElseThrow();
+        assertThat(tlsConfiguration.usesSni()).isTrue();
+        assertThat(tlsConfiguration.getKeyStore().size()).isEqualTo(1);
+    }
+
+    @Test
+    void testPemSingleCertWithSni() throws KeyStoreException {
+        TlsConfiguration tlsConfiguration = registry.get("pem").orElseThrow();
         assertThat(tlsConfiguration.usesSni()).isTrue();
         assertThat(tlsConfiguration.getKeyStore().size()).isEqualTo(1);
     }
