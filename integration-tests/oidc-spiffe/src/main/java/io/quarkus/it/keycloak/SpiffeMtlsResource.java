@@ -64,7 +64,7 @@ public class SpiffeMtlsResource {
                             .setTrustOptions(toTrustOptions(cert));
                     WebClient client = WebClient.create(vertx, options);
 
-                    String expectedPrincipal = cert.certificateChain().certificateChain().get(0)
+                    String expectedPrincipal = cert.certificateChain().chain().get(0)
                             .getSubjectX500Principal().getName();
                     return Uni.createFrom().completionStage(
                             client.get(port, "localhost", "/spiffe/mtls/server")
@@ -96,7 +96,7 @@ public class SpiffeMtlsResource {
     @Path("/client/rest/authenticated")
     public MtlsResult restAuthenticated(@QueryParam("port") int port) {
         var cert = spiffeClient.getWorkloadCertificate().await().indefinitely();
-        String expectedPrincipal = cert.certificateChain().certificateChain().get(0)
+        String expectedPrincipal = cert.certificateChain().chain().get(0)
                 .getSubjectX500Principal().getName();
         TlsConfiguration tlsConfiguration = new SpiffeTlsConfiguration(toKeyCertOptions(cert), toTrustOptions(cert));
 
@@ -129,7 +129,7 @@ public class SpiffeMtlsResource {
 
     private static KeyCertOptions toKeyCertOptions(WorkloadCertificateDocument cert) {
         var options = new PemKeyCertOptions();
-        for (String pem : cert.certificateChain().certificateChainPem()) {
+        for (String pem : cert.certificateChain().chainPem()) {
             options.addCertValue(Buffer.buffer(pem));
         }
         options.addKeyValue(Buffer.buffer(cert.certificateChain().privateKeyPem()));
@@ -138,7 +138,7 @@ public class SpiffeMtlsResource {
 
     private static TrustOptions toTrustOptions(WorkloadCertificateDocument cert) {
         var options = new PemTrustOptions();
-        for (String pem : cert.trustBundle().certificateChainPem()) {
+        for (String pem : cert.trustBundle().chainPem()) {
             options.addCertValue(Buffer.buffer(pem));
         }
         return options;

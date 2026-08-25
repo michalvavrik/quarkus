@@ -63,12 +63,12 @@ class SpiffeX509SvidTest {
         WorkloadCertificateDocument cert = fetchCert();
 
         assertThat(cert.subject()).isEqualTo(DEFAULT_SPIFFE_ID);
-        assertThat(cert.certificateChain().certificateChainPem()).isNotEmpty();
-        assertThat(cert.certificateChain().certificateChainPem().size())
-                .isEqualTo(cert.certificateChain().certificateChain().size());
-        for (int i = 0; i < cert.certificateChain().certificateChain().size(); i++) {
-            assertThat(cert.certificateChain().certificateChain().get(i).getEncoded())
-                    .isEqualTo(parsePemDer(cert.certificateChain().certificateChainPem().get(i), "CERTIFICATE"));
+        assertThat(cert.certificateChain().chainPem()).isNotEmpty();
+        assertThat(cert.certificateChain().chainPem().size())
+                .isEqualTo(cert.certificateChain().chain().size());
+        for (int i = 0; i < cert.certificateChain().chain().size(); i++) {
+            assertThat(cert.certificateChain().chain().get(i).getEncoded())
+                    .isEqualTo(parsePemDer(cert.certificateChain().chainPem().get(i), "CERTIFICATE"));
         }
     }
 
@@ -76,8 +76,8 @@ class SpiffeX509SvidTest {
     void getWorkloadCertificateLeafHasSpiffeIdInSanUri() throws Exception {
         WorkloadCertificateDocument cert = fetchCert();
 
-        assertThat(cert.certificateChain().certificateChain()).isNotEmpty();
-        var leaf = cert.certificateChain().certificateChain().get(0);
+        assertThat(cert.certificateChain().chain()).isNotEmpty();
+        var leaf = cert.certificateChain().chain().get(0);
         var sans = leaf.getSubjectAlternativeNames();
         assertThat(sans).isNotNull();
         // URI SAN type = 6
@@ -103,13 +103,13 @@ class SpiffeX509SvidTest {
     void getWorkloadCertificateTrustBundleValidatesChain() throws Exception {
         WorkloadCertificateDocument cert = fetchCert();
 
-        assertThat(cert.trustBundle().certificateChain()).isNotEmpty();
-        validateCertificateChain(cert.certificateChain().certificateChain(), cert.trustBundle().certificateChain());
-        assertThat(cert.trustBundle().certificateChainPem()).isNotEmpty();
-        assertThat(cert.trustBundle().certificateChainPem().size()).isEqualTo(cert.trustBundle().certificateChain().size());
-        for (int i = 0; i < cert.trustBundle().certificateChain().size(); i++) {
-            assertThat(cert.trustBundle().certificateChain().get(i).getEncoded())
-                    .isEqualTo(parsePemDer(cert.trustBundle().certificateChainPem().get(i), "CERTIFICATE"));
+        assertThat(cert.trustBundle().chain()).isNotEmpty();
+        validateCertificateChain(cert.certificateChain().chain(), cert.trustBundle().chain());
+        assertThat(cert.trustBundle().chainPem()).isNotEmpty();
+        assertThat(cert.trustBundle().chainPem().size()).isEqualTo(cert.trustBundle().chain().size());
+        for (int i = 0; i < cert.trustBundle().chain().size(); i++) {
+            assertThat(cert.trustBundle().chain().get(i).getEncoded())
+                    .isEqualTo(parsePemDer(cert.trustBundle().chainPem().get(i), "CERTIFICATE"));
         }
     }
 
@@ -152,7 +152,7 @@ class SpiffeX509SvidTest {
     void getWorkloadCertificateLeafIsCurrentlyValid() throws Exception {
         WorkloadCertificateDocument cert = fetchCert();
 
-        cert.certificateChain().certificateChain().get(0).checkValidity();
+        cert.certificateChain().chain().get(0).checkValidity();
     }
 
     @Test
@@ -160,8 +160,8 @@ class SpiffeX509SvidTest {
         setMode("CHAIN_DEPTH_2");
         WorkloadCertificateDocument cert = fetchCert();
 
-        assertThat(cert.certificateChain().certificateChain()).hasSize(2);
-        validateCertificateChain(cert.certificateChain().certificateChain(), cert.trustBundle().certificateChain());
+        assertThat(cert.certificateChain().chain()).hasSize(2);
+        validateCertificateChain(cert.certificateChain().chain(), cert.trustBundle().chain());
     }
 
     @Test
@@ -187,7 +187,7 @@ class SpiffeX509SvidTest {
     void getWorkloadCertificateLeafIsNotCa() {
         WorkloadCertificateDocument cert = fetchCert();
 
-        assertThat(cert.certificateChain().certificateChain().get(0).getBasicConstraints()).isEqualTo(-1);
+        assertThat(cert.certificateChain().chain().get(0).getBasicConstraints()).isEqualTo(-1);
     }
 
     // X.509-SVID 4.3: leaf SVID must set digitalSignature
@@ -195,7 +195,7 @@ class SpiffeX509SvidTest {
     void getWorkloadCertificateLeafHasDigitalSignatureKeyUsage() {
         WorkloadCertificateDocument cert = fetchCert();
 
-        boolean[] keyUsage = cert.certificateChain().certificateChain().get(0).getKeyUsage();
+        boolean[] keyUsage = cert.certificateChain().chain().get(0).getKeyUsage();
         assertThat(keyUsage).isNotNull();
         assertThat(keyUsage[0]).isTrue();
     }
@@ -205,7 +205,7 @@ class SpiffeX509SvidTest {
     void getWorkloadCertificateLeafDoesNotHaveKeyCertSign() {
         WorkloadCertificateDocument cert = fetchCert();
 
-        boolean[] keyUsage = cert.certificateChain().certificateChain().get(0).getKeyUsage();
+        boolean[] keyUsage = cert.certificateChain().chain().get(0).getKeyUsage();
         assertThat(keyUsage).isNotNull();
         assertThat(keyUsage[5]).isFalse();
     }
@@ -253,7 +253,7 @@ class SpiffeX509SvidTest {
     }
 
     private static List<String> extractUriSans(WorkloadCertificateDocument cert) throws Exception {
-        var sans = cert.certificateChain().certificateChain().get(0).getSubjectAlternativeNames();
+        var sans = cert.certificateChain().chain().get(0).getSubjectAlternativeNames();
         if (sans == null) {
             return List.of();
         }
@@ -265,7 +265,7 @@ class SpiffeX509SvidTest {
 
     private static void verifyKeyPairMatches(WorkloadCertificateDocument cert) throws Exception {
         byte[] data = "spiffe-key-pair-test".getBytes();
-        var leaf = cert.certificateChain().certificateChain().get(0);
+        var leaf = cert.certificateChain().chain().get(0);
         Signature sig = Signature.getInstance(leaf.getSigAlgName());
         sig.initSign(cert.certificateChain().privateKey());
         sig.update(data);

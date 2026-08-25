@@ -38,14 +38,14 @@ class SpiffeMtlsSetup {
 
         private SpiffeTlsConfiguration(WorkloadCertificateDocument cert) {
             var keyCert = new PemKeyCertOptions();
-            for (String pem : cert.certificateChain().certificateChainPem()) {
+            for (String pem : cert.certificateChain().chainPem()) {
                 keyCert.addCertValue(Buffer.buffer(pem));
             }
             keyCert.addKeyValue(Buffer.buffer(cert.certificateChain().privateKeyPem()));
             this.keyCertOptions = keyCert;
 
             var trust = new PemTrustOptions();
-            for (String pem : cert.trustBundle().certificateChainPem()) {
+            for (String pem : cert.trustBundle().chainPem()) {
                 trust.addCertValue(Buffer.buffer(pem));
             }
             this.trustOptions = trust;

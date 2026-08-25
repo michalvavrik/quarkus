@@ -137,6 +137,12 @@ The following example shows how to configure a Quarkus REST client with a retrie
 
 [source,java]
 ----
+import java.net.URI;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Produces;
+import jakarta.inject.Inject;
+
 import io.quarkus.rest.client.reactive.QuarkusRestClientBuilder;
 import io.quarkus.spiffe.client.SpiffeClient;
 import io.quarkus.spiffe.client.WorkloadCertificateDocument;
@@ -147,37 +153,58 @@ import io.vertx.core.net.PemKeyCertOptions;
 import io.vertx.core.net.PemTrustOptions;
 import io.vertx.core.net.TrustOptions;
 
-WorkloadCertificateDocument cert = spiffeClient.getWorkloadCertificate()
-        .await().indefinitely();
+@ApplicationScoped
+public class MyServiceClientProducer {
 
-TlsConfiguration tlsConfiguration = new BaseTlsConfiguration() {
-    @Override
-    public KeyCertOptions getKeyStoreOptions() {
-        var options = new PemKeyCertOptions(); <1>
-        for (String pem : cert.certificateChain().certificateChainPem()) {
-            options.addCertValue(Buffer.buffer(pem));
-        }
-        options.addKeyValue(Buffer.buffer(cert.certificateChain().privateKeyPem()));
-        return options;
+    @Inject
+    SpiffeClient spiffeClient;
+
+    @Produces
+    @ApplicationScoped
+    MyServiceClient createClient() { <1>
+        WorkloadCertificateDocument cert = spiffeClient.getWorkloadCertificate()
+                .await().indefinitely();
+        return QuarkusRestClientBuilder.newBuilder()
+                .baseUri(URI.create("https://my-service:8443"))
+                .tlsConfiguration(new SpiffeTlsConfiguration(cert))
+                .build(MyServiceClient.class);
     }
 
-    @Override
-    public TrustOptions getTrustStoreOptions() {
-        var options = new PemTrustOptions(); <2>
-        for (String pem : cert.trustBundle().certificateChainPem()) {
-            options.addCertValue(Buffer.buffer(pem));
-        }
-        return options;
-    }
-};
+    private static final class SpiffeTlsConfiguration extends BaseTlsConfiguration {
 
-MyServiceClient client = QuarkusRestClientBuilder.newBuilder()
-        .baseUri(URI.create("https://my-service:8443"))
-        .tlsConfiguration(tlsConfiguration)
-        .build(MyServiceClient.class);
+        private final KeyCertOptions keyCertOptions;
+        private final TrustOptions trustOptions;
+
+        private SpiffeTlsConfiguration(WorkloadCertificateDocument cert) {
+            var keyCert = new PemKeyCertOptions(); <2>
+            for (String pem : cert.certificateChain().chainPem()) {
+                keyCert.addCertValue(Buffer.buffer(pem));
+            }
+            keyCert.addKeyValue(Buffer.buffer(cert.certificateChain().privateKeyPem()));
+            this.keyCertOptions = keyCert;
+
+            var trust = new PemTrustOptions(); <3>
+            for (String pem : cert.trustBundle().chainPem()) {
+                trust.addCertValue(Buffer.buffer(pem));
+            }
+            this.trustOptions = trust;
+        }
+
+        @Override
+        public KeyCertOptions getKeyStoreOptions() {
+            return keyCertOptions;
+        }
+
+        @Override
+        public TrustOptions getTrustStoreOptions() {
+            return trustOptions;
+        }
+    }
+}
 ----
-<1> Builds PEM key-cert options from the SPIFFE certificate chain and private key.
-<2> Builds PEM trust options from the trust bundle CA certificates. The server certificate must be issued by a CA in the SPIFFE trust bundle for the TLS handshake to succeed.
+<1> Produces the REST client once during initialization, fetching the X.509-SVID from the SPIFFE Workload API.
+<2> Builds PEM key-cert options from the SPIFFE certificate chain and private key.
+<3> Builds PEM trust options from the trust bundle CA certificates. The server certificate must be issued by a CA in the SPIFFE trust bundle for the TLS handshake to succeed.
 
 NOTE: When the server also presents an X.509-SVID, standard hostname verification must be disabled because SPIFFE conveys workload identity in the URI SAN, not the DNS SAN.
 In that case, the https://github.com/spiffe/spiffe/blob/main/standards/X509-SVID.md#5-constraints-and-usage[X.509-SVID specification] requires additional leaf certificate validation — verifying the URI SAN contains a valid SPIFFE ID, that `basicConstraints` has `cA=false`, and that `keyUsage` includes `digitalSignature` but not `keyCertSign`.

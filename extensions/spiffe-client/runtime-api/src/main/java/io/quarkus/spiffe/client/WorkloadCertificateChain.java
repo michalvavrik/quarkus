@@ -15,18 +15,18 @@ public interface WorkloadCertificateChain {
     /**
      * Returns the workload X.509 certificate chain with the leaf certificate first. Never null or empty.
      */
-    List<X509Certificate> certificateChain();
+    List<X509Certificate> chain();
 
     /**
-     * Returns the PKCS#8 private key associated with the leaf certificate of the workload certificate chain
-     * returned in {@link #certificateChain()}. Never null.
+     * Returns the private key associated with the leaf certificate of the workload certificate chain
+     * returned in {@link #chain()}. Never null.
      */
     PrivateKey privateKey();
 
     /**
-     * Returns the workload certificate chain in PEM format with the leaf certificate first. Never null or empty.
+     * Returns the workload certificate chain with the leaf certificate first in PEM format. Never null or empty.
      */
-    List<String> certificateChainPem();
+    List<String> chainPem();
 
     /**
      * Returns the private key associated with the leaf certificate in PEM format. Never null.

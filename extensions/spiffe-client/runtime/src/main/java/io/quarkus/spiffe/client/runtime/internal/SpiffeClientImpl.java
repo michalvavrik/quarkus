@@ -378,12 +378,12 @@ final class SpiffeClientImpl implements SpiffeClient {
             WorkloadTrustBundleImpl trustBundle) implements WorkloadCertificateDocument {
     }
 
-    private record WorkloadCertificateChainImpl(List<X509Certificate> certificateChain,
+    private record WorkloadCertificateChainImpl(List<X509Certificate> chain,
             PrivateKey privateKey) implements WorkloadCertificateChain {
 
         @Override
-        public List<String> certificateChainPem() {
-            return certsToPem(certificateChain);
+        public List<String> chainPem() {
+            return certsToPem(chain);
         }
 
         @Override
@@ -393,11 +393,11 @@ final class SpiffeClientImpl implements SpiffeClient {
 
     }
 
-    private record WorkloadTrustBundleImpl(List<X509Certificate> certificateChain) implements WorkloadTrustBundle {
+    private record WorkloadTrustBundleImpl(List<X509Certificate> chain) implements WorkloadTrustBundle {
 
         @Override
-        public List<String> certificateChainPem() {
-            return certsToPem(certificateChain);
+        public List<String> chainPem() {
+            return certsToPem(chain);
         }
 
     }
