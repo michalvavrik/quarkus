@@ -18,6 +18,7 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.oidc.DPoPNonceProvider;
+import io.quarkus.oidc.DPoPNonceProvider.DPoPNonceContext;
 import io.quarkus.oidc.OidcTenantConfig;
 import io.quarkus.oidc.common.runtime.OidcCommonUtils;
 import io.quarkus.oidc.common.runtime.OidcConstants;
@@ -139,16 +140,13 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
                             OidcConstants.ACCESS_TOKEN_VALUE, token,
                             OidcConstants.USE_DPOP_NONCE, Boolean.TRUE));
                 }
-                if (!dPoPNonceProvider.isValid(proofNonce)) {
-                    /*
-                     * This same error code is used when supplying a new nonce value when there was a nonce mismatch.
-                     * See https://www.rfc-editor.org/rfc/rfc9449.html#section-9
-                     */
-                    LOG.tracef("DPoP proof nonce claim '%s' is invalid", proofNonce);
-                    throw new AuthenticationFailedException(Map.of(
-                            OidcConstants.ACCESS_TOKEN_VALUE, token,
-                            OidcConstants.USE_DPOP_NONCE, Boolean.TRUE));
-                }
+            }
+
+            // The DPoP proof must carry a unique identifier (RFC 9449 section 4.2)
+            String proofJti = proofJwtClaims.getString(OidcUtils.DPOP_JWT_ID);
+            if (proofJti == null) {
+                LOG.warn("DPoP proof jti claim is missing");
+                throw new AuthenticationFailedException(invalidDPoPProofMap(token));
             }
 
             context.put(OidcUtils.DPOP_PROOF, proof);
@@ -190,7 +188,8 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
                         return Uni.createFrom().item(new ChallengeData(HttpResponseStatus.UNAUTHORIZED.code(),
                                 Map.of(
                                         HttpHeaderNames.WWW_AUTHENTICATE, wwwAuthHeaderValue,
-                                        OidcConstants.DPOP_NONCE, dPoPNonceProvider.getNonce(),
+                                        OidcConstants.DPOP_NONCE,
+                                        dPoPNonceProvider.getNonce(new DPoPNonceContext(context, tenantContext.oidcConfig())),
                                         HttpHeaders.CACHE_CONTROL, NO_STORE)));
                     } else if (tenantContext.oidcConfig().resourceMetadata().enabled()) {
                         wwwAuthHeaderValue += ResourceMetadataHandler.resourceMetadataAuthenticateParameter(context, resolver,
