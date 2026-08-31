@@ -75,6 +75,18 @@ public class OidcDPopTest {
         assertInvalidDPoPProof("login-jwt-missing-jti");
     }
 
+    @Test
+    void testDPopProofMissingIat() throws Exception {
+        // RFC 9449 section 4.2 requires the DPoP proof to carry an iat claim
+        assertInvalidDPoPProof("login-jwt-missing-iat");
+    }
+
+    @Test
+    void testDPopProofExpired() throws Exception {
+        // The optional exp claim must be verified when present
+        assertInvalidDPoPProof("login-jwt-expired");
+    }
+
     private void assertInvalidDPoPProof(String loginPath) throws Exception {
         try (final WebClient webClient = createWebClient()) {
             resetDPoPAuthFailureObserver();

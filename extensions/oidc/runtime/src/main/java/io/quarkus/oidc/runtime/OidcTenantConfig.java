@@ -188,6 +188,13 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
     Token token();
 
     /**
+     * Configuration of the Demonstrating Proof of Possession (DPoP) proof verification.
+     * These properties are effective only when the {@link Token#authorizationScheme()} is set to `DPoP`.
+     */
+    @ConfigDocSection
+    Dpop dpop();
+
+    /**
      * RP-initiated, back-channel and front-channel logout configuration.
      */
     @ConfigDocSection
@@ -1317,6 +1324,28 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
          */
         Binding binding();
 
+    }
+
+    interface Dpop {
+
+        /**
+         * Maximum age of a DPoP proof, calculated as the difference between the current time and the DPoP proof
+         * `iat` (issued at) claim value.
+         * <p/>
+         * If this property is set, a DPoP proof whose age exceeds it is rejected with an `invalid_dpop_proof` error.
+         * A small leeway to account for a clock skew can be configured with {@link #lifespanGrace()}.
+         * <p/>
+         * A DPoP proof is always required to contain an `iat` claim, see
+         * <a href="https://datatracker.ietf.org/doc/html/rfc9449#section-4.2">RFC 9449, section 4.2</a>.
+         */
+        Optional<Duration> proofAge();
+
+        /**
+         * Clock skew, in seconds, applied when the DPoP proof age and its optional `exp` (expiry) claim are verified.
+         * When checking the age, the current time is allowed to be later than the sum of the DPoP proof `iat` (issued at)
+         * time and the `proof-age` value by at most the number of seconds configured with this property.
+         */
+        OptionalInt lifespanGrace();
     }
 
     interface Binding {

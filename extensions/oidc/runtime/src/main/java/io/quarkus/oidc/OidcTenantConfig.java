@@ -44,6 +44,7 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
         introspectionCredentials.addConfigMappingValues(mapping.introspectionCredentials());
         roles.addConfigMappingValues(mapping.roles());
         token.addConfigMappingValues(mapping.token());
+        dpop.addConfigMappingValues(mapping.dpop());
         logout.addConfigMappingValues(mapping.logout());
         resourceMetadata.addConfigMappingValues(mapping.resourceMetadata());
         certificateChain.addConfigMappingValues(mapping.certificateChain());
@@ -2874,6 +2875,29 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
         }
     }
 
+    public Dpop dpop = new Dpop();
+
+    public static class Dpop implements io.quarkus.oidc.runtime.OidcTenantConfig.Dpop {
+
+        public Optional<Duration> proofAge = Optional.empty();
+        public OptionalInt lifespanGrace = OptionalInt.empty();
+
+        @Override
+        public Optional<Duration> proofAge() {
+            return proofAge;
+        }
+
+        @Override
+        public OptionalInt lifespanGrace() {
+            return lifespanGrace;
+        }
+
+        private void addConfigMappingValues(io.quarkus.oidc.runtime.OidcTenantConfig.Dpop mapping) {
+            proofAge = mapping.proofAge();
+            lifespanGrace = mapping.lifespanGrace();
+        }
+    }
+
     public static enum ApplicationType {
         /**
          * A {@code WEB_APP} is a client that serves pages, usually a front-end application. For this type of client the
@@ -3113,6 +3137,11 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
     @Override
     public io.quarkus.oidc.runtime.OidcTenantConfig.Token token() {
         return token;
+    }
+
+    @Override
+    public io.quarkus.oidc.runtime.OidcTenantConfig.Dpop dpop() {
+        return dpop;
     }
 
     @Override

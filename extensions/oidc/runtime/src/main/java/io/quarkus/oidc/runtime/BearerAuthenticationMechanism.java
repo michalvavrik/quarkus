@@ -12,6 +12,7 @@ import java.util.function.Function;
 
 import javax.net.ssl.SSLPeerUnverifiedException;
 
+import org.eclipse.microprofile.jwt.Claims;
 import org.jboss.logging.Logger;
 
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -146,6 +147,29 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
             String proofJti = proofJwtClaims.getString(OidcUtils.DPOP_JWT_ID);
             if (proofJti == null) {
                 LOG.warn("DPoP proof jti claim is missing");
+                throw new AuthenticationFailedException(invalidDPoPProofMap(token));
+            }
+
+            // The DPoP proof must carry an `iat` (issued at) claim (RFC 9449 section 4.2)
+            Long proofIat = proofJwtClaims.getLong(Claims.iat.name());
+            if (proofIat == null) {
+                LOG.warn("DPoP proof iat claim is missing");
+                throw new AuthenticationFailedException(invalidDPoPProofMap(token));
+            }
+
+            final long nowSecs = System.currentTimeMillis() / 1000;
+            final int lifespanGrace = oidcTenantConfig.dpop().lifespanGrace().orElse(0);
+
+            if (oidcTenantConfig.dpop().proofAge().isPresent()
+                    && nowSecs - proofIat > oidcTenantConfig.dpop().proofAge().get().toSeconds() + lifespanGrace) {
+                LOG.warn("DPoP proof age exceeds the configured 'quarkus.oidc.dpop.proof-age'");
+                throw new AuthenticationFailedException(invalidDPoPProofMap(token));
+            }
+
+            // The `exp` (expiry) claim is optional in a DPoP proof, but must be verified when present
+            Long proofExp = proofJwtClaims.getLong(Claims.exp.name());
+            if (proofExp != null && nowSecs > proofExp + lifespanGrace) {
+                LOG.warn("DPoP proof has expired");
                 throw new AuthenticationFailedException(invalidDPoPProofMap(token));
             }
 
