@@ -1336,6 +1336,20 @@ You can define a link:https://www.rfc-editor.org/rfc/rfc9449.html#name-resource-
 If the DPoP proof nonce is missing or invalid, Quarkus responds with the `401 Unauthorized` status and attaches the expected nonce as the `DPoP-Nonce` header value.
 The provider can also use the verified DPoP proof link:https://datatracker.ietf.org/doc/html/rfc9449#section-4.2[`jti`] identifier to detect and reject replayed DPoP proofs.
 
+The `DPoPNonceProvider#getNonce(DPoPNonceContext)` method also receives the DPoP proof `jti` value, which you can use to associate an issued nonce with the proof that requested it, for example to avoid handing a fresh nonce to a client that keeps resending the same nonce-less proof in a loop.
+
+[CAUTION]
+====
+Unlike the `jti` from `isValid(DPoPProofContext)`, the `jti` passed to `getNonce` comes from a DPoP proof that has *not* been verified: its signature has not been checked and it has not been bound to a verified access token.
+`getNonce` can be called for unauthenticated requests, so treat this `jti` as untrusted input that may also be `null`:
+
+* Do not use it for any security decision, because a malicious client can send a different `jti` on every request.
+* If you store it, keep the store strictly bounded (limit its size and evict entries after a short time), or an attacker can flood you with unique `jti` values to exhaust server memory.
+* Use it only as a best-effort defence against non-malicious retry loops or buggy client software.
+
+Use `isValid(DPoPProofContext)` and its `jti` value when you need a trusted identifier to reject replayed proofs.
+====
+
 === Mutual TLS token binding
 
 https://datatracker.ietf.org/doc/html/rfc8705[RFC8705] describes a mechanism for binding access tokens to Mutual TLS (mTLS) client authentication certificates.

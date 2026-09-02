@@ -172,6 +172,19 @@ public class FrontendResource {
     }
 
     @GET
+    @Path("login-jwt-no-nonce-with-jti/{jti}")
+    public Response loginJwtNoNonceWithJti(@RestPath String jti) {
+        return redirect("dpop-jwt", "callback-jwt-no-nonce-with-jti/" + jti);
+    }
+
+    @GET
+    @Path("callback-jwt-no-nonce-with-jti/{jti}")
+    public Response callbackJwtNoNonceWithJti(@RestQuery String code, @RestPath String jti) throws Exception {
+        return callProtectedEndpoint(code, "dpop-jwt", "callback-jwt-no-nonce-with-jti/" + jti, "GET",
+                "dpop-jwt", "dpop-jwt", false, false, false, null, jti);
+    }
+
+    @GET
     @Path("login-jwt-wrong-dpop-http-method")
     public Response loginJwtWrongDpopHttpMethod() {
         return redirect("dpop-jwt", "callback-jwt-wrong-dpop-http-method");

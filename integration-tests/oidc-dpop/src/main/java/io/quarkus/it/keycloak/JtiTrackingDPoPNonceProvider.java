@@ -13,10 +13,13 @@ import io.quarkus.oidc.DPoPNonceProvider;
 public class JtiTrackingDPoPNonceProvider implements DPoPNonceProvider {
 
     private volatile String nonce = null;
+    private volatile String lastGetNonceJti = null;
     private final Set<String> usedJtis = ConcurrentHashMap.newKeySet();
 
     @Override
     public String getNonce(DPoPNonceContext context) {
+        // The jti is unverified here; kept only so the test can assert it was made available.
+        this.lastGetNonceJti = context.jti();
         return nonce;
     }
 
@@ -32,8 +35,13 @@ public class JtiTrackingDPoPNonceProvider implements DPoPNonceProvider {
         this.nonce = nonce;
     }
 
+    public String getLastGetNonceJti() {
+        return lastGetNonceJti;
+    }
+
     public void clear() {
         this.nonce = null;
+        this.lastGetNonceJti = null;
         usedJtis.clear();
     }
 }

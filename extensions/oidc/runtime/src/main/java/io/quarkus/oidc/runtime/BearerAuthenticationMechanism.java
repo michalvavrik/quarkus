@@ -128,6 +128,13 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
                 throw new AuthenticationFailedException(invalidDPoPProofMap(token));
             }
 
+            // The DPoP proof must carry a unique identifier (RFC 9449 section 4.2).
+            // Stash it so a 'use_dpop_nonce' challenge can pass it to DPoPNonceProvider.getNonce; it is unverified here.
+            String proofJti = proofJwtClaims.getString(OidcUtils.DPOP_JWT_ID);
+            if (proofJti != null) {
+                context.put(OidcUtils.DPOP_PROOF_JTI, proofJti);
+            }
+
             if (dPoPNonceProvider != null) {
                 String proofNonce = proofJwtClaims.getString(OidcConstants.NONCE);
                 if (proofNonce == null) {
@@ -142,8 +149,6 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
                 }
             }
 
-            // The DPoP proof must carry a unique identifier (RFC 9449 section 4.2)
-            String proofJti = proofJwtClaims.getString(OidcUtils.DPOP_JWT_ID);
             if (proofJti == null) {
                 LOG.warn("DPoP proof jti claim is missing");
                 throw new AuthenticationFailedException(invalidDPoPProofMap(token));
@@ -189,7 +194,9 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
                                 Map.of(
                                         HttpHeaderNames.WWW_AUTHENTICATE, wwwAuthHeaderValue,
                                         OidcConstants.DPOP_NONCE,
-                                        dPoPNonceProvider.getNonce(new DPoPNonceContext(context, tenantContext.oidcConfig())),
+                                        dPoPNonceProvider.getNonce(new DPoPNonceContext(
+                                                context.get(OidcUtils.DPOP_PROOF_JTI), context,
+                                                tenantContext.oidcConfig())),
                                         HttpHeaders.CACHE_CONTROL, NO_STORE)));
                     } else if (tenantContext.oidcConfig().resourceMetadata().enabled()) {
                         wwwAuthHeaderValue += ResourceMetadataHandler.resourceMetadataAuthenticateParameter(context, resolver,

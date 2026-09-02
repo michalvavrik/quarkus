@@ -35,8 +35,12 @@ public interface DPoPNonceProvider {
 
     /**
      * Provides a nonce that must be included in the DPoP proof as the "nonce" claim.
+     * <p>
+     * {@link DPoPNonceContext#jti()} comes from an unverified proof, so it may be attacker-controlled or {@code null}:
+     * use it only as a best-effort hint (for example, to break nonce request loops) and bound anything you store by it.
+     * Use {@link #isValid(DPoPProofContext)} when you need a verified jti.
      *
-     * @param context context giving access to the current request and tenant configuration
+     * @param context context giving access to the unverified proof jti, the current request and tenant configuration
      * @return resource server nonce
      */
     default String getNonce(DPoPNonceContext context) {
@@ -58,6 +62,6 @@ public interface DPoPNonceProvider {
     record DPoPProofContext(String nonce, String jti, RoutingContext routingContext, OidcTenantConfig tenantConfig) {
     }
 
-    record DPoPNonceContext(RoutingContext routingContext, OidcTenantConfig tenantConfig) {
+    record DPoPNonceContext(String jti, RoutingContext routingContext, OidcTenantConfig tenantConfig) {
     }
 }

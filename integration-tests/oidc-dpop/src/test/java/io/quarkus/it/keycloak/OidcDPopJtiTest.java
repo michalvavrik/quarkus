@@ -51,6 +51,29 @@ public class OidcDPopJtiTest {
         }
     }
 
+    @Test
+    void testJtiAvailableToGetNonce() throws Exception {
+        dPoPNonceProvider.clear();
+        dPoPNonceProvider.setNonce("get-nonce-nonce");
+        try (final WebClient webClient = createWebClient()) {
+            // A proof carrying a jti but no nonce triggers the 'use_dpop_nonce' challenge, which calls getNonce.
+            TextPage textPage = loginAndClick(webClient, "login-jwt-no-nonce-with-jti/get-nonce-jti");
+            assertEquals("401 status from ProtectedResource", textPage.getContent());
+
+            String wwwAuthenticate = textPage.getWebResponse()
+                    .getResponseHeaderValue(HttpHeaderNames.WWW_AUTHENTICATE.toString());
+            assertNotNull(wwwAuthenticate);
+            assertTrue(wwwAuthenticate.contains("DPoP error=\"use_dpop_nonce\""),
+                    () -> "Expected 'DPoP error=\"use_dpop_nonce\"', but got: " + wwwAuthenticate);
+            assertEquals("get-nonce-nonce", textPage.getWebResponse().getResponseHeaderValue(OidcConstants.DPOP_NONCE));
+
+            assertEquals("get-nonce-jti", dPoPNonceProvider.getLastGetNonceJti());
+            webClient.getCookieManager().clearCookies();
+        } finally {
+            dPoPNonceProvider.clear();
+        }
+    }
+
     private void assertProofAccepted(String nonce, String jti) throws Exception {
         try (final WebClient webClient = createWebClient()) {
             TextPage textPage = loginAndClick(webClient, "login-jwt-with-nonce-and-jti/" + nonce + "/" + jti);
