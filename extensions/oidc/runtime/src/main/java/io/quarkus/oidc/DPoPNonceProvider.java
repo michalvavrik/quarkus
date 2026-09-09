@@ -36,12 +36,14 @@ public interface DPoPNonceProvider {
     /**
      * Provides a nonce that must be included in the DPoP proof as the "nonce" claim.
      * <p>
-     * {@link DPoPNonceContext#jti()} comes from an unverified proof, so use this property with care to log
-     * or record the jti value of the DPoP proof that the nonce is issued for.
-     * {@link DPoPNonceContext#nonce()} is the previous nonce which was deemed invalid by {@link #isValid(DPoPNonceContext)}.
+     * {@link DPoPNonceContext#jti()} may come from an unverified proof (for example, when the initial DPoP proof
+     * does not include a nonce claim), so use this property with care to log or record the jti value before verification.
+     * {@link DPoPNonceContext#nonce()} is the previous nonce which was deemed invalid by {@link #isValid(DPoPNonceContext)},
+     * or {@code null} if the DPoP proof did not have the {@code nonce} claim.
      *
      * @param context context giving access to the unverified proof jti, the current request and tenant configuration
-     * @return resource server nonce; if this method returns null, no nonce is added to the response
+     * @return resource server nonce; if this method returns null, no DPoP-Nonce HTTP header is added to the response and a
+     *         standard 401 challenge is returned without requesting a nonce
      */
     default String getNonce(DPoPNonceContext context) {
         return getNonce();
@@ -59,6 +61,6 @@ public interface DPoPNonceProvider {
         return isValid(context.nonce());
     }
 
-    record DPoPNonceContext(String jti, RoutingContext routingContext, OidcTenantConfig tenantConfig, String nonce) {
+    record DPoPNonceContext(RoutingContext routingContext, OidcTenantConfig tenantConfig, String jti, String nonce) {
     }
 }

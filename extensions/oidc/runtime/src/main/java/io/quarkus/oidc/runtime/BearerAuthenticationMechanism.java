@@ -190,7 +190,7 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
                             String proofNonce = proofClaims.getString(OidcConstants.NONCE);
                             String proofJti = proofClaims.getString(Claims.jti.name());
                             final String newNonce = dPoPNonceProvider.getNonce(new DPoPNonceContext(
-                                    proofJti, context, tenantContext.oidcConfig(), proofNonce));
+                                    context, tenantContext.oidcConfig(), proofJti, proofNonce));
                             if (newNonce != null) {
                                 wwwAuthHeaderValue += " error=\"%s\"".formatted(OidcConstants.USE_DPOP_NONCE);
                                 return Uni.createFrom().item(new ChallengeData(HttpResponseStatus.UNAUTHORIZED.code(),

@@ -333,9 +333,9 @@ public class OidcIdentityProvider implements IdentityProvider<TokenAuthenticatio
                             if (dPoPNonceProvider != null) {
                                 String proofNonce = proofClaims.getString(OidcConstants.NONCE);
                                 DPoPNonceProvider.DPoPNonceContext proofContext = new DPoPNonceProvider.DPoPNonceContext(
-                                        proofClaims.getString(Claims.jti.name()),
                                         getRoutingContextAttribute(request),
-                                        resolvedContext.oidcConfig(), proofNonce);
+                                        resolvedContext.oidcConfig(),
+                                        proofClaims.getString(Claims.jti.name()), proofNonce);
                                 if (!dPoPNonceProvider.isValid(proofContext)) {
                                     /*
                                      * This same error code is used when supplying a new nonce value when there was a nonce
