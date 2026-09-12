@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -37,6 +38,7 @@ import io.quarkus.security.runtime.QuarkusPrincipal;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
 import io.quarkus.signals.Receives;
 import io.quarkus.signals.Signal;
+import io.quarkus.signals.runtime.impl.SecurityIntegration;
 import io.quarkus.test.QuarkusExtensionTest;
 import io.smallrye.mutiny.Uni;
 
@@ -48,7 +50,7 @@ public class SecurityIntegrationTest extends AbstractSignalTest {
                     AuthenticatedCmd.class, MyClassSecuredReceivers.class, RolesAllowedCmd.class,
                     DenyAllCmd.class, PermitAllCmd.class, Cmd.class, SinglePermissionsAllowedCmd.class,
                     PublicCmd.class, MyMethodSecuredReceivers.class, MultiplePermissionsAllowedCmd.class,
-                    SimpleTestIdentityProvider.class));
+                    SimpleTestIdentityProvider.class, SecurityIdentityExpirationCmd.class));
 
     @Inject
     Signal<AuthenticatedCmd> authenticatedCmdSignal;
@@ -70,6 +72,9 @@ public class SecurityIntegrationTest extends AbstractSignalTest {
 
     @Inject
     Signal<MultiplePermissionsAllowedCmd> multiplePermissionsAllowedCmdSignal;
+
+    @Inject
+    Signal<SecurityIdentityExpirationCmd> securityIdentityExpirationCmdSignal;
 
     @Inject
     CurrentIdentityAssociation identityAssociation;
@@ -292,6 +297,36 @@ public class SecurityIntegrationTest extends AbstractSignalTest {
         testPermitAllAnnotation();
     }
 
+    @ActivateRequestContext
+    @Test
+    public void testSecurityIdentityExpiration() {
+        MyMethodSecuredReceivers.SECURITY_IDENTITY_EXPIRATION_CMDS.clear();
+
+        // security identity not expired
+        SecurityIdentity securityIdentity = QuarkusSecurityIdentity.builder(createSecurityIdentity("Sergey"))
+                .addAttribute(SecurityIntegration.QUARKUS_IDENTITY_EXPIRE_TIME, Instant.now().getEpochSecond() + 100)
+                .build();
+        identityAssociation.setIdentity(securityIdentity);
+        String result = securityIdentityExpirationCmdSignal.reactive()
+                .request(new SecurityIdentityExpirationCmd("Hey"), String.class)
+                .ifNoItem().after(defaultTimeout()).fail()
+                .await().indefinitely();
+        assertEquals("hey Sergey", result);
+
+        // security identity expired
+        securityIdentity = QuarkusSecurityIdentity.builder(createSecurityIdentity("Sergey"))
+                .addAttribute(SecurityIntegration.QUARKUS_IDENTITY_EXPIRE_TIME, Instant.now().getEpochSecond() - 2)
+                .build();
+        identityAssociation.setIdentity(securityIdentity);
+        assertThrows(UnauthorizedException.class, () -> securityIdentityExpirationCmdSignal
+                .reactive().request(new SecurityIdentityExpirationCmd("Hi"), String.class)
+                .ifNoItem().after(defaultTimeout()).fail()
+                .await().indefinitely());
+
+        assertEquals(1, MyMethodSecuredReceivers.SECURITY_IDENTITY_EXPIRATION_CMDS.size());
+        assertEquals("Hey", MyMethodSecuredReceivers.SECURITY_IDENTITY_EXPIRATION_CMDS.get(0).value());
+    }
+
     private void testPermitAllAnnotation() {
         MyClassSecuredReceivers.PERMIT_ALL_CMDS.clear();
 
@@ -344,6 +379,10 @@ public class SecurityIntegrationTest extends AbstractSignalTest {
     }
 
     record MultiplePermissionsAllowedCmd(String value) implements Cmd {
+    }
+
+    record SecurityIdentityExpirationCmd(String value) implements Cmd {
+
     }
 
     // --- Receivers ---
@@ -415,6 +454,7 @@ public class SecurityIntegrationTest extends AbstractSignalTest {
         static final List<Cmd> SINGLE_PERMISSIONS_ALLOWED_CMDS = new CopyOnWriteArrayList<>();
         static final List<Cmd> MULTIPLE_PERMISSIONS_ALLOWED_CMDS = new CopyOnWriteArrayList<>();
         static final List<Cmd> PUBLIC_CMDS = new CopyOnWriteArrayList<>();
+        static final List<Cmd> SECURITY_IDENTITY_EXPIRATION_CMDS = new CopyOnWriteArrayList<>();
 
         @Inject
         SecurityIdentity securityIdentity;
@@ -433,6 +473,11 @@ public class SecurityIntegrationTest extends AbstractSignalTest {
         @PermissionsAllowed("multiple-2")
         String process(@Receives MultiplePermissionsAllowedCmd cmd) {
             return process(cmd, MULTIPLE_PERMISSIONS_ALLOWED_CMDS);
+        }
+
+        @Authenticated
+        String process(@Receives SecurityIdentityExpirationCmd cmd) {
+            return process(cmd, SECURITY_IDENTITY_EXPIRATION_CMDS);
         }
 
         @PermissionChecker("multiple-1")

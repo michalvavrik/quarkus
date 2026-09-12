@@ -3,6 +3,8 @@ package io.quarkus.signals.runtime.impl;
 import static io.quarkus.signals.spi.ReceiverInterceptor.ID_REQUEST_CONTEXT;
 import static io.quarkus.signals.spi.ReceiverInterceptor.ID_SECURITY_IDENTITY;
 
+import java.util.concurrent.TimeUnit;
+
 import jakarta.inject.Singleton;
 
 import io.quarkus.arc.Arc;
@@ -22,6 +24,7 @@ import io.smallrye.mutiny.Uni;
 @Singleton
 public final class SecurityIntegration implements SignalMetadataEnricher, ReceiverInterceptor {
 
+    public static final String QUARKUS_IDENTITY_EXPIRE_TIME = "quarkus.identity.expire-time";
     private static final String SECURITY_IDENTITY_KEY = "io.quarkus.signals.runtime.impl#security_identity";
 
     private final CurrentIdentityAssociation currentIdentity;
@@ -48,7 +51,14 @@ public final class SecurityIntegration implements SignalMetadataEnricher, Receiv
     public Uni<Object> intercept(InterceptionContext context) {
         if (requestContext.isActive()
                 && context.signalContext().metadata().get(SECURITY_IDENTITY_KEY) instanceof SecurityIdentity securityIdentity) {
-            currentIdentity.setIdentity(securityIdentity);
+            if (securityIdentity.getAttribute(QUARKUS_IDENTITY_EXPIRE_TIME) instanceof Long expireAt) {
+                long expiresIn = TimeUnit.SECONDS.toMillis(expireAt) - System.currentTimeMillis();
+                if (expiresIn > 0) {
+                    currentIdentity.setIdentity(securityIdentity);
+                }
+            } else {
+                currentIdentity.setIdentity(securityIdentity);
+            }
         }
         return context.proceed();
     }
