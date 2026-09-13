@@ -876,8 +876,8 @@ public class KeycloakDevServicesProcessor {
         realm.setEnabled(true);
         realm.setUsers(new ArrayList<>());
         realm.setClients(new ArrayList<>());
-        realm.setAccessTokenLifespan(600);
-        realm.setSsoSessionMaxLifespan(600);
+        realm.setAccessTokenLifespan((int) config.tokenLifespan().toSeconds());
+        realm.setSsoSessionMaxLifespan((int) config.tokenLifespan().toSeconds());
         realm.setRefreshTokenMaxReuse(10);
         realm.setRequiredActions(List.of());
 
