@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -22,12 +23,15 @@ import org.mockito.Mockito;
 import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.configuration.MemorySize;
 import io.quarkus.vertx.http.runtime.ProxyConfig;
+import io.quarkus.vertx.http.runtime.ProxyConfig.ProxyProtocolListener;
 import io.quarkus.vertx.http.runtime.ServerLimitsConfig;
 import io.quarkus.vertx.http.runtime.TrafficShapingConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig.InsecureRequests;
 import io.quarkus.vertx.http.runtime.WebsocketServerConfig;
+import io.quarkus.vertx.http.runtime.management.ManagementConfig;
+import io.quarkus.vertx.http.runtime.management.ManagementInterfaceBuildTimeConfig;
 import io.vertx.core.http.ClientAuth;
 import io.vertx.core.http.HttpServerConfig;
 
@@ -318,6 +322,164 @@ class HttpServerOptionsUtilsTest {
         when(config.enableDecompression()).thenReturn(false);
         when(config.compressors()).thenReturn(compressors);
         when(config.compressionLevel()).thenReturn(compressionLevel);
+        return config;
+    }
+
+    @Test
+    void proxyProtocolIsUsedOnEveryListenerByDefault() {
+        VertxHttpBuildTimeConfig buildTimeConfig = buildTimeConfig(false, Optional.empty(), OptionalInt.empty());
+        VertxHttpConfig httpConfig = minimalHttpConfig();
+        when(httpConfig.proxy().useProxyProtocol()).thenReturn(true);
+        when(httpConfig.proxy().proxyProtocolListeners()).thenReturn(EnumSet.allOf(ProxyProtocolListener.class));
+
+        for (ProxyProtocolListener listener : ProxyProtocolListener.values()) {
+            HttpServerConfig config = new HttpServerConfig();
+            HttpServerOptionsUtils.applyCommonOptions(config, buildTimeConfig, httpConfig, Collections.emptyList(),
+                    "localhost", listener);
+            assertThat(config.getTcpConfig().isUseProxyProtocol()).as(listener.name()).isTrue();
+        }
+    }
+
+    @Test
+    void proxyProtocolCanBeLimitedToTheHttpsListener() {
+        VertxHttpBuildTimeConfig buildTimeConfig = buildTimeConfig(false, Optional.empty(), OptionalInt.empty());
+        VertxHttpConfig httpConfig = minimalHttpConfig();
+        when(httpConfig.proxy().useProxyProtocol()).thenReturn(true);
+        when(httpConfig.proxy().proxyProtocolListeners()).thenReturn(EnumSet.of(ProxyProtocolListener.HTTPS));
+
+        HttpServerConfig http = new HttpServerConfig();
+        HttpServerOptionsUtils.applyCommonOptions(http, buildTimeConfig, httpConfig, Collections.emptyList(), "localhost",
+                ProxyProtocolListener.HTTP);
+        HttpServerConfig https = new HttpServerConfig();
+        HttpServerOptionsUtils.applyCommonOptions(https, buildTimeConfig, httpConfig, Collections.emptyList(), "localhost",
+                ProxyProtocolListener.HTTPS);
+        HttpServerConfig domainSocket = new HttpServerConfig();
+        HttpServerOptionsUtils.applyCommonOptions(domainSocket, buildTimeConfig, httpConfig, Collections.emptyList(),
+                "localhost", ProxyProtocolListener.DOMAIN_SOCKET);
+
+        assertThat(http.getTcpConfig().isUseProxyProtocol()).isFalse();
+        assertThat(https.getTcpConfig().isUseProxyProtocol()).isTrue();
+        assertThat(domainSocket.getTcpConfig().isUseProxyProtocol()).isFalse();
+    }
+
+    @Test
+    void proxyProtocolListenersAreIgnoredWhenTheProtocolIsDisabled() {
+        VertxHttpBuildTimeConfig buildTimeConfig = buildTimeConfig(false, Optional.empty(), OptionalInt.empty());
+        VertxHttpConfig httpConfig = minimalHttpConfig();
+        when(httpConfig.proxy().useProxyProtocol()).thenReturn(false);
+        when(httpConfig.proxy().proxyProtocolListeners()).thenReturn(EnumSet.allOf(ProxyProtocolListener.class));
+
+        HttpServerConfig https = new HttpServerConfig();
+        HttpServerOptionsUtils.applyCommonOptions(https, buildTimeConfig, httpConfig, Collections.emptyList(), "localhost",
+                ProxyProtocolListener.HTTPS);
+        assertThat(https.getTcpConfig().isUseProxyProtocol()).isFalse();
+    }
+
+    @Test
+    void managementProxyProtocolIsUsedOnEveryListenerByDefault() {
+        ManagementInterfaceBuildTimeConfig buildTimeConfig = minimalManagementBuildTimeConfig();
+        ManagementConfig managementConfig = minimalManagementConfig();
+        when(managementConfig.proxy().useProxyProtocol()).thenReturn(true);
+        when(managementConfig.proxy().proxyProtocolListeners()).thenReturn(EnumSet.allOf(ProxyProtocolListener.class));
+
+        for (ProxyProtocolListener listener : ProxyProtocolListener.values()) {
+            HttpServerConfig config = new HttpServerConfig();
+            HttpServerOptionsUtils.applyCommonOptionsForManagementInterface(config, buildTimeConfig, managementConfig,
+                    Collections.emptyList(), listener);
+            assertThat(config.getTcpConfig().isUseProxyProtocol()).as(listener.name()).isTrue();
+        }
+    }
+
+    @Test
+    void managementProxyProtocolCanBeLimitedToTheHttpsListener() {
+        ManagementInterfaceBuildTimeConfig buildTimeConfig = minimalManagementBuildTimeConfig();
+        ManagementConfig managementConfig = minimalManagementConfig();
+        when(managementConfig.proxy().useProxyProtocol()).thenReturn(true);
+        when(managementConfig.proxy().proxyProtocolListeners()).thenReturn(EnumSet.of(ProxyProtocolListener.HTTPS));
+
+        HttpServerConfig http = new HttpServerConfig();
+        HttpServerOptionsUtils.applyCommonOptionsForManagementInterface(http, buildTimeConfig, managementConfig,
+                Collections.emptyList(), ProxyProtocolListener.HTTP);
+        HttpServerConfig https = new HttpServerConfig();
+        HttpServerOptionsUtils.applyCommonOptionsForManagementInterface(https, buildTimeConfig, managementConfig,
+                Collections.emptyList(), ProxyProtocolListener.HTTPS);
+        HttpServerConfig domainSocket = new HttpServerConfig();
+        HttpServerOptionsUtils.applyCommonOptionsForManagementInterface(domainSocket, buildTimeConfig, managementConfig,
+                Collections.emptyList(), ProxyProtocolListener.DOMAIN_SOCKET);
+
+        assertThat(http.getTcpConfig().isUseProxyProtocol()).isFalse();
+        assertThat(https.getTcpConfig().isUseProxyProtocol()).isTrue();
+        assertThat(domainSocket.getTcpConfig().isUseProxyProtocol()).isFalse();
+    }
+
+    @Test
+    void managementProxyProtocolListenersAreIgnoredWhenTheProtocolIsDisabled() {
+        ManagementInterfaceBuildTimeConfig buildTimeConfig = minimalManagementBuildTimeConfig();
+        ManagementConfig managementConfig = minimalManagementConfig();
+        when(managementConfig.proxy().useProxyProtocol()).thenReturn(false);
+        when(managementConfig.proxy().proxyProtocolListeners()).thenReturn(EnumSet.allOf(ProxyProtocolListener.class));
+
+        HttpServerConfig https = new HttpServerConfig();
+        HttpServerOptionsUtils.applyCommonOptionsForManagementInterface(https, buildTimeConfig, managementConfig,
+                Collections.emptyList(), ProxyProtocolListener.HTTPS);
+        assertThat(https.getTcpConfig().isUseProxyProtocol()).isFalse();
+    }
+
+    private ManagementInterfaceBuildTimeConfig minimalManagementBuildTimeConfig() {
+        ManagementInterfaceBuildTimeConfig config = mock(ManagementInterfaceBuildTimeConfig.class);
+        when(config.enableCompression()).thenReturn(false);
+        when(config.enableDecompression()).thenReturn(false);
+        when(config.compressionLevel()).thenReturn(OptionalInt.empty());
+        return config;
+    }
+
+    private ManagementConfig minimalManagementConfig() {
+        ManagementConfig config = mock(ManagementConfig.class);
+
+        when(config.host()).thenReturn("localhost");
+        when(config.idleTimeout()).thenReturn(Duration.ofMinutes(30));
+        when(config.acceptBacklog()).thenReturn(-1);
+        when(config.handle100ContinueAutomatically()).thenReturn(false);
+        when(config.useSemicolonAsQueryParamDelimiter()).thenReturn(false);
+        when(config.compressionContentSizeThreshold()).thenReturn(0);
+        when(config.logActivity()).thenReturn(false);
+        when(config.proxyProtocolTimeout()).thenReturn(Duration.ofSeconds(10));
+        when(config.tcpUserTimeout()).thenReturn(Duration.ZERO);
+        when(config.soLinger()).thenReturn(-1);
+        when(config.tcpKeepAlive()).thenReturn(false);
+        when(config.reuseAddress()).thenReturn(true);
+        when(config.trafficClass()).thenReturn(-1);
+        when(config.sendBufferSize()).thenReturn(OptionalInt.empty());
+        when(config.receiveBufferSize()).thenReturn(OptionalInt.empty());
+        when(config.readIdleTimeout()).thenReturn(Duration.ZERO);
+        when(config.writeIdleTimeout()).thenReturn(Duration.ZERO);
+
+        ServerLimitsConfig limits = mock(ServerLimitsConfig.class);
+        when(limits.maxHeaderSize()).thenReturn(MemorySize.of("20k"));
+        when(limits.maxChunkSize()).thenReturn(MemorySize.of("8k"));
+        when(limits.maxInitialLineLength()).thenReturn(4096);
+        when(limits.maxFormAttributeSize()).thenReturn(MemorySize.of("2k"));
+        when(limits.maxFormFields()).thenReturn(256);
+        when(limits.maxFormBufferedBytes()).thenReturn(MemorySize.of("1k"));
+        when(limits.maxQueryParameters()).thenReturn(1024);
+        when(config.limits()).thenReturn(limits);
+
+        ProxyConfig proxy = mock(ProxyConfig.class);
+        when(proxy.useProxyProtocol()).thenReturn(false);
+        when(config.proxy()).thenReturn(proxy);
+
+        WebsocketServerConfig ws = mock(WebsocketServerConfig.class);
+        when(ws.maxFrameSize()).thenReturn(Optional.empty());
+        when(ws.maxMessageSize()).thenReturn(Optional.empty());
+        when(ws.perFrameCompression()).thenReturn(true);
+        when(ws.perMessageCompression()).thenReturn(true);
+        when(ws.compressionLevel()).thenReturn(6);
+        when(ws.allowServerNoContext()).thenReturn(false);
+        when(ws.preferredClientNoContext()).thenReturn(false);
+        when(ws.closingTimeout()).thenReturn(10);
+        when(ws.acceptUnmaskedFrames()).thenReturn(false);
+        when(config.websocketServer()).thenReturn(ws);
+
         return config;
     }
 

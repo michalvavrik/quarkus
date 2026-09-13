@@ -29,6 +29,7 @@ import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.runtime.util.ClassPathUtils;
 import io.quarkus.tls.TlsConfiguration;
 import io.quarkus.tls.TlsConfigurationRegistry;
+import io.quarkus.vertx.http.runtime.ProxyConfig.ProxyProtocolListener;
 import io.quarkus.vertx.http.runtime.ServerSslConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
@@ -120,7 +121,7 @@ public class HttpServerOptionsUtils {
             ServerSSLOptions sslOptions = createServerSslOptions(bucket, clientAuth);
             SSLEngineOptions engineOptions = bucket.getSslEngineOptions().orElse(null);
             applyCommonOptions(config, httpBuildTimeConfig, httpConfig, websocketSubProtocols,
-                    httpConfig.determineSslHost());
+                    httpConfig.determineSslHost(), ProxyProtocolListener.HTTPS);
             return new ServerConfig(config, sslOptions, engineOptions);
         }
 
@@ -131,7 +132,7 @@ public class HttpServerOptionsUtils {
         }
         sslOptions.setClientAuth(getTlsClientAuth(httpConfig, httpBuildTimeConfig, launchMode));
         applyCommonOptions(config, httpBuildTimeConfig, httpConfig, websocketSubProtocols,
-                httpConfig.determineSslHost());
+                httpConfig.determineSslHost(), ProxyProtocolListener.HTTPS);
         return new ServerConfig(config, sslOptions);
     }
 
@@ -161,7 +162,7 @@ public class HttpServerOptionsUtils {
             ServerSSLOptions sslOptions = createServerSslOptions(bucket, clientAuth);
             SSLEngineOptions engineOptions = bucket.getSslEngineOptions().orElse(null);
             applyCommonOptionsForManagementInterface(config, managementBuildTimeConfig, managementConfig,
-                    websocketSubProtocols);
+                    websocketSubProtocols, ProxyProtocolListener.HTTPS);
             return new ServerConfig(config, sslOptions, engineOptions);
         }
 
@@ -172,7 +173,7 @@ public class HttpServerOptionsUtils {
         }
         sslOptions.setClientAuth(managementBuildTimeConfig.tlsClientAuth());
         applyCommonOptionsForManagementInterface(config, managementBuildTimeConfig, managementConfig,
-                websocketSubProtocols);
+                websocketSubProtocols, ProxyProtocolListener.HTTPS);
         return new ServerConfig(config, sslOptions);
     }
 
@@ -237,7 +238,8 @@ public class HttpServerOptionsUtils {
         int port = httpConfig.determinePort(launchMode);
         config.setPort(port);
 
-        applyCommonOptions(config, buildTimeConfig, httpConfig, websocketSubProtocols, httpConfig.host());
+        applyCommonOptions(config, buildTimeConfig, httpConfig, websocketSubProtocols, httpConfig.host(),
+                ProxyProtocolListener.HTTP);
         return config;
     }
 
@@ -256,7 +258,8 @@ public class HttpServerOptionsUtils {
         int port = httpConfig.determinePort(launchMode);
         config.setPort(port);
 
-        applyCommonOptionsForManagementInterface(config, buildTimeConfig, httpConfig, websocketSubProtocols);
+        applyCommonOptionsForManagementInterface(config, buildTimeConfig, httpConfig, websocketSubProtocols,
+                ProxyProtocolListener.HTTP);
         return config;
     }
 
@@ -271,7 +274,8 @@ public class HttpServerOptionsUtils {
             return null;
         }
         HttpServerConfig config = new HttpServerConfig();
-        applyCommonOptions(config, buildTimeConfig, httpConfig, websocketSubProtocols, httpConfig.host());
+        applyCommonOptions(config, buildTimeConfig, httpConfig, websocketSubProtocols, httpConfig.host(),
+                ProxyProtocolListener.DOMAIN_SOCKET);
         config.setHost(httpConfig.domainSocket());
         return config;
     }
@@ -287,13 +291,15 @@ public class HttpServerOptionsUtils {
             return null;
         }
         HttpServerConfig config = new HttpServerConfig();
-        applyCommonOptionsForManagementInterface(config, buildTimeConfig, managementConfig, websocketSubProtocols);
+        applyCommonOptionsForManagementInterface(config, buildTimeConfig, managementConfig, websocketSubProtocols,
+                ProxyProtocolListener.DOMAIN_SOCKET);
         config.setHost(managementConfig.domainSocket());
         return config;
     }
 
     /**
-     * Apply common HTTP server options to an {@link HttpServerConfig}.
+     * Apply common HTTP server options to an {@link HttpServerConfig}. The {@code PROXY} protocol is enabled on every
+     * listener when configured.
      */
     public static void applyCommonOptions(
             HttpServerConfig config,
@@ -301,6 +307,23 @@ public class HttpServerOptionsUtils {
             VertxHttpConfig httpConfig,
             List<String> websocketSubProtocols,
             String host) {
+        applyCommonOptions(config, httpBuildTimeConfig, httpConfig, websocketSubProtocols, host, null);
+    }
+
+    /**
+     * Apply common HTTP server options to an {@link HttpServerConfig}.
+     *
+     * @param listener the listener the config is for; the {@code PROXY} protocol is enabled on it only when
+     *        {@code quarkus.http.proxy.proxy-protocol-listeners} contains it. {@code null} enables the protocol
+     *        regardless of the listener.
+     */
+    public static void applyCommonOptions(
+            HttpServerConfig config,
+            VertxHttpBuildTimeConfig httpBuildTimeConfig,
+            VertxHttpConfig httpConfig,
+            List<String> websocketSubProtocols,
+            String host,
+            ProxyProtocolListener listener) {
         config.setHost(host);
         setIdleTimeout(httpConfig, config);
 
@@ -408,7 +431,8 @@ public class HttpServerOptionsUtils {
         }
 
         // Proxy protocol
-        config.getTcpConfig().setUseProxyProtocol(httpConfig.proxy().useProxyProtocol());
+        config.getTcpConfig().setUseProxyProtocol(httpConfig.proxy().useProxyProtocol()
+                && (listener == null || httpConfig.proxy().proxyProtocolListeners().contains(listener)));
 
         // Traffic shaping
         configureTrafficShapingIfEnabled(config, httpConfig);
@@ -422,6 +446,23 @@ public class HttpServerOptionsUtils {
             ManagementInterfaceBuildTimeConfig managementBuildTimeConfig,
             ManagementConfig managementConfig,
             List<String> websocketSubProtocols) {
+        applyCommonOptionsForManagementInterface(config, managementBuildTimeConfig, managementConfig,
+                websocketSubProtocols, null);
+    }
+
+    /**
+     * Apply common management interface options to an {@link HttpServerConfig}.
+     *
+     * @param listener the listener the config is for; the {@code PROXY} protocol is enabled on it only when
+     *        {@code quarkus.management.proxy.proxy-protocol-listeners} contains it. {@code null} enables the protocol
+     *        regardless of the listener.
+     */
+    public static void applyCommonOptionsForManagementInterface(
+            HttpServerConfig config,
+            ManagementInterfaceBuildTimeConfig managementBuildTimeConfig,
+            ManagementConfig managementConfig,
+            List<String> websocketSubProtocols,
+            ProxyProtocolListener listener) {
         config.setHost(managementConfig.host());
         config.setIdleTimeout(managementConfig.idleTimeout());
 
@@ -472,7 +513,8 @@ public class HttpServerOptionsUtils {
         }
 
         // Proxy protocol
-        tcpConfig.setUseProxyProtocol(managementConfig.proxy().useProxyProtocol());
+        tcpConfig.setUseProxyProtocol(managementConfig.proxy().useProxyProtocol()
+                && (listener == null || managementConfig.proxy().proxyProtocolListeners().contains(listener)));
         tcpConfig.setProxyProtocolTimeout(managementConfig.proxyProtocolTimeout());
 
         // TCP options
