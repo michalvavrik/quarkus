@@ -137,14 +137,18 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
             }
 
             Object proofIatObj = proofJwtClaims.getValue(Claims.iat.name());
+            if (proofIatObj == null) {
+                LOG.debug("DPoP proof iat claim is missing");
+                throw new AuthenticationFailedException(invalidDPoPProofMap(token));
+            }
             if (!(proofIatObj instanceof Number proofIatNumber)) {
-                LOG.warn("DPoP proof iat claim is missing or malformed");
+                LOG.debug("DPoP proof iat claim is malformed");
                 throw new AuthenticationFailedException(invalidDPoPProofMap(token));
             }
             long proofIat = proofIatNumber.longValue();
 
             final long nowSecs = System.currentTimeMillis() / 1000;
-            final int lifespanGrace = oidcTenantConfig.dpop().lifespanGrace();
+            final int lifespanGrace = oidcTenantConfig.token().lifespanGrace().orElse(0);
 
             if (proofIat > nowSecs + lifespanGrace) {
                 LOG.warn("DPoP proof iat claim is in the future");
@@ -160,7 +164,7 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
             Object proofExpObj = proofJwtClaims.getValue(Claims.exp.name());
             if (proofExpObj != null) {
                 if (!(proofExpObj instanceof Number proofExpNumber)) {
-                    LOG.warn("DPoP proof exp claim is malformed");
+                    LOG.debug("DPoP proof exp claim is malformed");
                     throw new AuthenticationFailedException(invalidDPoPProofMap(token));
                 }
                 long proofExp = proofExpNumber.longValue();

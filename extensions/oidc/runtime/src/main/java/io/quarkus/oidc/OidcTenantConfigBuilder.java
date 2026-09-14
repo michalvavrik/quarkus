@@ -537,22 +537,9 @@ public final class OidcTenantConfigBuilder extends OidcClientCommonConfigBuilder
      */
     public OidcTenantConfigBuilder dpop(Duration proofAge) {
         Objects.requireNonNull(proofAge);
-        record DpopImpl(Duration proofAge, int lifespanGrace) implements Dpop {
+        record DpopImpl(Duration proofAge) implements Dpop {
         }
-        this.dpop = new DpopImpl(proofAge, 0);
-        return this;
-    }
-
-    /**
-     * @param proofAge {@link Dpop#proofAge()}
-     * @param lifespanGrace {@link Dpop#lifespanGrace()}
-     * @return this builder
-     */
-    public OidcTenantConfigBuilder dpop(Duration proofAge, int lifespanGrace) {
-        Objects.requireNonNull(proofAge);
-        record DpopImpl(Duration proofAge, int lifespanGrace) implements Dpop {
-        }
-        this.dpop = new DpopImpl(proofAge, lifespanGrace);
+        this.dpop = new DpopImpl(proofAge);
         return this;
     }
 

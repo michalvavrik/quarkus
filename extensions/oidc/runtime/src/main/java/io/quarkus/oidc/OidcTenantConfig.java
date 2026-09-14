@@ -2866,22 +2866,15 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
 
     private static class Dpop implements io.quarkus.oidc.runtime.OidcTenantConfig.Dpop {
 
-        private Duration proofAge = Duration.ofMinutes(5);
-        private int lifespanGrace = 0;
+        private Duration proofAge = Duration.ofMinutes(2);
 
         @Override
         public Duration proofAge() {
             return proofAge;
         }
 
-        @Override
-        public int lifespanGrace() {
-            return lifespanGrace;
-        }
-
         private void addConfigMappingValues(io.quarkus.oidc.runtime.OidcTenantConfig.Dpop mapping) {
             proofAge = mapping.proofAge();
-            lifespanGrace = mapping.lifespanGrace();
         }
     }
 

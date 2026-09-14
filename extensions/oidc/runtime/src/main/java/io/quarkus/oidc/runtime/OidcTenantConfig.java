@@ -1127,6 +1127,8 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
          * number of seconds.
          * When checking token issuance, current time is allowed to be sooner than token issue time by at most the configured
          * number of seconds.
+         * This grace period is also applied when verifying the age and optional expiration of a Demonstrating Proof of
+         * Possession (DPoP) proof.
          */
         OptionalInt lifespanGrace();
 
@@ -1337,17 +1339,10 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
          * <p>
          * Evaluated as the difference between the server's current time and the DPoP proof's {@code iat}
          * (issued at) claim. Proofs exceeding this age are rejected with an {@code invalid_dpop_proof} error.
-         * Leeway for clock skew can be adjusted using {@link #lifespanGrace()}.
+         * Leeway for clock skew can be adjusted using {@link Token#lifespanGrace()}.
          */
-        @WithDefault("5M")
+        @WithDefault("2M")
         Duration proofAge();
-
-        /**
-         * The allowed clock skew, in seconds, when verifying the DPoP proof's age and its optional {@code exp}
-         * (expiration) claim.
-         */
-        @WithDefault("0")
-        int lifespanGrace();
     }
 
     interface Binding {

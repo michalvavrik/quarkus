@@ -354,8 +354,7 @@ final class TenantContextFactory {
         }
 
         if (!DPOP_SCHEME.equalsIgnoreCase(oidcConfig.token().authorizationScheme())) {
-            boolean dpopExplicitlyConfigured = oidcConfig.dpop().proofAge().toMinutes() != 5
-                    || oidcConfig.dpop().lifespanGrace() != 0;
+            boolean dpopExplicitlyConfigured = oidcConfig.dpop().proofAge().toMinutes() != 2;
             if (dpopExplicitlyConfigured) {
                 String tokenAuthorizationScheme = getConfigPropertyForTenant(tenantId, "token.authorization-scheme");
                 throw new ConfigurationException(

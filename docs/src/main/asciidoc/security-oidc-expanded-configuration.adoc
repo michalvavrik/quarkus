@@ -968,16 +968,17 @@ Please see the xref:security-oidc-bearer-token-authentication.adoc#mutual-tls-to
 
 ==== Demonstrating Proof of Possession (DPoP)
 
-The `quarkus.oidc.dpop.proof-age` and `quarkus.oidc.dpop.lifespan-grace` properties can be used to configure the DPoP proof freshness validation:
+The `quarkus.oidc.dpop.proof-age` property can be used to configure the DPoP proof freshness validation:
 
 .DPoP token binding
 [options="header"]
 |====
 |Property | Default |Description
 
-|quarkus.oidc.dpop.proof-age | 5 minutes | Maximum acceptable age of DPoP proof
-|quarkus.oidc.dpop.lifespan-grace | 0 | Grace period in seconds applied to DPoP proof age and expiry
+|quarkus.oidc.dpop.proof-age | 2 minutes | Maximum acceptable age of DPoP proof
 |====
+
+Note that the `quarkus.oidc.token.lifespan-grace` property is applied as a grace period to tolerate slight clock skews when verifying the DPoP proof age and its optional expiry claim.
 
 See also the <<bearer-token-source-properties>> section for details about enabling a Demonstrating Proof of Possession (DPoP) binding.
 

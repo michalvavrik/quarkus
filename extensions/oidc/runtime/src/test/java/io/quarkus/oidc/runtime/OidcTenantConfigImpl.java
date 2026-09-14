@@ -150,7 +150,6 @@ final class OidcTenantConfigImpl implements OidcTenantConfig {
         RESOURCE_METADATA_FORCE_HTTPS_SCHEME,
         DPOP,
         DPOP_PROOF_AGE,
-        DPOP_LIFESPAN_GRACE,
         LOGOUT_PATH,
         LOGOUT_POST_LOGOUT_PATH,
         LOGOUT_POST_LOGOUT_URI_PARAM,
@@ -622,13 +621,7 @@ final class OidcTenantConfigImpl implements OidcTenantConfig {
             @Override
             public Duration proofAge() {
                 invocationsRecorder.put(ConfigMappingMethods.DPOP_PROOF_AGE, true);
-                return Duration.ofMinutes(5);
-            }
-
-            @Override
-            public int lifespanGrace() {
-                invocationsRecorder.put(ConfigMappingMethods.DPOP_LIFESPAN_GRACE, true);
-                return 0;
+                return Duration.ofMinutes(2);
             }
         };
     }

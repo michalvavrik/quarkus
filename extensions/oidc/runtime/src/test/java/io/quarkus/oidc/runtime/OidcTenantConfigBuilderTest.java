@@ -65,8 +65,7 @@ public class OidcTenantConfigBuilderTest {
         assertTrue(config.allowUserInfoCache());
         assertTrue(config.cacheUserInfoInIdtoken().isEmpty());
         assertTrue(config.provider().isEmpty());
-        assertEquals(0, config.dpop().lifespanGrace());
-        assertEquals(Duration.ofMinutes(5), config.dpop().proofAge());
+        assertEquals(Duration.ofMinutes(2), config.dpop().proofAge());
 
         var introspectionCredentials = config.introspectionCredentials();
         assertNotNull(introspectionCredentials);
@@ -418,7 +417,7 @@ public class OidcTenantConfigBuilderTest {
                 .followRedirects(false)
                 .tlsConfigurationName("Teacher!")
                 .proxyConfigurationName("Kreacher!")
-                .dpop(Duration.ofSeconds(20), 2)
+                .dpop(Duration.ofSeconds(20))
                 .build();
 
         // OidcTenantConfig methods
@@ -438,7 +437,6 @@ public class OidcTenantConfigBuilderTest {
         assertTrue(config.cacheUserInfoInIdtoken().orElseThrow());
         assertEquals(Provider.FACEBOOK, config.provider().orElse(null));
         assertEquals(Duration.ofSeconds(20), config.dpop().proofAge());
-        assertEquals(2, config.dpop().lifespanGrace());
 
         var introspectionCredentials = config.introspectionCredentials();
         assertNotNull(introspectionCredentials);
