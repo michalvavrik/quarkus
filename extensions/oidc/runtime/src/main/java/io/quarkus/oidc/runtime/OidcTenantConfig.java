@@ -1127,8 +1127,6 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
          * number of seconds.
          * When checking token issuance, current time is allowed to be sooner than token issue time by at most the configured
          * number of seconds.
-         * This grace period is also applied when verifying the age and optional expiration of a Demonstrating Proof of
-         * Possession (DPoP) proof.
          */
         OptionalInt lifespanGrace();
 

@@ -2,7 +2,6 @@ package io.quarkus.oidc.runtime;
 
 import static io.netty.handler.codec.http.HttpHeaders.Values.NO_STORE;
 import static io.quarkus.oidc.runtime.OidcUtils.extractBearerToken;
-import static io.quarkus.oidc.runtime.TenantContextFactory.getConfigPropertyForTenant;
 import static io.quarkus.vertx.http.runtime.security.HttpSecurityUtils.getAuthenticationFailureFromEvent;
 
 import java.security.cert.Certificate;
@@ -145,31 +144,11 @@ public class BearerAuthenticationMechanism extends AbstractOidcAuthenticationMec
                 LOG.debug("DPoP proof iat claim is malformed");
                 throw new AuthenticationFailedException(invalidDPoPProofMap(token));
             }
-            long proofIat = proofIatNumber.longValue();
-
-            final long nowSecs = System.currentTimeMillis() / 1000;
-            final int lifespanGrace = oidcTenantConfig.token().lifespanGrace().orElse(0);
-
-            if (proofIat > nowSecs + lifespanGrace) {
-                LOG.warn("DPoP proof iat claim is in the future");
-                throw new AuthenticationFailedException(invalidDPoPProofMap(token));
-            }
-
-            if (nowSecs - proofIat > oidcTenantConfig.dpop().proofAge().toSeconds() + lifespanGrace) {
-                LOG.debugf("DPoP proof age exceeds the configured '%s' plus lifespan grace",
-                        getConfigPropertyForTenant(oidcTenantConfig.tenantId().get(), "dpop.proof-age"));
-                throw new AuthenticationFailedException(invalidDPoPProofMap(token));
-            }
 
             Object proofExpObj = proofJwtClaims.getValue(Claims.exp.name());
             if (proofExpObj != null) {
                 if (!(proofExpObj instanceof Number proofExpNumber)) {
                     LOG.debug("DPoP proof exp claim is malformed");
-                    throw new AuthenticationFailedException(invalidDPoPProofMap(token));
-                }
-                long proofExp = proofExpNumber.longValue();
-                if (nowSecs > proofExp + lifespanGrace) {
-                    LOG.debug("DPoP proof has expired");
                     throw new AuthenticationFailedException(invalidDPoPProofMap(token));
                 }
             }
