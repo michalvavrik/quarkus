@@ -9,8 +9,8 @@ import io.quarkus.security.identity.request.AnonymousAuthenticationRequest;
 import io.smallrye.mutiny.Uni;
 
 /**
- * Parent for Quarkus builtin {@link CurrentIdentityAssociation}s, which prevents code duplications.
- * All the implementations must be {@link jakarta.enterprise.context.RequestScoped} which is when this parent is thread-safe.
+ * Base class for Quarkus built-in {@link CurrentIdentityAssociation} implementations to prevent code duplication.
+ * Implementations must be {@link jakarta.enterprise.context.RequestScoped} to ensure thread safety.
  *
  * @see CurrentIdentityAssociation for more information
  */
@@ -27,9 +27,9 @@ public abstract class AbstractSecurityIdentityAssociation implements CurrentIden
     protected abstract IdentityProviderManager getIdentityProviderManager();
 
     /**
-     * Sets current deferred SecurityIdentity} and replaces any previous values set by this method
-     * and {@link #setIdentity(Uni)}. This method should typically be used early when the CDI request
-     * context is activated and not change during the request.
+     * Sets the current {@link SecurityIdentity}, replacing any previous values set by this method
+     * or {@link #setIdentity(Uni)}. This method should typically be called early when the CDI request
+     * context is activated and should remain unchanged during the request.
      *
      * @param identity The new identity
      * @see CurrentIdentityAssociation#setIdentity(Uni)
@@ -41,9 +41,9 @@ public abstract class AbstractSecurityIdentityAssociation implements CurrentIden
     }
 
     /**
-     * Sets current deferred {@link SecurityIdentity} and replaces any previous values set by this method
-     * and {@link #setIdentity(SecurityIdentity)}. This method should typically be used early when the CDI request
-     * context is activated and not change during the request.
+     * Sets the current deferred {@link SecurityIdentity}, replacing any previous values set by this method
+     * or {@link #setIdentity(SecurityIdentity)}. This method should typically be called early when the CDI request
+     * context is activated and should remain unchanged during the request.
      *
      * @param identity The new identity
      * @see CurrentIdentityAssociation#setIdentity(Uni)
@@ -55,10 +55,10 @@ public abstract class AbstractSecurityIdentityAssociation implements CurrentIden
     }
 
     /**
-     * Retrieves a {@link SecurityIdentity} only resolved when the returned {@link Uni} is subscribed.
-     * Subscribing to the deferred identity may trigger authentication if the user isn't already authenticated.
-     * Most of the time, the authentication only happens once per CDI request context as Quarkus Security memoize
-     * this deferred identity, therefore further subscriptions to the returned {@link Uni} are cheap.
+     * Retrieves a deferred {@link SecurityIdentity} that is resolved when the returned {@link Uni} is subscribed.
+     * Subscribing may trigger authentication if the user is not already authenticated.
+     * Quarkus Security memoizes this deferred identity, meaning authentication typically occurs only once
+     * per CDI request context. Subsequent subscriptions are cheap.
      *
      * @return {@link SecurityIdentity}; never null
      * @see CurrentIdentityAssociation#getDeferredIdentity()
@@ -74,10 +74,11 @@ public abstract class AbstractSecurityIdentityAssociation implements CurrentIden
     }
 
     /**
-     * Retrieve the {@link SecurityIdentity}. It triggers the authentication request when it is set to null.
+     * Retrieves the {@link SecurityIdentity}. If the identity is not yet set,
+     * this method triggers an authentication request.
      *
      * @return {@link SecurityIdentity}; never null
-     * @throws BlockingOperationNotAllowedException when the {@link SecurityIdentity} is set to null and blocking
+     * @throws BlockingOperationNotAllowedException if the identity is not set and blocking
      *         operations are not allowed
      * @see CurrentIdentityAssociation#getIdentity()
      */
@@ -105,8 +106,8 @@ public abstract class AbstractSecurityIdentityAssociation implements CurrentIden
     }
 
     /**
-     * Retrieve the {@link SecurityIdentity} without triggering an authentication request.
-     * A null identity value means that the authentication has not yet occurred.
+     * Retrieves the {@link SecurityIdentity} without triggering an authentication request.
+     * A null identity value means that authentication has not yet occurred.
      *
      * @return the current {@link SecurityIdentity}, or {@code null} if none exists
      */
