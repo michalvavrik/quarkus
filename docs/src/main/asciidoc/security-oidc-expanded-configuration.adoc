@@ -969,7 +969,11 @@ Please see the xref:security-oidc-bearer-token-authentication.adoc#mutual-tls-to
 [[dpop-token-binding]]
 ==== Demonstrating Proof of Possession (DPoP)
 
-The `quarkus.oidc.dpop.proof-age` property can be used to configure the DPoP proof freshness validation:
+https://datatracker.ietf.org/doc/html/rfc9449[RFC 9449] describes a Demonstrating Proof of Possession (DPoP) mechanism for cryptographically binding an access token to the client.
+To enable the DPoP binding, set `quarkus.oidc.token.authorization-scheme=DPoP` to accept the DPoP access tokens sent as `Authorization: DPoP <token>`.
+See the <<bearer-token-source-properties>> section for more information.
+
+Use the following properties to configure the DPoP binding restrictions:
 
 .DPoP token binding
 [options="header"]
@@ -979,10 +983,8 @@ The `quarkus.oidc.dpop.proof-age` property can be used to configure the DPoP pro
 |quarkus.oidc.dpop.proof-age | 2 minutes | Maximum acceptable age of DPoP proof
 |====
 
+The `quarkus.oidc.dpop.proof-age` property can be used to configure the DPoP proof freshness validation.
 Note that the `quarkus.oidc.token.lifespan-grace` property is applied as a grace period to tolerate slight clock skews when verifying the DPoP proof age and its optional expiry claim.
-
-You can set `quarkus.oidc.token.authorization-scheme=DPoP` to accept the DPoP access tokens sent as `Authorization: DPoP <token>`.
-See the xref:security-oidc-bearer-token-authentication.adoc#demonstrating-proof-of-possession-dpop[Demonstrating Proof of Possession for access tokens] section for more information.
 
 [[bearer-token-source-properties]]
 === Bearer token header
