@@ -1,8 +1,11 @@
 package io.quarkus.resteasy.deployment;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 
 import jakarta.servlet.DispatcherType;
 import jakarta.ws.rs.core.Application;
@@ -11,6 +14,8 @@ import org.jboss.logging.Logger;
 import org.jboss.metadata.web.spec.ServletMappingMetaData;
 import org.jboss.resteasy.plugins.server.servlet.HttpServlet30Dispatcher;
 
+import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
+import io.quarkus.arc.processor.DotNames;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.Feature;
@@ -21,11 +26,15 @@ import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.resteasy.common.deployment.ResteasyInjectionReadyBuildItem;
 import io.quarkus.resteasy.runtime.ResteasyFilter;
 import io.quarkus.resteasy.runtime.ResteasyServlet;
+import io.quarkus.resteasy.runtime.ServletStaticResourceShadowingCheck;
+import io.quarkus.resteasy.runtime.StaticResourceShadowingCheck;
 import io.quarkus.resteasy.server.common.deployment.ResteasyServerConfigBuildItem;
 import io.quarkus.resteasy.server.common.deployment.ResteasyServletMappingBuildItem;
 import io.quarkus.resteasy.server.common.spi.ResteasyJaxrsConfigBuildItem;
 import io.quarkus.undertow.deployment.FilterBuildItem;
+import io.quarkus.undertow.deployment.KnownPathsBuildItem;
 import io.quarkus.undertow.deployment.ServletBuildItem;
+import io.quarkus.undertow.deployment.ServletContextAttributeBuildItem;
 import io.quarkus.undertow.deployment.ServletContextPathBuildItem;
 import io.quarkus.undertow.deployment.ServletInitParamBuildItem;
 import io.quarkus.undertow.deployment.WebMetadataBuildItem;
@@ -92,7 +101,7 @@ public class ResteasyServletProcessor {
             String path = resteasyServerConfig.get().getPath();
 
             //if JAX-RS is installed at the root location we use a filter, otherwise we use a Servlet and take over the whole mapped path
-            if (path.equals("/") || path.isEmpty()) {
+            if (isRootPath(path)) {
                 filter.produce(FilterBuildItem.builder(JAX_RS_FILTER_NAME, ResteasyFilter.class.getName()).setLoadOnStartup(1)
                         .addFilterServletNameMapping("default", DispatcherType.REQUEST)
                         .addFilterServletNameMapping("default", DispatcherType.FORWARD)
@@ -113,6 +122,56 @@ public class ResteasyServletProcessor {
                         .produce(new ServletInitParamBuildItem(initParameter.getKey(), initParameter.getValue()));
             }
         }
+    }
+
+    @BuildStep
+    AdditionalBeanBuildItem servletStaticResourceShadowingCheck(Capabilities capabilities) {
+        if (!capabilities.isPresent(Capability.SERVLET)) {
+            return null;
+        }
+        // runs the check at startup when the static resource paths are set, see checkStaticResourceShadowing
+        return AdditionalBeanBuildItem.builder().addBeanClass(ServletStaticResourceShadowingCheck.class)
+                .setDefaultScope(DotNames.SINGLETON).build();
+    }
+
+    @BuildStep
+    void checkStaticResourceShadowing(Capabilities capabilities,
+            Optional<ResteasyServerConfigBuildItem> resteasyServerConfig,
+            Optional<KnownPathsBuildItem> knownPaths,
+            Optional<WebMetadataBuildItem> webMetadata,
+            BuildProducer<ServletContextAttributeBuildItem> servletContextAttributes) {
+        // only the filter mapped to the default servlet lets it serve static resources before RESTEasy, the servlet
+        // takes over its whole path
+        if (!capabilities.isPresent(Capability.SERVLET) || resteasyServerConfig.isEmpty()
+                || !isRootPath(resteasyServerConfig.get().getPath()) || knownPaths.isEmpty()) {
+            return;
+        }
+        // the known paths are empty in dev mode, the static resources are then served from the source directories
+        Set<String> filePaths = new TreeSet<>();
+        for (String file : knownPaths.get().knownFiles) {
+            filePaths.add("/" + file);
+        }
+        Set<String> paths = new TreeSet<>(filePaths);
+        // the default servlet serves a directory containing a welcome file, see UndertowDeploymentRecorder#createDeployment
+        for (String welcomeFile : welcomeFiles(webMetadata)) {
+            paths.addAll(StaticResourceShadowingCheck.requestPaths(filePaths, welcomeFile));
+        }
+        if (!paths.isEmpty()) {
+            servletContextAttributes.produce(new ServletContextAttributeBuildItem(
+                    ServletStaticResourceShadowingCheck.STATIC_RESOURCE_PATHS, new ArrayList<>(paths)));
+        }
+    }
+
+    private static List<String> welcomeFiles(Optional<WebMetadataBuildItem> webMetadata) {
+        List<String> welcomeFiles = null;
+        if (webMetadata.isPresent() && webMetadata.get().getWebMetaData().getWelcomeFileList() != null) {
+            welcomeFiles = webMetadata.get().getWebMetaData().getWelcomeFileList().getWelcomeFiles();
+        }
+        return welcomeFiles != null ? welcomeFiles : List.of("index.html", "index.htm");
+    }
+
+    private static boolean isRootPath(String path) {
+        return path.equals("/") || path.isEmpty();
     }
 
     private String getMappingPath(String path) {

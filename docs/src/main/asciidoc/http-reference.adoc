@@ -30,6 +30,8 @@ To serve static resources from the application jar, you must place them in the `
 was chosen as it is the standard location for resources in `jar` files as defined by the Servlet spec. Even though
 Quarkus can be used without Servlet, following this convention allows existing code that places its resources in this
 location to function correctly.
+For `GET` and `HEAD` requests, a static resource is served instead of a Jakarta REST endpoint with the same path, even if the endpoint is secured. With Undertow, only RESTEasy Classic at the root path is affected.
+When it can detect such endpoints, Quarkus warns about them at startup.
 
 === From web dependencies like webjars or mvnpm
 
