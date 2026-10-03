@@ -2,6 +2,7 @@ package io.quarkus.keycloak.pep.runtime;
 
 import static io.quarkus.keycloak.pep.runtime.KeycloakPolicyEnforcerUtil.createPolicyEnforcer;
 import static io.quarkus.keycloak.pep.runtime.KeycloakPolicyEnforcerUtil.getOidcTenantConfig;
+import static io.quarkus.keycloak.pep.runtime.KeycloakPolicyEnforcerUtil.getProxyConfiguration;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -9,6 +10,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
 
 import org.keycloak.adapters.authorization.PolicyEnforcer;
@@ -21,6 +23,7 @@ import io.quarkus.oidc.common.runtime.OidcTlsSupport;
 import io.quarkus.oidc.runtime.BlockingTaskRunner;
 import io.quarkus.oidc.runtime.TenantConfigBean;
 import io.quarkus.proxy.ProxyConfigurationRegistry;
+import io.quarkus.runtime.StartupEvent;
 import io.quarkus.security.spi.runtime.BlockingSecurityExecutor;
 import io.quarkus.tls.TlsConfigurationRegistry;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
@@ -98,6 +101,18 @@ public class DefaultPolicyEnforcerResolver implements PolicyEnforcerResolver {
 
     boolean hasDynamicPolicyEnforcers() {
         return dynamicConfigResolver != null;
+    }
+
+    static void validateStaticTenants(@Observes StartupEvent event, TenantConfigBean tenantConfigBean,
+            KeycloakPolicyEnforcerConfig config, ProxyConfigurationRegistry proxyConfigurationRegistry) {
+        // policy enforcers are created lazily because their creation requires Keycloak to be available,
+        // but configuration of the static tenants can be validated during the application startup
+        getProxyConfiguration(tenantConfigBean.getDefaultTenant().oidcConfig().proxy().proxyConfigurationName(),
+                proxyConfigurationRegistry);
+        for (String tenant : config.namedTenants().keySet()) {
+            getProxyConfiguration(getOidcTenantConfig(tenantConfigBean, tenant).proxy().proxyConfigurationName(),
+                    proxyConfigurationRegistry);
+        }
     }
 
     private Uni<PolicyEnforcer> getDynamicPolicyEnforcer(RoutingContext routingContext, OidcTenantConfig config) {
