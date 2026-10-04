@@ -30,6 +30,10 @@
             <groupId>io.smallrye</groupId>
             <artifactId>smallrye-jwt-build</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-tls-registry-deployment-spi</artifactId>
+        </dependency>
         <!-- Exclusions follow the vertx-grpc pattern used by the OTel exporter (integration-tests/opentelemetry-vertx-exporter). -->
         <dependency>
             <groupId>io.vertx</groupId>
