@@ -40,8 +40,6 @@ public @interface X509Svid {
     /**
      * Name of the TLS registry configuration that the X.509-SVID is provisioned into. Other extensions, such as the REST
      * client, can then reference this TLS configuration by name.
-     * <p>
-     * Application startup fails if a TLS configuration with this name already exists.
      */
     String tls();
 

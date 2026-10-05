@@ -3,6 +3,7 @@ package io.quarkus.spiffe.client.runtime.internal;
 import java.security.KeyStore;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import javax.net.ssl.SSLContext;
 
@@ -13,7 +14,19 @@ import io.vertx.core.net.SSLEngineOptions;
 import io.vertx.core.net.ServerSSLOptions;
 import io.vertx.core.net.TrustOptions;
 
-record SpiffeTlsConfiguration(String tlsConfigurationName, Duration reloadPeriod, String spiffeId) implements TlsConfiguration {
+public record SpiffeTlsConfiguration(String tlsConfigurationName, Duration reloadPeriod,
+        String spiffeId) implements TlsConfiguration {
+
+    public SpiffeTlsConfiguration(X509SvidAnnotationDetails details) {
+        this(details.tlsConfigurationName, details.reloadPeriod, details.spiffeId);
+    }
+
+    public void initialize(Runnable onComplete, Consumer<Throwable> onFailure) {
+        // FIXME: impl. me! must be synchronized with close or after calling on complete must check if closed
+    }
+
+    public record X509SvidAnnotationDetails(String tlsConfigurationName, String spiffeId, Duration reloadPeriod) {
+    }
 
     // TODO: validate reload period is lower than svid ttl
     // TODO: validate reload period correct period during the build time
@@ -21,6 +34,10 @@ record SpiffeTlsConfiguration(String tlsConfigurationName, Duration reloadPeriod
     // TODO: validate TLS registry present or fail build
     // TODO: ensure all methods are enforcing spiffe id authorization check
     // TODO: validate spiffe id
+
+    public void close() {
+        // FIXME: impl. me!
+    }
 
     @Override
     public String getName() {
