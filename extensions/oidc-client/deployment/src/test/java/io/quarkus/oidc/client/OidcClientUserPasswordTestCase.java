@@ -80,6 +80,27 @@ public class OidcClientUserPasswordTestCase {
     }
 
     @Test
+    public void testPasswordGrantTokenProviderWithDifferentAdditionalParams() {
+        // the same TokenProvider is used with different additional parameters,
+        // every returned token must match the parameters it was requested with
+        String openidToken = getTokenWithScope("openid");
+        assertScope(openidToken, "openid", "phone");
+
+        // the immediately repeated request with the same parameters must return the cached token
+        assertEquals(openidToken, getTokenWithScope("openid"));
+
+        String phoneToken = getTokenWithScope("openid phone");
+        assertScope(phoneToken, "phone", null);
+        assertNotEquals(openidToken, phoneToken);
+
+        // the immediately repeated request with the same parameters must return the cached token
+        assertEquals(phoneToken, getTokenWithScope("openid phone"));
+
+        // switching back to the first parameters must not return the token acquired with the second ones
+        assertScope(getTokenWithScope("openid"), "openid", "phone");
+    }
+
+    @Test
     public void testNamedPasswordGrantTokenProvider() {
         String token = RestAssured.when().get("/client/public-tokenprovider")
                 .then()
@@ -147,6 +168,29 @@ public class OidcClientUserPasswordTestCase {
                 .then()
                 .statusCode(200)
                 .body(equalTo("alice"));
+    }
+
+    private static String getTokenWithScope(String scope) {
+        String token = RestAssured.given().queryParam("scope", scope)
+                .when().get("/client/tokenprovider-with-scope")
+                .then()
+                .statusCode(200)
+                .extract().body().asString();
+        RestAssured.given().auth().oauth2(token)
+                .when().get("/protected")
+                .then()
+                .statusCode(200)
+                .body(equalTo("alice"));
+        return token;
+    }
+
+    private static void assertScope(String token, String expectedScope, String unexpectedScope) {
+        String scope = OidcCommonUtils.decodeJwtContent(token).getString("scope");
+        assertTrue(scope.contains(expectedScope), "Expected scope '" + expectedScope + "' but got '" + scope + "'");
+        if (unexpectedScope != null) {
+            assertFalse(scope.contains(unexpectedScope),
+                    "Unexpected scope '" + unexpectedScope + "' in '" + scope + "'");
+        }
     }
 
     private static void assertTokensNotNull(String[] tokens) {

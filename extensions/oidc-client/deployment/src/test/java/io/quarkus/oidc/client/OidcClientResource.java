@@ -57,6 +57,12 @@ public class OidcClientResource {
     }
 
     @GET
+    @Path("tokenprovider-with-scope")
+    public Uni<String> tokenProviderWithScope(@QueryParam("scope") String scope) {
+        return scopesAsAdditionalParamsTokenProvider.getAccessToken(Map.of("scope", scope));
+    }
+
+    @GET
     @Path("public-tokenprovider")
     public Uni<String> publicTokenProvider() {
         return publicTokenProvider.getAccessToken();
