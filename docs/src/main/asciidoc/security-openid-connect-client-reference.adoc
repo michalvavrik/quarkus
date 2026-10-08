@@ -276,6 +276,35 @@ public class OidcClientResource {
 
 You can also inject a `TokenProvider` that is bound to a named OIDC client, see <<named-oidc-clients>>.
 
+`TokenProvider` can also acquire the access token with additional grant parameters, for example a `scope` parameter restricting the scope of the token:
+
+[source,java]
+----
+import java.util.Map;
+
+import jakarta.inject.Inject;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+
+import io.quarkus.oidc.client.spi.TokenProvider;
+
+@Path("/service")
+public class OidcClientResource {
+
+   @Inject
+   TokenProvider tokenProvider;
+
+   public Uni<String> getAccessToken() {
+       return tokenProvider.getAccessToken(Map.of("scope", "orders:read"));
+   }
+}
+----
+
+The access and refresh tokens are cached and refreshed separately for every set of additional parameters because the parameters can affect which tokens are issued.
+The `client_assertion` and `client_assertion_type` parameters only authenticate the client and are not part of the cache key, so they can be regenerated for every call.
+The cache keeps the tokens of a limited number of parameter sets, the tokens which expire first are evicted when it is full.
+Therefore, parameters whose value is used only once, such as a `subject_token` of the token exchange grant, a `device_code` or an `auth_req_id`, are better passed directly to `OidcClient#getTokens(Map)` which does not cache the tokens.
+
 When a Quarkus extension must acquire OIDC tokens by using one of the token grants supported by the OIDC client, it can also use `TokenProvider` while depending only on the OIDC Client SPI:
 
 . Add the following dependency:
@@ -994,6 +1023,9 @@ For example:
 quarkus.oidc-client.refresh-interval=1m <1>
 ----
 <1> Check every minute whether the current access token is expired and must be refreshed.
+
+The asynchronous refresh only concerns the access token acquired with the default additional parameters of the `Tokens` producer or the filter.
+The access tokens acquired with other additional parameters, for example with `TokenProvider#getAccessToken(Map)`, are refreshed when they are requested the next time.
 
 If the access token needs to be refreshed but no refresh token is available, an attempt is made to acquire a new token with a configured grant, such as `client_credentials`.
 
