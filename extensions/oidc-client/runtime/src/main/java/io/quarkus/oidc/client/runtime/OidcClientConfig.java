@@ -194,6 +194,15 @@ public interface OidcClientConfig extends OidcClientCommonConfig {
     Optional<Duration> refreshInterval();
 
     /**
+     * Maximum number of token sets cached by an OIDC client filter or a token producer such as {@code TokenProvider}.
+     * Tokens acquired with different additional grant parameters, for example, with different scopes or
+     * subject tokens, are cached as separate token sets.
+     * This property does not apply when the {@link OidcClient} API is used directly.
+     */
+    @WithDefault("15")
+    int tokenCacheMaxSize();
+
+    /**
      * Creates {@link OidcClientConfigBuilder} builder populated with documented default values.
      *
      * @return OidcClientConfigBuilder builder
