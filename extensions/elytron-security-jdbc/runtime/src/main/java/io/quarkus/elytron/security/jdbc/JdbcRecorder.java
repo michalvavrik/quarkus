@@ -18,9 +18,10 @@ public class JdbcRecorder {
     private static final Provider[] PROVIDERS = new Provider[] { new WildFlyElytronPasswordProvider() };
 
     /**
-     * Create a runtime value for a {@linkplain JdbcSecurityRealm}
+     * Create a {@linkplain JdbcSecurityRealm} from the configured principal queries.
      *
-     * @return - runtime value wrapper for the SecurityRealm
+     * @param runtimeConfig - the JDBC realm runtime configuration
+     * @return - the SecurityRealm
      */
     public static SecurityRealm createRealm(JdbcSecurityRealmRuntimeConfig runtimeConfig) {
         Supplier<Provider[]> providers = new Supplier<Provider[]>() {

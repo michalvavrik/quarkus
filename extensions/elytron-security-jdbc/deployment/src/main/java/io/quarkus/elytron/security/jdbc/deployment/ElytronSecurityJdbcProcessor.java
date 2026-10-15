@@ -15,6 +15,7 @@ import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageSecurityProviderBuildItem;
 import io.quarkus.elytron.security.deployment.ElytronPasswordMarkerBuildItem;
+import io.quarkus.elytron.security.deployment.ElytronSecurityRealmNameValidationBuildItem;
 import io.quarkus.elytron.security.jdbc.JdbcRecorder;
 import io.quarkus.elytron.security.jdbc.JdbcSecurityRealmBuildTimeConfig;
 import io.quarkus.elytron.security.jdbc.JdbcSecurityRealmRuntimeConfig;
@@ -34,14 +35,15 @@ class ElytronSecurityJdbcProcessor {
     }
 
     /**
-     * Check to see if a JdbcRealmConfig was specified and enabled and create a
-     * {@linkplain org.wildfly.security.auth.realm.JdbcSecurityRealmBuildTimeConfig}
-     * runtime value to process the user/roles properties files. This also registers the names of the user/roles properties
-     * files to include the build artifact.
+     * Register a {@linkplain org.wildfly.security.auth.realm.jdbc.JdbcSecurityRealm} service built from the configured
+     * principal queries.
      */
     @BuildStep(onlyIf = IsJdbcSecurityEnabled.class)
     void configureJdbcRealmAuthConfig(ServiceRegistrar serviceRegistrar,
-            JdbcSecurityRealmBuildTimeConfig jdbcSecurityRealmBuildTimeConfig) {
+            JdbcSecurityRealmBuildTimeConfig jdbcSecurityRealmBuildTimeConfig,
+            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
+        realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(jdbcSecurityRealmBuildTimeConfig.realmName(),
+                "quarkus.security.jdbc.realm-name", Feature.SECURITY_JDBC.getName()));
         serviceRegistrar.forService(SecurityRealm.class, jdbcSecurityRealmBuildTimeConfig.realmName())
                 .atPhase(Phase.DATA)
                 .after(BeanContainer.class)

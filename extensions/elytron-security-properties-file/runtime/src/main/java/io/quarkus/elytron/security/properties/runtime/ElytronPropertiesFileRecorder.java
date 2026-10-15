@@ -149,9 +149,10 @@ public class ElytronPropertiesFileRecorder {
     }
 
     /**
-     * Create a runtime value for a {@linkplain LegacyPropertiesSecurityRealm}
+     * Create a {@linkplain LegacyPropertiesSecurityRealm} and load the users and roles properties files into it.
      *
-     * @return - runtime value wrapper for the SecurityRealm
+     * @param propertiesConfig - properties config
+     * @return - the SecurityRealm
      * @throws Exception
      */
     public static SecurityRealm createRealm(SecurityUsersConfig propertiesConfig) throws Exception {

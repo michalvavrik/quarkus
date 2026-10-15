@@ -11,6 +11,7 @@ import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBuildItem;
 import io.quarkus.elytron.security.deployment.ElytronPasswordMarkerBuildItem;
+import io.quarkus.elytron.security.deployment.ElytronSecurityRealmNameValidationBuildItem;
 import io.quarkus.elytron.security.properties.runtime.ElytronPropertiesFileRecorder;
 import io.quarkus.elytron.security.properties.runtime.MPRealmRuntimeConfig;
 import io.quarkus.elytron.security.properties.runtime.PropertiesRealmConfig;
@@ -20,9 +21,7 @@ import io.quarkus.elytron.security.properties.runtime.SecurityUsersConfig;
  * The build time process for the security aspects of the deployment. This creates {@linkplain BuildStep}s for integration
  * with the Elytron security services. This supports the Elytron
  * {@linkplain org.wildfly.security.auth.realm.LegacyPropertiesSecurityRealm}
- * and {@linkplain org.wildfly.security.auth.realm.SimpleMapBackedSecurityRealm} realm implementations. Others could be
- * added by creating an extension that produces a SecurityRealmBuildItem for the realm.
- *
+ * and {@linkplain org.wildfly.security.auth.realm.SimpleMapBackedSecurityRealm} realm implementations.
  */
 class ElytronPropertiesProcessor {
     private static final Logger log = Logger.getLogger(ElytronPropertiesProcessor.class.getName());
@@ -35,18 +34,19 @@ class ElytronPropertiesProcessor {
     }
 
     /**
-     * Check to see if a PropertiesRealmConfig was specified and enabled and create a
-     * {@linkplain org.wildfly.security.auth.realm.LegacyPropertiesSecurityRealm}
-     * runtime value to process the user/roles properties files. This also registers the names of the user/roles properties
-     * files
-     * to include the build artifact.
+     * Check to see if a PropertiesRealmConfig was specified and enabled and register a
+     * {@linkplain org.wildfly.security.auth.realm.LegacyPropertiesSecurityRealm} service that loads the users and roles
+     * properties files.
      */
     @BuildStep
-    void configureFileRealmAuthConfig(ServiceRegistrar serviceRegistrar) {
+    void configureFileRealmAuthConfig(ServiceRegistrar serviceRegistrar,
+            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
         if (propertiesConfig.file().enabled()) {
             PropertiesRealmConfig realmConfig = propertiesConfig.file();
             log.debugf("Configuring from PropertiesRealmConfig, users=%s, roles=%s", realmConfig.users(),
                     realmConfig.roles());
+            realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(realmConfig.realmName(),
+                    "quarkus.security.users.file.realm-name", Feature.SECURITY_PROPERTIES_FILE.getName()));
             serviceRegistrar.forService(SecurityRealm.class, realmConfig.realmName())
                     .atPhase(Phase.DATA)
                     .require(SecurityUsersConfig.class)
@@ -75,9 +75,12 @@ class ElytronPropertiesProcessor {
      * {@linkplain org.wildfly.security.auth.realm.SimpleMapBackedSecurityRealm}.
      */
     @BuildStep
-    void configureMPRealmConfig(ServiceRegistrar serviceRegistrar) {
+    void configureMPRealmConfig(ServiceRegistrar serviceRegistrar,
+            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
         if (propertiesConfig.embedded().enabled()) {
             log.info("Configuring from MPRealmConfig");
+            realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(propertiesConfig.embedded().realmName(),
+                    "quarkus.security.users.embedded.realm-name", Feature.SECURITY_PROPERTIES_FILE.getName()));
             serviceRegistrar.forService(SecurityRealm.class, propertiesConfig.embedded().realmName())
                     .atPhase(Phase.DATA)
                     .require(MPRealmRuntimeConfig.class)

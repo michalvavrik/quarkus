@@ -18,7 +18,8 @@ import org.wildfly.security.permission.PermissionVerifier;
 import io.quarkus.arc.runtime.BeanContainer;
 
 /**
- * The runtime security recorder class that provides methods for creating RuntimeValues for the deployment security objects.
+ * Runtime helpers used by the Elytron security services to assemble the {@linkplain SecurityDomain} and to hand it
+ * over to the identity providers.
  */
 public class ElytronRecorder {
     static final Logger log = Logger.getLogger(ElytronRecorder.class);
@@ -32,7 +33,7 @@ public class ElytronRecorder {
      *
      * @param realmName - the default realm name
      * @param realm - the default SecurityRealm
-     * @return a runtime value for the SecurityDomain.Builder
+     * @return the SecurityDomain.Builder
      * @throws Exception on any error
      */
     public static SecurityDomain.Builder configureDomainBuilder(String realmName, SecurityRealm realm)
@@ -74,7 +75,7 @@ public class ElytronRecorder {
      *
      * @param builder - SecurityDomain.Builder
      * @param realmName - the name of the SecurityRealm
-     * @param realm - the runtime value for the SecurityRealm
+     * @param realm - the SecurityRealm
      */
     public static void addRealm(SecurityDomain.Builder builder, String realmName, SecurityRealm realm) {
         builder.addRealm(realmName, realm).setRoleDecoder(new RoleDecoder() {
