@@ -1248,8 +1248,8 @@ public class OidcClientRequestCustomFilter extends AbstractOidcClientRequestFilt
 }
 ----
 
-The custom filter caches the tokens per set of additional grant parameters, see <<additional-grant-parameters-token-cache>>.
-The client assertion is one of these parameters, so the filter acquires new tokens whenever it provides a new client assertion.
+TIP: To make the most of the <<additional-grant-parameters-token-cache,token cache>>, let Quarkus load the client assertion with the `quarkus.oidc-client.credentials.jwt.token-path` property instead of using a custom filter.
+Quarkus then renews the client assertion without affecting the cached tokens.
 
 ==== SPIFFE JWT-SVID
 
