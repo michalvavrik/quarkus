@@ -194,11 +194,14 @@ public interface OidcClientConfig extends OidcClientCommonConfig {
     Optional<Duration> refreshInterval();
 
     /**
-     * Approximate maximum number of token sets cached by an OIDC client filter or a token producer such as
-     * {@code TokenProvider}. The cache can briefly exceed this number when tokens are requested concurrently.
-     * Tokens acquired with different additional grant parameters, for example, with different scopes or
-     * subject tokens, are cached as separate token sets.
-     * This property does not apply when the {@link OidcClient} API is used directly.
+     * Maximum number of sets of additional grant parameters for which an OIDC client filter or a token producer,
+     * such as {@code TokenProvider}, caches the tokens.
+     * Tokens requested with additional grant parameters, for example, with different scopes or subject tokens
+     * passed to {@code TokenProvider#getAccessToken(Map)}, are cached per set of parameters.
+     * This number is approximate, the cache can briefly exceed it when tokens are requested concurrently.
+     * This property is not relevant when tokens are acquired with the configured grant only, without additional
+     * grant parameters, because such tokens are always cached.
+     * Neither does it apply when the {@link OidcClient} API is used directly.
      */
     @WithDefault("15")
     int tokenCacheMaxSize();

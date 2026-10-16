@@ -457,6 +457,51 @@ class TokensHelperTest {
     }
 
     @Test
+    void testTokensWithoutParametersAreNeverEvicted() {
+        helper = new TokensHelper(2);
+        Tokens noParams = getTokens(NO_PARAMS);
+        getTokens(SCOPE_A);
+        getTokens(SCOPE_B);
+        assertThat(client.requests()).hasSize(3);
+
+        // the cache is full and the tokens without parameters are the least recently used ones,
+        // still, the tokens for SCOPE_A are evicted instead
+        assertIssuedFor(getTokens(SCOPE_C), SCOPE_C);
+        assertThat(client.requests()).hasSize(4);
+        assertThat(getTokens(NO_PARAMS).getAccessToken()).isEqualTo(noParams.getAccessToken());
+        getTokens(SCOPE_B);
+        getTokens(SCOPE_C);
+        assertThat(client.requests()).hasSize(4);
+        assertIssuedFor(getTokens(SCOPE_A), SCOPE_A);
+        assertThat(client.requests()).hasSize(5);
+    }
+
+    @Test
+    void testTokensWithoutParametersDoNotCountTowardsCacheSize() {
+        helper = new TokensHelper(2);
+        getTokens(NO_PARAMS);
+        getTokens(SCOPE_A);
+        getTokens(SCOPE_B);
+        assertThat(client.requests()).hasSize(3);
+
+        // two sets of parameters fit into the cache next to the tokens without parameters, nothing is evicted
+        getTokens(NO_PARAMS);
+        getTokens(SCOPE_A);
+        getTokens(SCOPE_B);
+        assertThat(client.requests()).hasSize(3);
+    }
+
+    @Test
+    void testFailedRequestWithoutParametersIsRepeatedByNextCall() {
+        client.failRequests(() -> new IllegalStateException("token endpoint unavailable"));
+        assertThatThrownBy(() -> getTokens(NO_PARAMS)).isInstanceOf(IllegalStateException.class);
+        client.succeedRequests();
+
+        assertIssuedFor(getTokens(NO_PARAMS), NO_PARAMS);
+        assertThat(client.requests()).hasSize(2);
+    }
+
+    @Test
     void testTokenCacheMaxSizeMustBePositive() {
         assertThatThrownBy(() -> new TokensHelper(0)).isInstanceOf(IllegalArgumentException.class);
     }

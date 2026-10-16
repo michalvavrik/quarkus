@@ -33,6 +33,9 @@ public class TokensHelper {
         }
     };
 
+    // the tokens acquired without additional parameters are the typical case, they are kept in a dedicated holder
+    // which is never evicted and does not count towards the cache size limit
+    private final TokenRequestStateHolder noParametersHolder = new TokenRequestStateHolder(Map.of());
     // the tokens are cached per set of additional parameters as the parameters can affect which tokens are issued,
     // each holder manages the token request state of one set of parameters
     private final ConcurrentHashMap<Map<String, String>, TokenRequestStateHolder> tokenRequestStateHolders = new ConcurrentHashMap<>();
@@ -129,7 +132,9 @@ public class TokensHelper {
                     tokenRequestStateUpdater.set(holder, new TokenRequestState(tokens));
                 } else {
                     tokenRequestStateUpdater.set(holder, null);
-                    tokenRequestStateHolders.remove(holder.key, holder);
+                    if (holder != noParametersHolder) {
+                        tokenRequestStateHolders.remove(holder.key, holder);
+                    }
                 }
             }
         })
@@ -138,6 +143,9 @@ public class TokensHelper {
     }
 
     private TokenRequestStateHolder tokenRequestStateHolder(Map<String, String> additionalParameters) {
+        if (additionalParameters.isEmpty()) {
+            return noParametersHolder;
+        }
         Map<String, String> key = Map.copyOf(additionalParameters);
         TokenRequestStateHolder holder = tokenRequestStateHolders.get(key);
         if (holder != null) {
