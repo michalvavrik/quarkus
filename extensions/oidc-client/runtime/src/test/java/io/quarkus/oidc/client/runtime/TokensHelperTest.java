@@ -607,6 +607,50 @@ class TokensHelperTest {
     }
 
     @Test
+    void testBurstOfConcurrentMissesEvictsOnlyLeastRecentlyUsedTokens() throws Exception {
+        helper = new TokensHelper(5);
+        Map<String, String> anchor = Map.of("scope", "anchor");
+        getTokens(anchor);
+        List<Map<String, String>> previousBurst = parameterSets(4);
+        for (Map<String, String> p : previousBurst) {
+            getTokens(p);
+        }
+        for (int round = 0; round < 50; round++) {
+            // the anchor tokens become the most recently used ones and must survive the burst of misses which
+            // must evict exactly the tokens of the previous burst, the least recently used ones
+            int requests = client.requests().size();
+            getTokens(anchor);
+            assertThat(client.requests()).as("round %d: the anchor tokens must still be cached", round)
+                    .hasSize(requests);
+            List<Map<String, String>> burst = new ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                burst.add(Map.of("scope", "burst-" + round + "-" + i));
+            }
+            client.respondLater();
+
+            List<Tokens> results = getTokensConcurrently(burst);
+
+            client.respondImmediately();
+            for (int i = 0; i < burst.size(); i++) {
+                assertIssuedFor(results.get(i), burst.get(i));
+            }
+            assertThat(client.requests()).hasSize(requests + 4);
+            previousBurst = burst;
+        }
+
+        int requests = client.requests().size();
+        getTokens(anchor);
+        for (Map<String, String> p : previousBurst) {
+            getTokens(p);
+        }
+        assertThat(client.requests()).hasSize(requests);
+        Map<String, String> evicted = Map.of("scope", "burst-0-0");
+        assertIssuedFor(getTokens(evicted), evicted);
+        assertThat(client.requests()).hasSize(requests + 1);
+        assertThat(client.requests().get(requests).isGrant()).isTrue();
+    }
+
+    @Test
     void testConcurrentCallsWithMoreParametersThanCacheSizeGetTheirOwnTokens() throws Exception {
         helper = new TokensHelper(3);
 
