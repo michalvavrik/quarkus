@@ -1008,8 +1008,9 @@ Providers might also restrict how many times a refresh token can be used.
 === Caching tokens acquired with additional grant parameters
 
 `OidcClientRequestReactiveFilter`, `OidcClientRequestFilter`, `TokenProvider`, and `Tokens` producers cache the tokens they acquire per set of additional grant parameters, because such parameters, for example, a requested `scope` or a subject token which has to be exchanged, can affect which tokens are issued.
-By default, each filter and each token producer caches the tokens of at most 15 sets of additional grant parameters.
-When the cache is full, the tokens whose access token has expired are evicted first, followed by the least recently used tokens.
+By default, each filter and each token producer caches the tokens of up to 15 sets of additional grant parameters.
+This limit is approximate, the cache can briefly exceed it when tokens are requested concurrently.
+When the limit is reached, the tokens which are least likely to be needed again, for example, expired or least recently used tokens, are evicted.
 Use the `quarkus.oidc-client.token-cache-max-size` property to change the limit per producer, for example, when many different subject tokens are exchanged:
 
 [source,properties]

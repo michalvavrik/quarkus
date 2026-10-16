@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 
 import org.jboss.logging.Logger;
@@ -40,9 +39,6 @@ public class TokensHelper {
     // each holder manages the token request state of one set of parameters
     private final ConcurrentHashMap<Map<String, String>, TokenRequestStateHolder> tokenRequestStateHolders = new ConcurrentHashMap<>();
     private final int tokenCacheMaxSize;
-    // cache misses are serialized so that the cache never exceeds its maximum size and no more holders than
-    // necessary are evicted, cache hits are lock-free
-    private final ReentrantLock cacheMissLock = new ReentrantLock();
 
     public TokensHelper() {
         this(DEFAULT_TOKEN_CACHE_MAX_SIZE);
@@ -150,20 +146,12 @@ public class TokensHelper {
             holder.lastAccessed = System.nanoTime();
             return holder;
         }
-        cacheMissLock.lock();
-        try {
-            holder = tokenRequestStateHolders.get(key);
-            if (holder == null) {
-                if (tokenRequestStateHolders.size() >= tokenCacheMaxSize) {
-                    evictTokenRequestStateHolders();
-                }
-                holder = new TokenRequestStateHolder(key);
-                tokenRequestStateHolders.put(key, holder);
-            }
-            return holder;
-        } finally {
-            cacheMissLock.unlock();
+        // the size check and the eviction are not synchronized with concurrent cache misses, so the cache can
+        // temporarily exceed its maximum size by the number of such misses, the next cache miss evicts the excess too
+        if (tokenRequestStateHolders.mappingCount() >= tokenCacheMaxSize) {
+            evictTokenRequestStateHolders();
         }
+        return tokenRequestStateHolders.computeIfAbsent(key, TokenRequestStateHolder::new);
     }
 
     private static Map<String, String> cacheKey(Map<String, String> additionalParameters) {
@@ -191,10 +179,10 @@ public class TokensHelper {
         if (holdersToEvict > 0) {
             LOG.debugf("Token cache is full, evicting the tokens of %d sets of additional parameters", holdersToEvict);
         }
+        // concurrent evictions select the same holders, so the number of evicted holders stays bounded by the
+        // computed count, a holder which has already been removed concurrently is not replaced by another one
         for (int i = 0; i < holdersToEvict; i++) {
             TokenRequestStateHolder holder = candidates.get(i).holder();
-            // the holder may have been removed concurrently only by a failed token request,
-            // in which case the cache has already shrunk by one
             tokenRequestStateHolders.remove(holder.key, holder);
         }
     }
