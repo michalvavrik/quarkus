@@ -164,13 +164,15 @@ public class DefaultTokenStateManager implements TokenStateManager {
                     }
                 }
                 Cookie rtCookie = getRefreshTokenCookie(routingContext, oidcConfig);
-                if (rtCookie != null) {
+                // An empty cookie could be a removed cookie which the user agent has not dropped yet
+                if (rtCookie != null && !rtCookie.getValue().isEmpty()) {
                     // Decrypt refresh token from the q_session_rt cookie
                     refreshToken = OidcUtils.decryptToken(rtCookie.getValue(), routingContext, oidcConfig);
                 }
             } else if (oidcConfig.tokenStateManager().strategy() == Strategy.ID_REFRESH_TOKENS) {
                 Cookie rtCookie = getRefreshTokenCookie(routingContext, oidcConfig);
-                if (rtCookie != null) {
+                // An empty cookie could be a removed cookie which the user agent has not dropped yet
+                if (rtCookie != null && !rtCookie.getValue().isEmpty()) {
                     refreshToken = OidcUtils.decryptToken(rtCookie.getValue(), routingContext, oidcConfig);
                 }
             }

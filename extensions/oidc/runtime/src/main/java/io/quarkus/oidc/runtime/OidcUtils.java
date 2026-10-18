@@ -186,39 +186,48 @@ public final class OidcUtils {
             return null;
         }
 
-        if (cookies.containsKey(sessionCookieName)) {
-            context.put(defaultSessionCookieName, List.of(sessionCookieName));
-            return cookies.get(sessionCookieName).getValue();
-        } else {
-            final String sessionChunkPrefix = sessionCookieName + SESSION_COOKIE_CHUNK;
-
-            SortedMap<String, String> sessionCookies = new TreeMap<>(new Comparator<String>() {
-
-                @Override
-                public int compare(String s1, String s2) {
-                    // at this point it is guaranteed cookie names end with `chunk_<somenumber>`
-                    int lastUnderscoreIndex1 = s1.lastIndexOf(UNDERSCORE);
-                    int lastUnderscoreIndex2 = s2.lastIndexOf(UNDERSCORE);
-                    Integer pos1 = Integer.valueOf(s1.substring(lastUnderscoreIndex1 + 1));
-                    Integer pos2 = Integer.valueOf(s2.substring(lastUnderscoreIndex2 + 1));
-                    return pos1.compareTo(pos2);
-                }
-
-            });
-            for (String cookieName : cookies.keySet()) {
-                if (cookieName.startsWith(sessionChunkPrefix)) {
-                    sessionCookies.put(cookieName, cookies.get(cookieName).getValue());
-                }
+        Cookie sessionCookie = cookies.get(sessionCookieName);
+        if (sessionCookie != null) {
+            if (!sessionCookie.getValue().isEmpty()) {
+                context.put(defaultSessionCookieName, List.of(sessionCookieName));
+                return sessionCookie.getValue();
             }
-            if (!sessionCookies.isEmpty()) {
-                context.put(defaultSessionCookieName, new ArrayList<String>(sessionCookies.keySet()));
+            // An empty session cookie could be a removed cookie which the user agent has not dropped yet.
+            // We treat it as an absent cookie, but don't remove it again: removing it again would only extend its life
+            // in the user agents which incorrectly keep removed cookies until their expiry time has passed
+            LOG.debugf("%s cookie is empty, treating it as absent", sessionCookieName);
+        }
 
-                StringBuilder sessionCookieValue = new StringBuilder();
-                for (String value : sessionCookies.values()) {
-                    sessionCookieValue.append(value);
-                }
+        final String sessionChunkPrefix = sessionCookieName + SESSION_COOKIE_CHUNK;
+
+        SortedMap<String, String> sessionCookies = new TreeMap<>(new Comparator<String>() {
+
+            @Override
+            public int compare(String s1, String s2) {
+                // at this point it is guaranteed cookie names end with `chunk_<somenumber>`
+                int lastUnderscoreIndex1 = s1.lastIndexOf(UNDERSCORE);
+                int lastUnderscoreIndex2 = s2.lastIndexOf(UNDERSCORE);
+                Integer pos1 = Integer.valueOf(s1.substring(lastUnderscoreIndex1 + 1));
+                Integer pos2 = Integer.valueOf(s2.substring(lastUnderscoreIndex2 + 1));
+                return pos1.compareTo(pos2);
+            }
+
+        });
+        for (String cookieName : cookies.keySet()) {
+            if (cookieName.startsWith(sessionChunkPrefix)) {
+                sessionCookies.put(cookieName, cookies.get(cookieName).getValue());
+            }
+        }
+        if (!sessionCookies.isEmpty()) {
+            StringBuilder sessionCookieValue = new StringBuilder();
+            for (String value : sessionCookies.values()) {
+                sessionCookieValue.append(value);
+            }
+            if (!sessionCookieValue.isEmpty()) {
+                context.put(defaultSessionCookieName, new ArrayList<>(sessionCookies.keySet()));
                 return sessionCookieValue.toString();
             }
+            LOG.debugf("%s cookie chunks are empty, treating them as absent", sessionCookieName);
         }
         return null;
     }
