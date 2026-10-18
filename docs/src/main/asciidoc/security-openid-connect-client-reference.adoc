@@ -1021,6 +1021,8 @@ Use the `quarkus.oidc-client.token-cache-max-size` property to change the limit 
 quarkus.oidc-client.token-cache-max-size=30
 ----
 
+Set this property to `0` to not cache the tokens acquired with additional grant parameters at all.
+
 [[revoke-access-tokens]]
 === Revoking access tokens
 
@@ -1761,7 +1763,7 @@ quarkus.resteasy-client-oidc-token-propagation.exchange-token=true
 `AccessTokenRequestReactiveFilter` uses a default `OidcClient` by default.
 A named `OidcClient` can be selected with a `quarkus.rest-client-oidc-token-propagation.client-name` configuration property or with the `io.quarkus.oidc.token.propagation.common.AccessToken#exchangeTokenClient` annotation attribute.
 
-`AccessTokenRequestReactiveFilter` caches the exchanged tokens, see <<additional-grant-parameters-token-cache>>.
+`AccessTokenRequestReactiveFilter` caches the exchanged tokens, see <<additional-grant-parameters-token-cache>>, also when the token exchange is activated with the `io.quarkus.oidc.token.propagation.common.AccessToken#exchangeTokenClient` annotation attribute.
 An incoming access token is exchanged once and the exchanged token is propagated until it expires, even if the incoming access token is revoked in the meantime.
 By default, the exchanged tokens of up to 15 incoming access tokens are cached.
 Use the `quarkus.oidc-client.token-cache-max-size` property of the `OidcClient` which exchanges the tokens to change this limit, for example, when the tokens of many users are exchanged at the same time:
@@ -1770,6 +1772,8 @@ Use the `quarkus.oidc-client.token-cache-max-size` property of the `OidcClient` 
 ----
 quarkus.oidc-client.token-cache-max-size=50
 ----
+
+Set this property to `0` to exchange the incoming access token on every request, so that the OpenID Connect provider verifies the incoming access token every time and rejects it as soon as it is revoked.
 
 
 [[token-propagation-resteasy]]
@@ -1900,7 +1904,7 @@ NOTE: `AccessTokenRequestFilter` will use `OidcClient` to exchange the current t
 `AccessTokenRequestFilter` uses a default `OidcClient` by default.
 A named `OidcClient` can be selected with the `quarkus.resteasy-client-oidc-token-propagation.client-name` configuration property.
 
-`AccessTokenRequestFilter` caches the exchanged tokens, see <<additional-grant-parameters-token-cache>>.
+`AccessTokenRequestFilter` caches the exchanged tokens, see <<additional-grant-parameters-token-cache>>, also when the token exchange is activated with the `io.quarkus.oidc.token.propagation.common.AccessToken#exchangeTokenClient` annotation attribute.
 An incoming access token is exchanged once and the exchanged token is propagated until it expires, even if the incoming access token is revoked in the meantime.
 By default, the exchanged tokens of up to 15 incoming access tokens are cached.
 Use the `quarkus.oidc-client.token-cache-max-size` property of the `OidcClient` which exchanges the tokens to change this limit, for example, when the tokens of many users are exchanged at the same time:
@@ -1909,6 +1913,8 @@ Use the `quarkus.oidc-client.token-cache-max-size` property of the `OidcClient` 
 ----
 quarkus.oidc-client.token-cache-max-size=50
 ----
+
+Set this property to `0` to exchange the incoming access token on every request, so that the OpenID Connect provider verifies the incoming access token every time and rejects it as soon as it is revoked.
 
 === RestClient JsonWebTokenRequestFilter
 

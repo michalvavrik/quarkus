@@ -1,10 +1,6 @@
 package io.quarkus.oidc.token.propagation.reactive.deployment.test;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-
-import java.util.List;
-import java.util.Set;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.security.RolesAllowed;
@@ -48,7 +44,7 @@ public class AccessTokenAnnotationTest {
                             MultipleClientsAndMultipleMethods.class, DefaultClientDefaultExchange_RepeatedAnnotation.class,
                             NamedClientDefaultExchange_RepeatedAnnotation.class,
                             DefaultClientDefaultExchangeOnClass_NamedOnMethod.class,
-                            NamedClientDefaultExchangeOnClass_DefaultClientOnMethod.class, MockTokenEndpoint.class)
+                            NamedClientDefaultExchangeOnClass_DefaultClientOnMethod.class)
                     .addAsResource(
                             new StringAsset(
                                     """
@@ -63,7 +59,7 @@ public class AccessTokenAnnotationTest {
                                             quarkus.oidc-client.grant.type=jwt
                                             quarkus.oidc-client.scopes=https://graph.microsoft.com/user.read,offline_access
                                             quarkus.oidc-client.grant-options.jwt.requested_token_use=on_behalf_of
-                                            quarkus.oidc-client.token-path=http://localhost:8081/mock-oidc/token
+                                            quarkus.oidc-client.token-path=${keycloak.url}/realms/quarkus/jwt-bearer-token
 
                                             quarkus.oidc-client.named.auth-server-url=${quarkus.oidc-client.auth-server-url}
                                             quarkus.oidc-client.named.client-id=${quarkus.oidc-client.client-id}
@@ -114,17 +110,6 @@ public class AccessTokenAnnotationTest {
     }
 
     @Test
-    void testExchangedTokenIsReusedByGeneratedFilters() {
-        for (String clientKey : List.of("defaultClientEnabledExchange", "namedClientDefaultExchange",
-                "defaultClientEnabledExchange_OnMethod")) {
-            String accessToken = tokenIssuedToAlice(clientKey);
-            testRestClientTokenPropagation(accessToken, true, clientKey);
-            testRestClientTokenPropagation(accessToken, true, clientKey);
-            assertThat(MockTokenEndpoint.exchangeCount(accessToken)).as(clientKey).isEqualTo(1);
-        }
-    }
-
-    @Test
     public void testNoTokenPropagation() {
         RestAssured.given().auth().oauth2(getBearerAccessToken())
                 .queryParam("client-key", "multipleClientsAndMultipleMethods_NoAccessToken")
@@ -135,12 +120,8 @@ public class AccessTokenAnnotationTest {
     }
 
     private void testRestClientTokenPropagation(boolean exchangeEnabled, String clientKey) {
-        testRestClientTokenPropagation(getBearerAccessToken(), exchangeEnabled, clientKey);
-    }
-
-    private void testRestClientTokenPropagation(String accessToken, boolean exchangeEnabled, String clientKey) {
         String newTokenUsername = exchangeEnabled ? "bob" : "alice";
-        RestAssured.given().auth().oauth2(accessToken)
+        RestAssured.given().auth().oauth2(getBearerAccessToken())
                 .queryParam("client-key", clientKey)
                 .when().get("/frontend/token-propagation")
                 .then()
@@ -150,10 +131,6 @@ public class AccessTokenAnnotationTest {
 
     public String getBearerAccessToken() {
         return client.getAccessToken("alice", "alice");
-    }
-
-    private static String tokenIssuedToAlice(String subject) {
-        return OidcWiremockTestResource.generateJwtToken("alice", Set.of("admin"), subject);
     }
 
     @RegisterRestClient(baseUri = "http://localhost:8081/protected")

@@ -198,6 +198,7 @@ public interface OidcClientConfig extends OidcClientCommonConfig {
      * filter which exchanges tokens, or a token producer, such as {@code TokenProvider}, caches the tokens.
      * Tokens requested with additional grant parameters, for example, with different scopes or subject tokens
      * passed to {@code TokenProvider#getAccessToken(Map)}, are cached per set of parameters.
+     * Set this property to {@code 0} to not cache such tokens at all.
      * This number is approximate, the cache can briefly exceed it when tokens are requested concurrently.
      * This property is not relevant when tokens are acquired with the configured grant only, without additional
      * grant parameters, because such tokens are always cached.
