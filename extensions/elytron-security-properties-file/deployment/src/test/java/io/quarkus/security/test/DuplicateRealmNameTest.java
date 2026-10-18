@@ -1,19 +1,27 @@
 package io.quarkus.security.test;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.logging.Level;
+
 import org.jboss.shrinkwrap.api.asset.StringAsset;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.test.QuarkusExtensionTest;
+import io.restassured.RestAssured;
 
+/**
+ * Elytron only supports one realm per realm name: when two realms share a realm name, the realm added last to the
+ * security domain replaces the other one and the build logs a warning. The embedded realm is added before the
+ * properties file realm, so the properties file realm wins here.
+ */
 class DuplicateRealmNameTest {
 
     @RegisterExtension
     static final QuarkusExtensionTest config = new QuarkusExtensionTest()
             .withApplicationRoot((jar) -> jar
-                    .addClasses(TestApplication.class)
+                    .addClasses(TestApplication.class, ParametrizedPathsResource.class)
                     .addAsResource("test-users.properties")
                     .addAsResource("test-roles.properties")
                     .addAsResource(new StringAsset("""
@@ -23,20 +31,24 @@ class DuplicateRealmNameTest {
                             quarkus.security.users.file.plain-text=true
                             quarkus.security.users.embedded.enabled=true
                             quarkus.security.users.embedded.plain-text=true
-                            quarkus.security.users.embedded.users.scott=jb0ss
-                            quarkus.security.users.embedded.roles.scott=admin
+                            quarkus.security.users.embedded.users.emb=embpw
+                            quarkus.security.users.embedded.roles.emb=user
                             """), "application.properties"))
-            .assertException(t -> {
-                Throwable cause = t.getCause();
-                Assertions.assertInstanceOf(ConfigurationException.class, cause);
-                String message = cause.getMessage();
-                Assertions.assertTrue(message.contains("realm name 'Quarkus'"), message);
-                Assertions.assertTrue(message.contains("quarkus.security.users.file.realm-name"), message);
-                Assertions.assertTrue(message.contains("quarkus.security.users.embedded.realm-name"), message);
-            });
+            .setLogRecordPredicate(record -> record.getLevel().intValue() >= Level.WARNING.intValue()
+                    && record.getMessage() != null && record.getMessage().contains("is used by both"))
+            .assertLogRecords(records -> assertTrue(records.stream()
+                    .anyMatch(record -> record.getParameters() != null && record.getParameters().length > 0
+                            && "Quarkus".equals(record.getParameters()[0])),
+                    "Expected a warning about the duplicate realm name 'Quarkus'"));
 
     @Test
-    void testDuplicateRealmNamesAreRejected() {
-        // the build must fail, see assertException above
+    void testRealmAddedLastWins() {
+        // the properties file realm replaces the embedded realm, which was added to the domain first
+        RestAssured.given().auth().preemptive().basic("stuart", "test")
+                .when().get("/jaxrs-secured/parameterized-paths/my/banking/view").then()
+                .statusCode(200);
+        RestAssured.given().auth().preemptive().basic("emb", "embpw")
+                .when().get("/jaxrs-secured/parameterized-paths/my/banking/view").then()
+                .statusCode(401);
     }
 }

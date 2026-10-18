@@ -11,7 +11,7 @@ import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBuildItem;
 import io.quarkus.elytron.security.deployment.ElytronPasswordMarkerBuildItem;
-import io.quarkus.elytron.security.deployment.ElytronSecurityRealmNameValidationBuildItem;
+import io.quarkus.elytron.security.deployment.ElytronSecurityRealmBuildItem;
 import io.quarkus.elytron.security.properties.runtime.ElytronPropertiesFileRecorder;
 import io.quarkus.elytron.security.properties.runtime.MPRealmRuntimeConfig;
 import io.quarkus.elytron.security.properties.runtime.PropertiesRealmConfig;
@@ -40,14 +40,16 @@ class ElytronPropertiesProcessor {
      */
     @BuildStep
     void configureFileRealmAuthConfig(ServiceRegistrar serviceRegistrar,
-            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
+            BuildProducer<ElytronSecurityRealmBuildItem> realms) {
         if (propertiesConfig.file().enabled()) {
             PropertiesRealmConfig realmConfig = propertiesConfig.file();
             log.debugf("Configuring from PropertiesRealmConfig, users=%s, roles=%s", realmConfig.users(),
                     realmConfig.roles());
-            realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(realmConfig.realmName(),
-                    "quarkus.security.users.file.realm-name", Feature.SECURITY_PROPERTIES_FILE.getName()));
-            serviceRegistrar.forService(SecurityRealm.class, realmConfig.realmName())
+            ElytronSecurityRealmBuildItem realm = new ElytronSecurityRealmBuildItem("properties-file",
+                    realmConfig.realmName(), "quarkus.security.users.file.realm-name",
+                    Feature.SECURITY_PROPERTIES_FILE.getName(), false);
+            realms.produce(realm);
+            serviceRegistrar.forService(SecurityRealm.class, realm.getServiceName())
                     .atPhase(Phase.DATA)
                     .require(SecurityUsersConfig.class)
                     .onStart((ctx, buildTimeConfig) -> ElytronPropertiesFileRecorder.createRealm(buildTimeConfig));
@@ -76,12 +78,14 @@ class ElytronPropertiesProcessor {
      */
     @BuildStep
     void configureMPRealmConfig(ServiceRegistrar serviceRegistrar,
-            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
+            BuildProducer<ElytronSecurityRealmBuildItem> realms) {
         if (propertiesConfig.embedded().enabled()) {
             log.info("Configuring from MPRealmConfig");
-            realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(propertiesConfig.embedded().realmName(),
-                    "quarkus.security.users.embedded.realm-name", Feature.SECURITY_PROPERTIES_FILE.getName()));
-            serviceRegistrar.forService(SecurityRealm.class, propertiesConfig.embedded().realmName())
+            ElytronSecurityRealmBuildItem realm = new ElytronSecurityRealmBuildItem("properties-embedded",
+                    propertiesConfig.embedded().realmName(), "quarkus.security.users.embedded.realm-name",
+                    Feature.SECURITY_PROPERTIES_FILE.getName(), false);
+            realms.produce(realm);
+            serviceRegistrar.forService(SecurityRealm.class, realm.getServiceName())
                     .atPhase(Phase.DATA)
                     .require(MPRealmRuntimeConfig.class)
                     .require(SecurityUsersConfig.class)

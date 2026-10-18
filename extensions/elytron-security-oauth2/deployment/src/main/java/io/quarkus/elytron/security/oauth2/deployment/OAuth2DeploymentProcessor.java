@@ -12,7 +12,7 @@ import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.ExtensionSslNativeSupportBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
-import io.quarkus.elytron.security.deployment.ElytronSecurityRealmNameValidationBuildItem;
+import io.quarkus.elytron.security.deployment.ElytronSecurityRealmBuildItem;
 import io.quarkus.elytron.security.deployment.ElytronTokenMarkerBuildItem;
 import io.quarkus.elytron.security.oauth2.runtime.OAuth2BuildTimeConfig;
 import io.quarkus.elytron.security.oauth2.runtime.OAuth2Recorder;
@@ -41,9 +41,11 @@ class OAuth2DeploymentProcessor {
 
     @BuildStep(onlyIf = IsOAuth2Enabled.class)
     AdditionalBeanBuildItem configureOauth2RealmAuthConfig(ServiceRegistrar serviceRegistrar,
-            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
-        realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(REALM_NAME, Feature.SECURITY_OAUTH2.getName()));
-        serviceRegistrar.forService(SecurityRealm.class, REALM_NAME)
+            BuildProducer<ElytronSecurityRealmBuildItem> realms) {
+        ElytronSecurityRealmBuildItem realm = new ElytronSecurityRealmBuildItem("oauth2", REALM_NAME,
+                Feature.SECURITY_OAUTH2.getName(), false);
+        realms.produce(realm);
+        serviceRegistrar.forService(SecurityRealm.class, realm.getServiceName())
                 .atPhase(Phase.DATA)
                 .require(OAuth2RuntimeConfig.class)
                 .onStart((ctx, runtimeConfig) -> OAuth2Recorder.createRealm(runtimeConfig));

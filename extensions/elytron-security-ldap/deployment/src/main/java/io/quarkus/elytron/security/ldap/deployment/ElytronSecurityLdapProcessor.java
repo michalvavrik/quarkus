@@ -14,7 +14,7 @@ import io.quarkus.deployment.builditem.AllowJNDIBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.elytron.security.deployment.ElytronPasswordMarkerBuildItem;
-import io.quarkus.elytron.security.deployment.ElytronSecurityRealmNameValidationBuildItem;
+import io.quarkus.elytron.security.deployment.ElytronSecurityRealmBuildItem;
 import io.quarkus.elytron.security.ldap.LdapRecorder;
 import io.quarkus.elytron.security.ldap.QuarkusDirContextFactory;
 import io.quarkus.elytron.security.ldap.config.LdapSecurityRealmRuntimeConfig;
@@ -40,10 +40,12 @@ class ElytronSecurityLdapProcessor {
     @BuildStep(onlyIf = IsLdapSecurityEnabled.class)
     void configureLdapRealmAuthConfig(ServiceRegistrar serviceRegistrar,
             LdapSecurityRealmBuildTimeConfig ldapSecurityRealmBuildTimeConfig,
-            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
-        realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(ldapSecurityRealmBuildTimeConfig.realmName(),
-                "quarkus.security.ldap.realm-name", Feature.SECURITY_LDAP.getName()));
-        serviceRegistrar.forService(SecurityRealm.class, ldapSecurityRealmBuildTimeConfig.realmName())
+            BuildProducer<ElytronSecurityRealmBuildItem> realms) {
+        ElytronSecurityRealmBuildItem realm = new ElytronSecurityRealmBuildItem("ldap",
+                ldapSecurityRealmBuildTimeConfig.realmName(), "quarkus.security.ldap.realm-name",
+                Feature.SECURITY_LDAP.getName(), true);
+        realms.produce(realm);
+        serviceRegistrar.forService(SecurityRealm.class, realm.getServiceName())
                 .atPhase(Phase.DATA)
                 .after(BeanContainer.class)
                 .require(LdapSecurityRealmRuntimeConfig.class)

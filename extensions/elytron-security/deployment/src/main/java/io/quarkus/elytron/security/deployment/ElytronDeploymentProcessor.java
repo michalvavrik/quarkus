@@ -1,19 +1,15 @@
 package io.quarkus.elytron.security.deployment;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
 
+import org.jboss.logging.Logger;
 import org.wildfly.security.auth.server.SecurityDomain;
 import org.wildfly.security.auth.server.SecurityRealm;
 
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
-import io.quarkus.arc.deployment.ValidationPhaseBuildItem.ValidationErrorBuildItem;
 import io.quarkus.arc.runtime.BeanContainer;
 import io.quarkus.core.Phase;
 import io.quarkus.core.deployment.service.ServiceRegistrar;
@@ -25,12 +21,11 @@ import io.quarkus.elytron.security.runtime.ElytronRecorder;
 import io.quarkus.elytron.security.runtime.ElytronSecurityDomainManager;
 import io.quarkus.elytron.security.runtime.ElytronTokenIdentityProvider;
 import io.quarkus.elytron.security.runtime.ElytronTrustedIdentityProvider;
-import io.quarkus.runtime.configuration.ConfigurationException;
 
 /**
  * The build time process for the security aspects of the deployment. This creates {@linkplain BuildStep}s for integration
- * with the Elytron security services. The {@linkplain SecurityRealm}s registered as named runtime services by the
- * Elytron realm extensions (properties file, JDBC, LDAP and OAuth2) are combined into a single
+ * with the Elytron security services. The {@linkplain SecurityRealm}s declared by the Elytron realm extensions
+ * (properties file, JDBC, LDAP and OAuth2) with {@link ElytronSecurityRealmBuildItem}s are combined into a single
  * {@linkplain SecurityDomain}, which is then handed over to the Elytron identity providers.
  *
  * TODO: The handling of the configuration to SecurityRealm instance creation/loading is clumsy to not being able to
@@ -39,7 +34,7 @@ import io.quarkus.runtime.configuration.ConfigurationException;
  */
 class ElytronDeploymentProcessor {
 
-    private static final String DEFAULT_REALM_NAME = "Quarkus";
+    private static final Logger log = Logger.getLogger(ElytronDeploymentProcessor.class);
 
     @BuildStep
     void addBeans(BuildProducer<AdditionalBeanBuildItem> beans, List<ElytronPasswordMarkerBuildItem> pw,
@@ -56,75 +51,48 @@ class ElytronDeploymentProcessor {
     }
 
     /**
-     * Elytron only supports one realm per realm name in a {@linkplain SecurityDomain}, so each realm extension declares
-     * the name of every realm it registers and the build fails when the same realm name is declared more than once.
+     * Create the deployment SecurityDomain from the SecurityRealms declared by the realm extensions.
+     * <p>
+     * The realms are added to the domain in the build item order, with the realms requiring the bean container last,
+     * and the first realm becomes the default realm of the domain, see {@link ElytronSecurityRealmBuildItem}. Elytron
+     * only supports one realm per realm name, so a realm added later replaces an earlier realm with the same name,
+     * which is reported as a warning.
      */
     @BuildStep
-    void validateRealmNames(List<ElytronSecurityRealmNameValidationBuildItem> realmNames,
-            BuildProducer<ValidationErrorBuildItem> validationErrors) {
-        Map<String, List<ElytronSecurityRealmNameValidationBuildItem>> realmsByName = new TreeMap<>();
-        for (ElytronSecurityRealmNameValidationBuildItem realmName : realmNames) {
-            realmsByName.computeIfAbsent(realmName.realmName, k -> new ArrayList<>()).add(realmName);
-        }
-        for (Map.Entry<String, List<ElytronSecurityRealmNameValidationBuildItem>> entry : realmsByName.entrySet()) {
-            List<ElytronSecurityRealmNameValidationBuildItem> conflictingRealms = entry.getValue();
-            if (conflictingRealms.size() < 2) {
-                continue;
+    void build(ServiceRegistrar serviceRegistrar, List<ElytronSecurityRealmBuildItem> realms) {
+        List<ElytronSecurityRealmBuildItem> orderedRealms = new ArrayList<>(realms.size());
+        for (ElytronSecurityRealmBuildItem realm : realms) {
+            if (!realm.requiresBeanContainer) {
+                orderedRealms.add(realm);
             }
-            List<String> descriptions = new ArrayList<>();
-            Set<String> configProperties = new TreeSet<>();
-            for (ElytronSecurityRealmNameValidationBuildItem realm : conflictingRealms) {
-                descriptions.add(describe(realm));
-                if (realm.realmNameConfigProperty != null) {
-                    configProperties.add(realm.realmNameConfigProperty);
-                }
+        }
+        for (ElytronSecurityRealmBuildItem realm : realms) {
+            if (realm.requiresBeanContainer) {
+                orderedRealms.add(realm);
             }
-            Collections.sort(descriptions);
-            validationErrors.produce(new ValidationErrorBuildItem(new ConfigurationException(
-                    "Multiple Elytron security realms are configured with the realm name '" + entry.getKey() + "': "
-                            + String.join(", ", descriptions) + ". Elytron requires a unique name for each realm of the"
-                            + " security domain, so configure a different realm name for all but one of them.",
-                    configProperties)));
         }
-    }
+        warnAboutDuplicateRealmNames(orderedRealms);
 
-    private static String describe(ElytronSecurityRealmNameValidationBuildItem realm) {
-        if (realm.realmNameConfigProperty == null) {
-            return realm.extensionName + " (the realm name is fixed)";
-        }
-        return realm.extensionName + " ('" + realm.realmNameConfigProperty + "')";
-    }
-
-    /**
-     * Create the deployment SecurityDomain using the SecurityRealms that have been registered as services.
-     */
-    @BuildStep
-    void build(ServiceRegistrar serviceRegistrar) {
+        List<String> serviceNames = orderedRealms.stream().map(ElytronSecurityRealmBuildItem::getServiceName).toList();
+        List<String> realmNames = orderedRealms.stream().map(ElytronSecurityRealmBuildItem::getRealmName).toList();
         serviceRegistrar.forService(SecurityDomain.class)
                 .atPhase(Phase.INIT)
                 .consumeAll(SecurityRealm.class)
                 .after(BeanContainer.class)
                 .optional()
-                .onStart((ctx, nameToSecurityRealm) -> {
-                    if (nameToSecurityRealm.isEmpty()) {
-                        return Optional.empty();
-                    }
+                .onStart((ctx, securityRealms) -> ElytronRecorder.buildDomain(serviceNames, realmNames, securityRealms));
+    }
 
-                    final String defaultName = nameToSecurityRealm.containsKey(DEFAULT_REALM_NAME)
-                            ? DEFAULT_REALM_NAME
-                            : Collections.min(nameToSecurityRealm.keySet());
-
-                    final SecurityDomain.Builder securityDomainBuilder = ElytronRecorder.configureDomainBuilder(defaultName,
-                            nameToSecurityRealm.get(defaultName));
-
-                    nameToSecurityRealm.forEach((name, realm) -> {
-                        if (!name.equals(defaultName)) {
-                            ElytronRecorder.addRealm(securityDomainBuilder, name, realm);
-                        }
-                    });
-
-                    return Optional.of(securityDomainBuilder.build());
-                });
+    private static void warnAboutDuplicateRealmNames(List<ElytronSecurityRealmBuildItem> orderedRealms) {
+        Map<String, ElytronSecurityRealmBuildItem> realmsByName = new HashMap<>();
+        for (ElytronSecurityRealmBuildItem realm : orderedRealms) {
+            ElytronSecurityRealmBuildItem replacedRealm = realmsByName.put(realm.realmName, realm);
+            if (replacedRealm != null) {
+                log.warnf("The realm name '%s' is used by both %s and %s, so only the realm of %s is added to the"
+                        + " security domain. Configure a different realm name for one of them to use both realms.",
+                        realm.realmName, replacedRealm.describe(), realm.describe(), realm.describe());
+            }
+        }
     }
 
     @BuildStep

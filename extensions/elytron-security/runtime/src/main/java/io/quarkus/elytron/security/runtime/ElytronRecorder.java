@@ -1,6 +1,9 @@
 package io.quarkus.elytron.security.runtime;
 
 import java.security.Permission;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import jakarta.enterprise.inject.spi.CDI;
 
@@ -26,6 +29,31 @@ public class ElytronRecorder {
 
     public static void setDomainForIdentityProvider(BeanContainer bc, SecurityDomain domain) {
         bc.beanInstance(ElytronSecurityDomainManager.class).setDomain(domain);
+    }
+
+    /**
+     * Build the {@linkplain SecurityDomain} from the realm services, adding the realms in the given order. The first
+     * realm becomes the default realm of the domain and a realm added later replaces an earlier realm with the same
+     * realm name.
+     *
+     * @param serviceNames the names of the realm services, in the order the realms are added to the domain
+     * @param realmNames the realm names, parallel to {@code serviceNames}
+     * @param securityRealms the realm services by service name
+     * @return the security domain, or an empty optional when no realm is configured
+     * @throws Exception on any error
+     */
+    public static Optional<SecurityDomain> buildDomain(List<String> serviceNames, List<String> realmNames,
+            Map<String, SecurityRealm> securityRealms) throws Exception {
+        SecurityDomain.Builder builder = null;
+        for (int i = 0; i < serviceNames.size(); i++) {
+            SecurityRealm realm = securityRealms.get(serviceNames.get(i));
+            if (builder == null) {
+                builder = configureDomainBuilder(realmNames.get(i), realm);
+            } else {
+                addRealm(builder, realmNames.get(i), realm);
+            }
+        }
+        return builder == null ? Optional.empty() : Optional.of(builder.build());
     }
 
     /**
