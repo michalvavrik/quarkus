@@ -109,7 +109,7 @@ public class CodeFlowEmptySessionCookieTest {
     }
 
     @Test
-    public void testEmptySessionCookieDoesNotHideSessionCookieChunks() throws Exception {
+    public void testEmptySessionCookieWithSessionCookieChunks() throws Exception {
         try (WebClient webClient = createWebClient()) {
             login(webClient, "/code-flow", "alice");
             String sessionCookieValue = getCookieValue(webClient, SESSION_COOKIE);
@@ -122,8 +122,13 @@ public class CodeFlowEmptySessionCookieTest {
             String chunk2 = SESSION_COOKIE + "_chunk_2=" + sessionCookieValue.substring(half);
             assertAuthenticated("/code-flow", chunk1 + "; " + chunk2, "alice");
 
-            // An empty session cookie must not hide the session cookie chunks
-            assertAuthenticated("/code-flow", chunk1 + "; " + chunk2 + "; " + SESSION_COOKIE + "=", "alice");
+            // An empty session cookie means no session, the session cookie chunks are not checked
+            Response emptySessionCookieChallenge = RestAssured.given().redirects().follow(false)
+                    .header("Cookie", chunk1 + "; " + chunk2 + "; " + SESSION_COOKIE + "=")
+                    .get(APP_URL + "/code-flow");
+            assertChallenge(emptySessionCookieChallenge);
+            // the empty session cookie is not removed again
+            assertCookieNotTouched(emptySessionCookieChallenge, SESSION_COOKIE);
 
             // The session cookie wins over an empty chunk
             assertAuthenticated("/code-flow", SESSION_COOKIE + "=" + sessionCookieValue + "; " + SESSION_COOKIE + "_chunk_1=",
@@ -155,24 +160,20 @@ public class CodeFlowEmptySessionCookieTest {
             assertAuthenticated("/code-flow-split-tokens", sessionCookie + "; " + accessTokenCookie + "; " + refreshTokenCookie,
                     "alice:true:true");
 
-            // A missing access token cookie is tolerated
-            assertAuthenticated("/code-flow-split-tokens", sessionCookie + "; " + refreshTokenCookie, "alice:false:true");
-
-            // An empty access token cookie is treated like a missing one
-            assertAuthenticated("/code-flow-split-tokens",
-                    sessionCookie + "; " + SPLIT_TOKENS_ACCESS_TOKEN_COOKIE + "=; " + refreshTokenCookie, "alice:false:true");
-
-            // A missing refresh token cookie is tolerated
-            assertAuthenticated("/code-flow-split-tokens", sessionCookie + "; " + accessTokenCookie, "alice:true:false");
-
-            // An empty refresh token cookie is treated like a missing one
-            assertAuthenticated("/code-flow-split-tokens",
-                    sessionCookie + "; " + accessTokenCookie + "; " + SPLIT_TOKENS_REFRESH_TOKEN_COOKIE + "=",
-                    "alice:true:false");
+            // All the session cookies are empty after a logout in the user agents which have not dropped
+            // the removed cookies yet; a new challenge is expected and the cookies are not removed again
+            Response challenge = RestAssured.given().redirects().follow(false)
+                    .header("Cookie", SPLIT_TOKENS_SESSION_COOKIE + "=; " + SPLIT_TOKENS_ACCESS_TOKEN_COOKIE + "=; "
+                            + SPLIT_TOKENS_REFRESH_TOKEN_COOKIE + "=")
+                    .get(APP_URL + "/code-flow-split-tokens");
+            assertChallenge(challenge);
+            assertCookieNotTouched(challenge, SPLIT_TOKENS_SESSION_COOKIE);
+            assertCookieNotTouched(challenge, SPLIT_TOKENS_ACCESS_TOKEN_COOKIE);
+            assertCookieNotTouched(challenge, SPLIT_TOKENS_REFRESH_TOKEN_COOKIE);
 
             // An empty session cookie means no session even if the token cookies are valid;
             // nothing is removed again, the next login replaces the token cookies
-            Response challenge = RestAssured.given().redirects().follow(false)
+            challenge = RestAssured.given().redirects().follow(false)
                     .header("Cookie", SPLIT_TOKENS_SESSION_COOKIE + "=; " + accessTokenCookie + "; " + refreshTokenCookie)
                     .get(APP_URL + "/code-flow-split-tokens");
             assertChallenge(challenge);

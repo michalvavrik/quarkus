@@ -132,17 +132,15 @@ public class OidcUtilsTest {
 
         OidcTenantConfig oidcConfig = OidcTenantConfig.builder().tenantId("test").build();
         Map<String, Object> context = new HashMap<>();
-        // An empty session cookie must not hide the session cookie chunks
+        // An empty session cookie means no session, the session cookie chunks are not checked
         String sessionCookieValue = OidcUtils.getSessionCookie(context,
                 Map.of("q_session_test", new CookieImpl("q_session_test", ""),
                         "q_session_test_chunk_1", new CookieImpl("q_session_test_chunk_1", "tok"),
                         "q_session_test_chunk_2", new CookieImpl("q_session_test_chunk_2", "ens")),
                 oidcConfig);
-        assertEquals("tokens", sessionCookieValue);
-        @SuppressWarnings({ "rawtypes", "unchecked" })
-        List<String> names = (List) context.get(OidcUtils.SESSION_COOKIE_NAME);
-        // only the chunks are registered for the removal
-        assertEquals(List.of("q_session_test_chunk_1", "q_session_test_chunk_2"), names);
+        assertNull(sessionCookieValue);
+        // and nothing is registered for the removal
+        assertNull(context.get(OidcUtils.SESSION_COOKIE_NAME));
     }
 
     @Test
