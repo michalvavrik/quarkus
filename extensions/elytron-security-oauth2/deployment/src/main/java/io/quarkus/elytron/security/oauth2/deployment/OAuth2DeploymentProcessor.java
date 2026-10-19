@@ -8,11 +8,9 @@ import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.core.Phase;
 import io.quarkus.core.deployment.service.ServiceRegistrar;
 import io.quarkus.deployment.Feature;
-import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.ExtensionSslNativeSupportBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
-import io.quarkus.elytron.security.deployment.ElytronSecurityRealmNameValidationBuildItem;
 import io.quarkus.elytron.security.deployment.ElytronTokenMarkerBuildItem;
 import io.quarkus.elytron.security.oauth2.runtime.OAuth2BuildTimeConfig;
 import io.quarkus.elytron.security.oauth2.runtime.OAuth2Recorder;
@@ -40,9 +38,7 @@ class OAuth2DeploymentProcessor {
     }
 
     @BuildStep(onlyIf = IsOAuth2Enabled.class)
-    AdditionalBeanBuildItem configureOauth2RealmAuthConfig(ServiceRegistrar serviceRegistrar,
-            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
-        realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(REALM_NAME, Feature.SECURITY_OAUTH2.getName()));
+    AdditionalBeanBuildItem configureOauth2RealmAuthConfig(ServiceRegistrar serviceRegistrar) {
         serviceRegistrar.forService(SecurityRealm.class, REALM_NAME)
                 .atPhase(Phase.DATA)
                 .require(OAuth2RuntimeConfig.class)

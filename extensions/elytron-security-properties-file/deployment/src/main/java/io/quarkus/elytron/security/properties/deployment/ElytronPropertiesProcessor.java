@@ -11,7 +11,6 @@ import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBuildItem;
 import io.quarkus.elytron.security.deployment.ElytronPasswordMarkerBuildItem;
-import io.quarkus.elytron.security.deployment.ElytronSecurityRealmNameValidationBuildItem;
 import io.quarkus.elytron.security.properties.runtime.ElytronPropertiesFileRecorder;
 import io.quarkus.elytron.security.properties.runtime.MPRealmRuntimeConfig;
 import io.quarkus.elytron.security.properties.runtime.PropertiesRealmConfig;
@@ -39,18 +38,16 @@ class ElytronPropertiesProcessor {
      * properties files.
      */
     @BuildStep
-    void configureFileRealmAuthConfig(ServiceRegistrar serviceRegistrar,
-            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
+    void configureFileRealmAuthConfig(ServiceRegistrar serviceRegistrar) {
         if (propertiesConfig.file().enabled()) {
             PropertiesRealmConfig realmConfig = propertiesConfig.file();
             log.debugf("Configuring from PropertiesRealmConfig, users=%s, roles=%s", realmConfig.users(),
                     realmConfig.roles());
-            realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(realmConfig.realmName(),
-                    "quarkus.security.users.file.realm-name", Feature.SECURITY_PROPERTIES_FILE.getName()));
+            // build-and-run-time-fixed config must be captured, use a local variable so that this processor is not captured
+            SecurityUsersConfig buildTimeConfig = propertiesConfig;
             serviceRegistrar.forService(SecurityRealm.class, realmConfig.realmName())
                     .atPhase(Phase.DATA)
-                    .require(SecurityUsersConfig.class)
-                    .onStart((ctx, buildTimeConfig) -> ElytronPropertiesFileRecorder.createRealm(buildTimeConfig));
+                    .onStart(ctx -> ElytronPropertiesFileRecorder.createRealm(buildTimeConfig));
         }
     }
 
@@ -75,17 +72,15 @@ class ElytronPropertiesProcessor {
      * {@linkplain org.wildfly.security.auth.realm.SimpleMapBackedSecurityRealm}.
      */
     @BuildStep
-    void configureMPRealmConfig(ServiceRegistrar serviceRegistrar,
-            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
+    void configureMPRealmConfig(ServiceRegistrar serviceRegistrar) {
         if (propertiesConfig.embedded().enabled()) {
             log.info("Configuring from MPRealmConfig");
-            realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(propertiesConfig.embedded().realmName(),
-                    "quarkus.security.users.embedded.realm-name", Feature.SECURITY_PROPERTIES_FILE.getName()));
+            // build-and-run-time-fixed config must be captured, use a local variable so that this processor is not captured
+            SecurityUsersConfig buildTimeConfig = propertiesConfig;
             serviceRegistrar.forService(SecurityRealm.class, propertiesConfig.embedded().realmName())
                     .atPhase(Phase.DATA)
                     .require(MPRealmRuntimeConfig.class)
-                    .require(SecurityUsersConfig.class)
-                    .onStart((ctx, runtimeConfig, buildTimeConfig) -> ElytronPropertiesFileRecorder
+                    .onStart((ctx, runtimeConfig) -> ElytronPropertiesFileRecorder
                             .createEmbeddedRealm(buildTimeConfig, runtimeConfig));
         }
     }

@@ -15,7 +15,6 @@ import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageSecurityProviderBuildItem;
 import io.quarkus.elytron.security.deployment.ElytronPasswordMarkerBuildItem;
-import io.quarkus.elytron.security.deployment.ElytronSecurityRealmNameValidationBuildItem;
 import io.quarkus.elytron.security.jdbc.JdbcRecorder;
 import io.quarkus.elytron.security.jdbc.JdbcSecurityRealmBuildTimeConfig;
 import io.quarkus.elytron.security.jdbc.JdbcSecurityRealmRuntimeConfig;
@@ -40,10 +39,7 @@ class ElytronSecurityJdbcProcessor {
      */
     @BuildStep(onlyIf = IsJdbcSecurityEnabled.class)
     void configureJdbcRealmAuthConfig(ServiceRegistrar serviceRegistrar,
-            JdbcSecurityRealmBuildTimeConfig jdbcSecurityRealmBuildTimeConfig,
-            BuildProducer<ElytronSecurityRealmNameValidationBuildItem> realmNames) {
-        realmNames.produce(new ElytronSecurityRealmNameValidationBuildItem(jdbcSecurityRealmBuildTimeConfig.realmName(),
-                "quarkus.security.jdbc.realm-name", Feature.SECURITY_JDBC.getName()));
+            JdbcSecurityRealmBuildTimeConfig jdbcSecurityRealmBuildTimeConfig) {
         serviceRegistrar.forService(SecurityRealm.class, jdbcSecurityRealmBuildTimeConfig.realmName())
                 .atPhase(Phase.DATA)
                 .after(BeanContainer.class)
