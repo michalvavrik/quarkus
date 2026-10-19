@@ -13,9 +13,7 @@ import io.smallrye.config.WithDefault;
 public interface ElytronSecurityRuntimeConfig {
 
     /**
-     * The name of the default realm of the Elytron security domain.
-     * Users are authenticated by the default realm, unless a {@code org.wildfly.security.auth.server.RealmMapper} CDI
-     * bean maps them to another realm.
+     * The name of the default realm of the Elytron security domain, which is the realm that authenticates users.
      * <p>
      * This property is only used when multiple realms are enabled, for example, the properties file realm and the JDBC
      * realm. Its value must be the realm name of one of the enabled realms. When exactly one realm is enabled, that realm
