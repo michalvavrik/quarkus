@@ -43,7 +43,6 @@ import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedClassBuildItem;
 import io.quarkus.deployment.builditem.ServiceStartBuildItem;
 import io.quarkus.security.deployment.AdditionalSecurityCheckBuildItem;
-import io.quarkus.security.runtime.SecurityCheckRecorder;
 import io.quarkus.security.spi.SecurityTransformer;
 import io.quarkus.security.spi.SecurityTransformerBuildItem;
 import io.quarkus.security.spi.runtime.SecurityCheck;
@@ -103,7 +102,7 @@ class SpringSecurityProcessor {
     @Record(ExecutionTime.STATIC_INIT)
     @BuildStep
     void addSpringSecuredSecurityCheck(CombinedIndexBuildItem index,
-            SecurityCheckRecorder securityCheckRecorder,
+            SpringSecurityRecorder springSecurityRecorder,
             BuildProducer<AdditionalSecurityCheckBuildItem> additionalSecurityCheckBuildItems,
             Optional<SecurityTransformerBuildItem> securityTransformerBuildItem) {
 
@@ -123,7 +122,7 @@ class SpringSecurityProcessor {
                 checksStandardSecurity(instance, methodInfo, securityTransformer);
                 checksStandardSecurity(instance, methodInfo.declaringClass(), securityTransformer);
                 additionalSecurityCheckBuildItems.produce(new AdditionalSecurityCheckBuildItem(methodInfo,
-                        securityCheckRecorder.rolesAllowed(rolesAllowed)));
+                        springSecurityRecorder.rolesAllowed(rolesAllowed)));
                 methodsWithSecurityAnnotation.add(methodInfo);
             }
         }
@@ -148,7 +147,7 @@ class SpringSecurityProcessor {
                     }
                     if (!methodsWithSecurityAnnotation.contains(methodInfo)) {
                         additionalSecurityCheckBuildItems.produce(new AdditionalSecurityCheckBuildItem(methodInfo,
-                                securityCheckRecorder.rolesAllowed(rolesAllowed)));
+                                springSecurityRecorder.rolesAllowed(rolesAllowed)));
                     }
                 }
             }
@@ -384,7 +383,6 @@ class SpringSecurityProcessor {
     @Record(ExecutionTime.STATIC_INIT)
     @BuildStep
     void addSpringPreAuthorizeSecurityCheck(CombinedIndexBuildItem index,
-            SecurityCheckRecorder securityCheckRecorder,
             SpringSecurityRecorder springSecurityRecorder,
             SpringPreAuthorizeAnnotatedMethodBuildItem springPreAuthorizeAnnotatedMethods,
             SpringBeanNameToDotNameBuildItem springBeanNames,
@@ -442,14 +440,14 @@ class SpringSecurityProcessor {
             for (String part : parts) {
                 part = part.trim();
                 if (part.equals("permitAll()")) {
-                    securityChecks.add(securityCheckRecorder.permitAll());
+                    securityChecks.add(springSecurityRecorder.permitAll());
                 } else if (part.equals("denyAll()")) {
-                    securityChecks.add(securityCheckRecorder.denyAll());
+                    securityChecks.add(springSecurityRecorder.denyAll());
                 } else if (part.equals("isAnonymous()")) {
                     securityChecks.add(springSecurityRecorder.anonymous());
                 } else if (part.replaceAll("\\s", "").equals("isAuthenticated()")) {
 
-                    securityChecks.add(securityCheckRecorder.authenticated());
+                    securityChecks.add(springSecurityRecorder.authenticated());
 
                 } else if (part.startsWith("hasRole(")) {
 

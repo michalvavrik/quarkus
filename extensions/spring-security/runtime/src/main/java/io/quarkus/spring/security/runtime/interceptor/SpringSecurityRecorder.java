@@ -5,6 +5,10 @@ import java.util.List;
 import java.util.function.Supplier;
 
 import io.quarkus.runtime.annotations.Recorder;
+import io.quarkus.security.runtime.interceptor.check.AuthenticatedCheck;
+import io.quarkus.security.runtime.interceptor.check.DenyAllCheck;
+import io.quarkus.security.runtime.interceptor.check.PermitAllCheck;
+import io.quarkus.security.runtime.interceptor.check.RolesAllowedCheck;
 import io.quarkus.security.runtime.interceptor.check.SupplierRolesAllowedCheck;
 import io.quarkus.security.spi.runtime.SecurityCheck;
 import io.quarkus.spring.security.runtime.interceptor.check.AllDelegatingSecurityCheck;
@@ -17,6 +21,22 @@ import io.quarkus.spring.security.runtime.interceptor.check.PrincipalNameFromPar
 
 @Recorder
 public class SpringSecurityRecorder {
+
+    public SecurityCheck denyAll() {
+        return DenyAllCheck.INSTANCE;
+    }
+
+    public SecurityCheck permitAll() {
+        return PermitAllCheck.INSTANCE;
+    }
+
+    public SecurityCheck authenticated() {
+        return AuthenticatedCheck.INSTANCE;
+    }
+
+    public SecurityCheck rolesAllowed(String... roles) {
+        return RolesAllowedCheck.of(roles);
+    }
 
     public SecurityCheck anonymous() {
         return AnonymousCheck.INSTANCE;

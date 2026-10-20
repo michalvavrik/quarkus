@@ -44,7 +44,7 @@ public final class QuarkusPermissionSecurityIdentityAugmentor implements Securit
 
     private final BiFunction<SecurityIdentity, Permission, Uni<Boolean>> permissionChecker;
 
-    QuarkusPermissionSecurityIdentityAugmentor(BlockingSecurityExecutor blockingExecutor) {
+    public QuarkusPermissionSecurityIdentityAugmentor(BlockingSecurityExecutor blockingExecutor) {
         this.permissionChecker = new BiFunction<SecurityIdentity, Permission, Uni<Boolean>>() {
             @Override
             public Uni<Boolean> apply(SecurityIdentity finalIdentity, Permission requiredpermission) {

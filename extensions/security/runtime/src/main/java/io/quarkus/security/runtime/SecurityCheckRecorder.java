@@ -22,36 +22,25 @@ import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.spi.ConfigProviderResolver;
 import org.jboss.logging.Logger;
 
-import io.quarkus.arc.Arc;
-import io.quarkus.arc.SyntheticCreationalContext;
 import io.quarkus.runtime.RuntimeValue;
-import io.quarkus.runtime.ShutdownContext;
-import io.quarkus.runtime.annotations.Recorder;
 import io.quarkus.security.ForbiddenException;
 import io.quarkus.security.StringPermission;
-import io.quarkus.security.identity.CurrentIdentityAssociation;
 import io.quarkus.security.runtime.interceptor.SecurityCheckStorageBuilder;
-import io.quarkus.security.runtime.interceptor.SecurityConstrainer;
 import io.quarkus.security.runtime.interceptor.check.AuthenticatedCheck;
 import io.quarkus.security.runtime.interceptor.check.DenyAllCheck;
 import io.quarkus.security.runtime.interceptor.check.PermissionSecurityCheck;
 import io.quarkus.security.runtime.interceptor.check.PermitAllCheck;
 import io.quarkus.security.runtime.interceptor.check.RolesAllowedCheck;
 import io.quarkus.security.runtime.interceptor.check.SupplierRolesAllowedCheck;
-import io.quarkus.security.spi.runtime.AuthorizationFailureEvent;
-import io.quarkus.security.spi.runtime.AuthorizationSuccessEvent;
-import io.quarkus.security.spi.runtime.BlockingSecurityExecutor;
 import io.quarkus.security.spi.runtime.SecurityCheck;
 import io.quarkus.security.spi.runtime.SecurityCheckStorage;
 import io.smallrye.config.Expressions;
 import io.smallrye.config.common.utils.StringUtil;
 
-@Recorder
 public class SecurityCheckRecorder {
 
     private static final Logger LOGGER = Logger.getLogger(SecurityCheckRecorder.class);
     private static final Set<SupplierRolesAllowedCheck> configExpRolesAllowedChecks = ConcurrentHashMap.newKeySet();
-    private static volatile boolean runtimeConfigReady = false;
 
     public SecurityCheck denyAll() {
         return DenyAllCheck.INSTANCE;
@@ -378,39 +367,6 @@ public class SecurityCheckRecorder {
         builder.getValue().registerDefaultSecurityCheck(securityCheck);
     }
 
-    public Supplier<SecurityConstrainer> createSecurityConstrainer(Supplier<Map<String, Object>> additionalEventPropsSupplier) {
-        return new Supplier<SecurityConstrainer>() {
-            @Override
-            public SecurityConstrainer get() {
-                var container = Arc.container();
-                var beanManager = container.beanManager();
-                var eventPropsSupplier = additionalEventPropsSupplier == null ? new Supplier<Map<String, Object>>() {
-                    @Override
-                    public Map<String, Object> get() {
-                        return Map.of();
-                    }
-                } : additionalEventPropsSupplier;
-                return new SecurityConstrainer(container.instance(SecurityCheckStorage.class).get(),
-                        beanManager, beanManager.getEvent().select(AuthorizationFailureEvent.class),
-                        beanManager.getEvent().select(AuthorizationSuccessEvent.class), runtimeConfigReady,
-                        container.select(CurrentIdentityAssociation.class), eventPropsSupplier);
-            }
-        };
-    }
-
-    public void setRuntimeConfigReady() {
-        runtimeConfigReady = true;
-    }
-
-    public void unsetRuntimeConfigReady(ShutdownContext shutdownContext) {
-        shutdownContext.addShutdownTask(new Runnable() {
-            @Override
-            public void run() {
-                runtimeConfigReady = false;
-            }
-        });
-    }
-
     public RuntimeValue<MethodHandle> createPermissionMethodConverter(String methodName, RuntimeValue<Class<?>> clazz) {
         try {
             var handle = MethodHandles.publicLookup().findStatic(clazz.getValue(), methodName,
@@ -434,15 +390,5 @@ public class SecurityCheckRecorder {
             throw new RuntimeException(
                     "Failed to convert method argument '%s' to Permission constructor parameter".formatted(methodArg), e);
         }
-    }
-
-    public Function<SyntheticCreationalContext<QuarkusPermissionSecurityIdentityAugmentor>, QuarkusPermissionSecurityIdentityAugmentor> createPermissionAugmentor() {
-        return new Function<SyntheticCreationalContext<QuarkusPermissionSecurityIdentityAugmentor>, QuarkusPermissionSecurityIdentityAugmentor>() {
-            @Override
-            public QuarkusPermissionSecurityIdentityAugmentor apply(
-                    SyntheticCreationalContext<QuarkusPermissionSecurityIdentityAugmentor> ctx) {
-                return new QuarkusPermissionSecurityIdentityAugmentor(ctx.getInjectedReference(BlockingSecurityExecutor.class));
-            }
-        };
     }
 }

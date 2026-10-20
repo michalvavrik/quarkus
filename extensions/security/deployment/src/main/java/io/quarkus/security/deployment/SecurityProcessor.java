@@ -1,6 +1,7 @@
 package io.quarkus.security.deployment;
 
 import static io.quarkus.arc.processor.DotNames.NO_CLASS_INTERCEPTORS;
+import static io.quarkus.deployment.pkg.steps.NativeImageFutureDefault.RUN_TIME_INITIALIZE_SECURITY_PROVIDERS;
 import static io.quarkus.gizmo2.desc.MethodDesc.of;
 import static io.quarkus.security.deployment.DotNames.AUTHENTICATED;
 import static io.quarkus.security.deployment.DotNames.DENY_ALL;
@@ -42,6 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import jakarta.annotation.security.DenyAll;
@@ -49,7 +51,6 @@ import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Dependent;
-import jakarta.inject.Singleton;
 
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.AnnotationTarget;
@@ -76,8 +77,13 @@ import io.quarkus.arc.processor.BuildExtension;
 import io.quarkus.arc.processor.BuiltinScope;
 import io.quarkus.arc.processor.InterceptorBindingRegistrar;
 import io.quarkus.arc.processor.ObserverInfo;
+import io.quarkus.arc.runtime.BeanContainer;
 import io.quarkus.builder.item.MultiBuildItem;
 import io.quarkus.builder.item.SimpleBuildItem;
+import io.quarkus.core.Phase;
+import io.quarkus.core.StartContext;
+import io.quarkus.core.deployment.service.ServiceRegistrar;
+import io.quarkus.core.deployment.service.VoidAction1;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.Feature;
 import io.quarkus.deployment.annotations.BuildProducer;
@@ -97,7 +103,6 @@ import io.quarkus.deployment.builditem.LaunchModeBuildItem;
 import io.quarkus.deployment.builditem.ModuleExportBuildItem;
 import io.quarkus.deployment.builditem.NativeImageFeatureBuildItem;
 import io.quarkus.deployment.builditem.RunTimeConfigBuilderBuildItem;
-import io.quarkus.deployment.builditem.ShutdownContextBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageSecurityProviderBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.RuntimeInitializedClassBuildItem;
@@ -296,12 +301,19 @@ public class SecurityProcessor {
     }
 
     @BuildStep
-    @Record(ExecutionTime.RUNTIME_INIT)
-    void configureJCAProvidersAtRuntime(SecurityProviderRecorder recorder,
-            List<JCAProviderBuildItem> jcaProviders) {
-        for (JCAProviderBuildItem provider : jcaProviders) {
-            recorder.configureProvider(provider.getProviderName(), provider.getProviderConfigs());
-        }
+    void configureJCAProvidersAtRuntime(ServiceRegistrar serviceRegistrar, List<JCAProviderBuildItem> jcaProviders) {
+        Map<String, List<String>> providerNameToConfigs = Map.copyOf(jcaProviders.stream()
+                .collect(Collectors.groupingBy(JCAProviderBuildItem::getProviderName, Collectors.reducing(
+                        new ArrayList<>(),
+                        JCAProviderBuildItem::getProviderConfigs,
+                        (a, b) -> {
+                            var all = new ArrayList<>(a);
+                            all.addAll(b);
+                            return List.copyOf(all);
+                        }))));
+        serviceRegistrar.forService("io.quarkus.security.configure-jca-providers")
+                .atPhase(Phase.INFRASTRUCTURE)
+                .onStart(ctx -> providerNameToConfigs.forEach(SecurityProviderRecorder::configureProvider));
     }
 
     @BuildStep
@@ -453,38 +465,33 @@ public class SecurityProcessor {
         runtimeReInitialized.produce(new RuntimeInitializedClassBuildItem("sun.security.pkcs11.P11Util"));
     }
 
-    @BuildStep(onlyIfNot = NativeImageFutureDefault.RunTimeInitializeSecurityProvider.class)
-    @Record(ExecutionTime.STATIC_INIT)
-    void recordBouncyCastleProvidersStaticInit(SecurityProviderRecorder recorder,
-            List<BouncyCastleProviderBuildItem> bouncyCastleProviders,
-            List<BouncyCastleJsseProviderBuildItem> bouncyCastleJsseProviders) {
-        recordBouncyCastleProviders(recorder, bouncyCastleProviders, bouncyCastleJsseProviders);
-    }
-
-    @BuildStep(onlyIf = NativeImageFutureDefault.RunTimeInitializeSecurityProvider.class)
-    @Record(ExecutionTime.RUNTIME_INIT)
-    void recordBouncyCastleProvidersRuntimeInit(SecurityProviderRecorder recorder,
-            List<BouncyCastleProviderBuildItem> bouncyCastleProviders,
-            List<BouncyCastleJsseProviderBuildItem> bouncyCastleJsseProviders) {
-        recordBouncyCastleProviders(recorder, bouncyCastleProviders, bouncyCastleJsseProviders);
-    }
-
-    void recordBouncyCastleProviders(SecurityProviderRecorder recorder,
-            List<BouncyCastleProviderBuildItem> bouncyCastleProviders,
-            List<BouncyCastleJsseProviderBuildItem> bouncyCastleJsseProviders) {
-        Optional<BouncyCastleJsseProviderBuildItem> bouncyCastleJsseProvider = getOne(bouncyCastleJsseProviders);
+    @BuildStep
+    void configureBouncyCastleProviders(List<BouncyCastleProviderBuildItem> bouncyCastleProviders,
+            List<BouncyCastleJsseProviderBuildItem> bouncyCastleJsseProviders,
+            ServiceRegistrar serviceRegistrar, NativeConfig nativeConfig) {
+        final VoidAction1<StartContext> action;
+        final Optional<BouncyCastleJsseProviderBuildItem> bouncyCastleJsseProvider = getOne(bouncyCastleJsseProviders);
         if (bouncyCastleJsseProvider.isPresent()) {
             if (bouncyCastleJsseProvider.get().isInFipsMode()) {
-                recorder.addBouncyCastleFipsJsseProvider();
+                action = ctx -> SecurityProviderRecorder.addBouncyCastleFipsJsseProvider();
             } else {
-                recorder.addBouncyCastleJsseProvider();
+                action = ctx -> SecurityProviderRecorder.addBouncyCastleJsseProvider();
             }
         } else {
             Optional<BouncyCastleProviderBuildItem> bouncyCastleProvider = getOne(bouncyCastleProviders);
             if (bouncyCastleProvider.isPresent()) {
-                recorder.addBouncyCastleProvider(bouncyCastleProvider.get().isInFipsMode());
+                action = ctx -> SecurityProviderRecorder.addBouncyCastleProvider(bouncyCastleProvider.get().isInFipsMode());
+            } else {
+                return;
             }
         }
+        final Phase phase;
+        if (RUN_TIME_INITIALIZE_SECURITY_PROVIDERS.isEnabled(nativeConfig)) {
+            phase = Phase.INFRASTRUCTURE;
+        } else {
+            phase = Phase.STATIC_INIT;
+        }
+        serviceRegistrar.forService("io.quarkus.security.configure-bouncy-castle-providers").atPhase(phase).onStart(action);
     }
 
     @BuildStep
@@ -669,37 +676,26 @@ public class SecurityProcessor {
         return providerClasses;
     }
 
-    @Record(ExecutionTime.RUNTIME_INIT)
-    @BuildStep
-    void recordRuntimeConfigReady(SecurityCheckRecorder recorder, ShutdownContextBuildItem shutdownContextBuildItem,
-            LaunchModeBuildItem launchModeBuildItem) {
-        recorder.setRuntimeConfigReady();
-        if (launchModeBuildItem.getLaunchMode() == LaunchMode.DEVELOPMENT) {
-            recorder.unsetRuntimeConfigReady(shutdownContextBuildItem);
-        }
-    }
-
-    @Record(ExecutionTime.STATIC_INIT)
     @BuildStep
     void registerSecurityInterceptors(BuildProducer<InterceptorBindingRegistrarBuildItem> registrars,
-            BuildProducer<AdditionalBeanBuildItem> beans,
-            BuildProducer<SyntheticBeanBuildItem> syntheticBeanProducer, SecurityCheckRecorder recorder,
+            BuildProducer<AdditionalBeanBuildItem> beans, ServiceRegistrar serviceRegistrar,
             Optional<AdditionalSecurityConstrainerEventPropsBuildItem> additionalSecurityConstrainerEventsItem) {
         registrars.produce(new InterceptorBindingRegistrarBuildItem(new SecurityAnnotationsRegistrar()));
         Class<?>[] interceptors = { AuthenticatedInterceptor.class, DenyAllInterceptor.class, PermitAllInterceptor.class,
                 RolesAllowedInterceptor.class, PermissionsAllowedInterceptor.class };
         beans.produce(new AdditionalBeanBuildItem(interceptors));
         beans.produce(new AdditionalBeanBuildItem(SecurityHandler.class));
+        beans.produce(new AdditionalBeanBuildItem(SecurityConstrainer.class));
 
-        var additionalEventsSupplier = additionalSecurityConstrainerEventsItem
+        final Supplier<Map<String, Object>> additionalEventPropsSupplier = additionalSecurityConstrainerEventsItem
                 .map(AdditionalSecurityConstrainerEventPropsBuildItem::getAdditionalEventPropsSupplier)
                 .orElse(null);
-        syntheticBeanProducer.produce(SyntheticBeanBuildItem
-                .configure(SecurityConstrainer.class)
-                .unremovable()
-                .scope(Singleton.class)
-                .supplier(recorder.createSecurityConstrainer(additionalEventsSupplier))
-                .done());
+
+        serviceRegistrar
+                .forService("io.quarkus.security.set-additional-security-event-properties-supplier")
+                .atPhase(Phase.STATIC_INIT)
+                .onStart(ctx -> SecurityConstrainer.setAdditionalSecurityEventPropsSupplier(
+                        additionalEventPropsSupplier == null ? Map::of : additionalEventPropsSupplier));
     }
 
     /*
@@ -847,10 +843,9 @@ public class SecurityProcessor {
                         && methodInfo.hasDeclaredAnnotation(BLOCKING));
     }
 
-    @Record(ExecutionTime.STATIC_INIT)
     @BuildStep
     void configurePermissionCheckers(PermissionSecurityChecksBuilderBuildItem checkerBuilder,
-            BuildProducer<SyntheticBeanBuildItem> syntheticBeanProducer, SecurityCheckRecorder recorder,
+            BuildProducer<SyntheticBeanBuildItem> syntheticBeanProducer, ServiceRegistrar serviceRegistrar,
             BeanDiscoveryFinishedBuildItem beanDiscoveryFinishedBuildItem,
             BuildProducer<GeneratedClassBuildItem> generatedClassProducer,
             BuildProducer<GeneratedResourceBuildItem> generatedResourceProducer,
@@ -861,14 +856,18 @@ public class SecurityProcessor {
             // why do we use synthetic bean?
             // - this processor relies on the bean archive index (cycle: idx -> additional bean -> idx)
             // - we have injection points (=> better validation from Arc) as checker beans are only requested from this augmentor
+            serviceRegistrar.forService(QuarkusPermissionSecurityIdentityAugmentor.class)
+                    .atPhase(Phase.STATIC_INIT)
+                    .require(BeanContainer.class)
+                    .onStart((ctx, container) -> new QuarkusPermissionSecurityIdentityAugmentor(
+                            container.beanInstance(BlockingSecurityExecutor.class)));
             var syntheticBeanConfigurator = SyntheticBeanBuildItem
                     .configure(QuarkusPermissionSecurityIdentityAugmentor.class)
                     .addType(SecurityIdentityAugmentor.class)
                     // ATM we do get augmentors from CDI once, no need to keep the instance in the CDI container
                     .scope(Dependent.class)
                     .unremovable()
-                    .addInjectionPoint(Type.create(BlockingSecurityExecutor.class))
-                    .createWith(recorder.createPermissionAugmentor());
+                    .serviceValue(QuarkusPermissionSecurityIdentityAugmentor.class);
 
             checkerBuilder.instance.getPermissionCheckers().stream().forEach(checkerMethod -> {
                 var checkerClassType = Type.create(checkerMethod.declaringClass().name(), Type.Kind.CLASS);
