@@ -583,12 +583,12 @@ public final class OidcUtils {
      * @param provider well-known OpenId Connect provider configuration
      * @return merged configuration
      */
-    static OidcTenantConfig mergeTenantConfig(io.quarkus.oidc.runtime.OidcTenantConfig tenant,
-            io.quarkus.oidc.runtime.OidcTenantConfig provider) {
+    static OidcTenantConfig mergeTenantConfig(OidcTenantConfig tenant, OidcTenantConfig provider) {
         if (tenant.tenantId().isEmpty()) {
             // OidcRecorder sets it before the merge operation
             throw new IllegalStateException();
         }
+        // clear the provider, so that the merged configuration is never merged again
         var builder = OidcTenantConfig.builder(tenant).provider(null);
         // root properties
         if (tenant.authServerUrl().isEmpty() && provider.authServerUrl().isPresent()) {
@@ -679,8 +679,7 @@ public final class OidcUtils {
         return builder.build();
     }
 
-    public static io.quarkus.oidc.runtime.OidcTenantConfig resolveProviderConfig(
-            io.quarkus.oidc.runtime.OidcTenantConfig oidcTenantConfig) {
+    static OidcTenantConfig resolveProviderConfig(OidcTenantConfig oidcTenantConfig) {
         if (oidcTenantConfig != null && oidcTenantConfig.provider().isPresent()) {
             return OidcUtils.mergeTenantConfig(oidcTenantConfig,
                     KnownOidcProviders.provider(oidcTenantConfig.provider().get()));

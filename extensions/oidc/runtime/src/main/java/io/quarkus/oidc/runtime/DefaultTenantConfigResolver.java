@@ -256,7 +256,9 @@ public class DefaultTenantConfigResolver {
                     //shouldn't happen, but guard against it anyway
                     oidcConfig = Uni.createFrom().nullItem();
                 }
-                oidcConfig = oidcConfig.memoize().indefinitely();
+                // merge before memoizing, so that all subscribers get the same merged instance
+                oidcConfig = oidcConfig.onItem().transform(cfg -> OidcUtils.resolveProviderConfig(cfg))
+                        .memoize().indefinitely();
                 if (oidcConfig == null) {
                     //shouldn't happen, but guard against it anyway
                     oidcConfig = Uni.createFrom().nullItem();

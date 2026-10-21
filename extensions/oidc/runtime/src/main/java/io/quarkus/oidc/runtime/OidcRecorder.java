@@ -74,6 +74,8 @@ public class OidcRecorder {
                 final OidcImpl oidc = new OidcImpl(oidcConfig.getValue());
                 ctx.getInjectedReference(new TypeLiteral<Event<Oidc>>() {
                 }).fire(oidc);
+                // all static tenants are known now, merge them with well-known providers before they are used
+                oidc.resolveProviderConfigs();
                 return new TenantConfigBean(vertx.get(), registry.get(), oidc, securityConfig.getValue().events().enabled(),
                         proxyConfigurationRegistrySupplier.get(), allowedRoutes);
             }

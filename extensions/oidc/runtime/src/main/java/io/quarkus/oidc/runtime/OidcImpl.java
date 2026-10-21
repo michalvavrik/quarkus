@@ -46,6 +46,11 @@ final class OidcImpl implements Oidc {
         return defaultTenantConfig;
     }
 
+    void resolveProviderConfigs() {
+        defaultTenantConfig = OidcUtils.resolveProviderConfig(defaultTenantConfig);
+        staticTenantConfigs.replaceAll((tenantId, tenantConfig) -> OidcUtils.resolveProviderConfig(tenantConfig));
+    }
+
     private void putStaticTenantConfig(OidcTenantConfig tenantConfig) {
         final String tenantId = tenantConfig.tenantId().get();
         if (defaultTenantConfig.tenantId().get().equals(tenantId)) {
