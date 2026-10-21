@@ -138,10 +138,8 @@ import io.quarkus.security.runtime.interceptor.PermissionsAllowedInterceptor;
 import io.quarkus.security.runtime.interceptor.PermitAllInterceptor;
 import io.quarkus.security.runtime.interceptor.RolesAllowedInterceptor;
 import io.quarkus.security.runtime.interceptor.RunAsUserInterceptor;
-import io.quarkus.security.runtime.interceptor.SecurityCheckStorageImpl;
 import io.quarkus.security.runtime.interceptor.SecurityConstrainer;
 import io.quarkus.security.runtime.interceptor.SecurityHandler;
-import io.quarkus.security.runtime.interceptor.check.ConfigExpressionRolesAllowedChecks;
 import io.quarkus.security.runtime.interceptor.check.MethodSecurityCheckSpec;
 import io.quarkus.security.runtime.interceptor.check.SecurityCheckSpec;
 import io.quarkus.security.spi.AdditionalSecuredMethodsBuildItem;
@@ -1039,13 +1037,19 @@ public class SecurityProcessor {
         }
 
         final List<MethodSecurityCheckSpec> capturedMethodChecks = List.copyOf(methodChecks);
+        // the factory is a service, so that it can resolve the configuration expressions of the checks it creates
+        // once the runtime configuration is available
+        serviceRegistrar.forService(SecurityCheckFactory.class)
+                .atPhase(Phase.STATIC_INIT)
+                .onStart(ctx -> new SecurityCheckFactory());
         serviceRegistrar.forService(SecurityCheckStorage.class)
                 .atPhase(Phase.STATIC_INIT)
+                .require(SecurityCheckFactory.class)
                 // security checks contributed by other extensions for the methods they secure
                 .consumeAll(SecurityCheckContribution.class)
                 // class-level checks
                 .consumeAll(SecurityCheck.class)
-                .onStart((ctx, contributions, securityCheckServices) -> SecurityCheckFactory.createStorage(
+                .onStart((ctx, factory, contributions, securityCheckServices) -> factory.createStorage(
                         capturedMethodChecks, defaultCheck, contributions, securityCheckServices));
         syntheticBeans.produce(
                 SyntheticBeanBuildItem.configure(SecurityCheckStorage.class)
@@ -1062,17 +1066,13 @@ public class SecurityProcessor {
             // we created supplier security check for each role set with at least one config expression
             // now we need to resolve config expression so that if there are any failures they happen when app starts
             // rather than first time request is checked (which would be more likely to affect end user)
-            // the checks are passed to the runtime service by a separate static-init service, because creating the
-            // SecurityCheckStorage CDI bean drains the storage service value, and the bean can be created during the
-            // static init (e.g. Quarkus REST looks up the security checks when it creates the deployment)
-            serviceRegistrar.forService(ConfigExpressionRolesAllowedChecks.class)
-                    .atPhase(Phase.STATIC_INIT)
-                    .require(SecurityCheckStorage.class)
-                    .onStart((ctx, storage) -> ((SecurityCheckStorageImpl) storage).getConfigExpressionChecks());
+            // the factory resolves the checks it created for the storage; the storage itself cannot be required here,
+            // because creating the SecurityCheckStorage CDI bean drains the storage service value, and the bean
+            // can be created during the static init (e.g. Quarkus REST looks up the checks to create the deployment)
             serviceRegistrar.forService("io.quarkus.security.resolve-roles-allowed-config-expressions")
                     .atPhase(Phase.INIT)
-                    .require(ConfigExpressionRolesAllowedChecks.class)
-                    .onStart((ctx, checks) -> checks.resolve());
+                    .require(SecurityCheckFactory.class)
+                    .onStart((ctx, factory) -> factory.resolveRolesAllowedConfigExpressions());
         }
     }
 

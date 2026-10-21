@@ -41,7 +41,9 @@ import io.smallrye.config.common.utils.StringUtil;
 
 /**
  * Creates {@link SecurityCheck} instances from their build-time {@link SecurityCheckSpec descriptions}.
- * The factory methods are invoked by service actions during the static init.
+ * The factory methods are invoked by service actions during the static init. The factory that creates the security
+ * check storage is a static-init service, so that the configuration expressions of the checks it creates can be
+ * resolved once the runtime configuration is available.
  */
 public final class SecurityCheckFactory {
 
@@ -57,7 +59,7 @@ public final class SecurityCheckFactory {
     private final Map<String, MethodHandle> converters = new HashMap<>();
     private final List<ConfigExpressionRolesAllowedCheck> configExpressionChecks = new ArrayList<>();
 
-    private SecurityCheckFactory() {
+    public SecurityCheckFactory() {
     }
 
     /**
@@ -78,15 +80,14 @@ public final class SecurityCheckFactory {
      * @param securityCheckServices all the {@link SecurityCheck} services keyed by their service name, that is the
      *        class-level checks; their configuration expressions are resolved eagerly as well
      */
-    public static SecurityCheckStorageImpl createStorage(List<MethodSecurityCheckSpec> methodChecks,
+    public SecurityCheckStorageImpl createStorage(List<MethodSecurityCheckSpec> methodChecks,
             SecurityCheckSpec defaultCheck, Map<String, SecurityCheckContribution> contributions,
             Map<String, SecurityCheck> securityCheckServices) {
-        var factory = new SecurityCheckFactory();
         Map<MethodDescription, SecurityCheck> result = new HashMap<>();
         for (MethodSecurityCheckSpec methodCheck : methodChecks) {
             var method = new MethodDescription(methodCheck.className(), methodCheck.methodName(),
                     methodCheck.parameterTypes().toArray(String[]::new));
-            result.put(method, factory.createCheck(methodCheck.check()));
+            result.put(method, createCheck(methodCheck.check()));
         }
         Map<MethodDescription, String> contributors = new HashMap<>();
         for (Map.Entry<String, SecurityCheckContribution> contribution : contributions.entrySet()) {
@@ -103,11 +104,22 @@ public final class SecurityCheckFactory {
         }
         for (SecurityCheck securityCheckService : securityCheckServices.values()) {
             if (securityCheckService instanceof ConfigExpressionRolesAllowedCheck configExpressionCheck) {
-                factory.configExpressionChecks.add(configExpressionCheck);
+                configExpressionChecks.add(configExpressionCheck);
             }
         }
-        SecurityCheck defaultSecurityCheck = defaultCheck == null ? null : factory.createCheck(defaultCheck);
-        return new SecurityCheckStorageImpl(result, defaultSecurityCheck, factory.configExpressionChecks);
+        SecurityCheck defaultSecurityCheck = defaultCheck == null ? null : createCheck(defaultCheck);
+        return new SecurityCheckStorageImpl(result, defaultSecurityCheck);
+    }
+
+    /**
+     * Eagerly resolves the configuration expressions used in the {@code @RolesAllowed} annotations of the checks
+     * created by this factory, so that failures are reported when the application starts rather than when the first
+     * request is checked. Must be called when the runtime configuration is available.
+     */
+    public void resolveRolesAllowedConfigExpressions() {
+        for (ConfigExpressionRolesAllowedCheck check : configExpressionChecks) {
+            check.resolveAllowedRoles();
+        }
     }
 
     private SecurityCheck createCheck(SecurityCheckSpec spec) {
