@@ -141,6 +141,7 @@ import io.quarkus.security.runtime.interceptor.RunAsUserInterceptor;
 import io.quarkus.security.runtime.interceptor.SecurityCheckStorageImpl;
 import io.quarkus.security.runtime.interceptor.SecurityConstrainer;
 import io.quarkus.security.runtime.interceptor.SecurityHandler;
+import io.quarkus.security.runtime.interceptor.check.ConfigExpressionRolesAllowedChecks;
 import io.quarkus.security.runtime.interceptor.check.MethodSecurityCheckSpec;
 import io.quarkus.security.runtime.interceptor.check.SecurityCheckSpec;
 import io.quarkus.security.spi.AdditionalSecuredMethodsBuildItem;
@@ -1061,10 +1062,17 @@ public class SecurityProcessor {
             // we created supplier security check for each role set with at least one config expression
             // now we need to resolve config expression so that if there are any failures they happen when app starts
             // rather than first time request is checked (which would be more likely to affect end user)
+            // the checks are passed to the runtime service by a separate static-init service, because creating the
+            // SecurityCheckStorage CDI bean drains the storage service value, and the bean can be created during the
+            // static init (e.g. Quarkus REST looks up the security checks when it creates the deployment)
+            serviceRegistrar.forService(ConfigExpressionRolesAllowedChecks.class)
+                    .atPhase(Phase.STATIC_INIT)
+                    .require(SecurityCheckStorage.class)
+                    .onStart((ctx, storage) -> ((SecurityCheckStorageImpl) storage).getConfigExpressionChecks());
             serviceRegistrar.forService("io.quarkus.security.resolve-roles-allowed-config-expressions")
                     .atPhase(Phase.INIT)
-                    .require(SecurityCheckStorage.class)
-                    .onStart((ctx, storage) -> ((SecurityCheckStorageImpl) storage).resolveRolesAllowedConfigExpressions());
+                    .require(ConfigExpressionRolesAllowedChecks.class)
+                    .onStart((ctx, checks) -> checks.resolve());
         }
     }
 
