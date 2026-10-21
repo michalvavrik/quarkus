@@ -2,7 +2,9 @@ package io.quarkus.spring.security.runtime.interceptor;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 import io.quarkus.security.runtime.interceptor.check.AuthenticatedCheck;
@@ -10,7 +12,9 @@ import io.quarkus.security.runtime.interceptor.check.DenyAllCheck;
 import io.quarkus.security.runtime.interceptor.check.PermitAllCheck;
 import io.quarkus.security.runtime.interceptor.check.RolesAllowedCheck;
 import io.quarkus.security.runtime.interceptor.check.SupplierRolesAllowedCheck;
+import io.quarkus.security.spi.runtime.MethodDescription;
 import io.quarkus.security.spi.runtime.SecurityCheck;
+import io.quarkus.security.spi.runtime.SecurityCheckContribution;
 import io.quarkus.spring.security.runtime.interceptor.check.AllDelegatingSecurityCheck;
 import io.quarkus.spring.security.runtime.interceptor.check.AnonymousCheck;
 import io.quarkus.spring.security.runtime.interceptor.check.AnyDelegatingSecurityCheck;
@@ -18,6 +22,7 @@ import io.quarkus.spring.security.runtime.interceptor.check.CombinedRoleSupplier
 import io.quarkus.spring.security.runtime.interceptor.check.FromBeanRoleSupplier;
 import io.quarkus.spring.security.runtime.interceptor.check.PrincipalNameFromParameterObjectSecurityCheck;
 import io.quarkus.spring.security.runtime.interceptor.check.PrincipalNameFromParameterSecurityCheck;
+import io.quarkus.spring.security.runtime.interceptor.check.SpringSecuredMethod;
 import io.quarkus.spring.security.runtime.interceptor.check.SpringSecurityCheckSpec;
 
 /**
@@ -27,6 +32,30 @@ import io.quarkus.spring.security.runtime.interceptor.check.SpringSecurityCheckS
 public final class SpringSecurityCheckFactory {
 
     private SpringSecurityCheckFactory() {
+    }
+
+    /**
+     * Creates the security checks of the secured methods. Exactly one {@link SecurityCheck} instance is created for
+     * each distinct {@link SpringSecurityCheckSpec}.
+     */
+    public static SecurityCheckContribution createContribution(List<SpringSecuredMethod> securedMethods) {
+        Map<SpringSecurityCheckSpec, SecurityCheck> checks = new HashMap<>();
+        Map<MethodDescription, SecurityCheck> securityChecks = new HashMap<>();
+        for (SpringSecuredMethod securedMethod : securedMethods) {
+            SecurityCheck check = checks.get(securedMethod.check());
+            if (check == null) {
+                check = create(securedMethod.check());
+                checks.put(securedMethod.check(), check);
+            }
+            var method = new MethodDescription(securedMethod.className(), securedMethod.methodName(),
+                    securedMethod.parameterTypes().toArray(new String[0]));
+            if (securityChecks.put(method, check) != null) {
+                throw new IllegalStateException(
+                        "Multiple security checks found for the method '%s#%s'".formatted(securedMethod.className(),
+                                securedMethod.methodName()));
+            }
+        }
+        return new SecurityCheckContribution(securityChecks);
     }
 
     public static SecurityCheck create(SpringSecurityCheckSpec spec) {

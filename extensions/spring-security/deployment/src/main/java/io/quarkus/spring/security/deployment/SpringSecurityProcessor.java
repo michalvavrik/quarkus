@@ -40,16 +40,16 @@ import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedClassBuildItem;
 import io.quarkus.deployment.builditem.ServiceStartBuildItem;
-import io.quarkus.security.runtime.interceptor.check.SecurityCheckServiceName;
 import io.quarkus.security.spi.SecurityTransformer;
 import io.quarkus.security.spi.SecurityTransformerBuildItem;
-import io.quarkus.security.spi.runtime.SecurityCheck;
+import io.quarkus.security.spi.runtime.SecurityCheckContribution;
 import io.quarkus.spring.di.deployment.SpringBeanNameToDotNameBuildItem;
 import io.quarkus.spring.security.runtime.interceptor.SpringPreauthorizeInterceptor;
 import io.quarkus.spring.security.runtime.interceptor.SpringSecuredInterceptor;
 import io.quarkus.spring.security.runtime.interceptor.SpringSecurityCheckFactory;
 import io.quarkus.spring.security.runtime.interceptor.check.PrincipalNameFromParameterObjectSecurityCheck;
 import io.quarkus.spring.security.runtime.interceptor.check.PrincipalNameFromParameterSecurityCheck;
+import io.quarkus.spring.security.runtime.interceptor.check.SpringSecuredMethod;
 import io.quarkus.spring.security.runtime.interceptor.check.SpringSecurityCheckSpec;
 
 class SpringSecurityProcessor {
@@ -103,6 +103,7 @@ class SpringSecurityProcessor {
             Optional<SecurityTransformerBuildItem> securityTransformerBuildItem) {
 
         Set<MethodInfo> methodsWithSecurityAnnotation = new HashSet<>();
+        List<SpringSecuredMethod> securedMethods = new ArrayList<>();
         SecurityTransformer securityTransformer = SecurityTransformerBuildItem.createSecurityTransformer(index.getIndex(),
                 securityTransformerBuildItem);
 
@@ -122,8 +123,7 @@ class SpringSecurityProcessor {
                     // the roles are combined with the @PreAuthorize check of the method
                     continue;
                 }
-                registerSecurityCheck(serviceRegistrar, methodInfo,
-                        new SpringSecurityCheckSpec.RolesAllowed(List.of(rolesAllowed)));
+                securedMethods.add(securedMethod(methodInfo, new SpringSecurityCheckSpec.RolesAllowed(List.of(rolesAllowed))));
             }
         }
 
@@ -146,12 +146,13 @@ class SpringSecurityProcessor {
                         continue;
                     }
                     if (!methodsWithSecurityAnnotation.contains(methodInfo)) {
-                        registerSecurityCheck(serviceRegistrar, methodInfo,
-                                new SpringSecurityCheckSpec.RolesAllowed(List.of(rolesAllowed)));
+                        securedMethods.add(
+                                securedMethod(methodInfo, new SpringSecurityCheckSpec.RolesAllowed(List.of(rolesAllowed))));
                     }
                 }
             }
         }
+        registerContribution(serviceRegistrar, "spring-security-secured", securedMethods);
     }
 
     private boolean hasSpringSecurityAnnotationOtherThan(MethodInfo methodInfo, DotName excluded) {
@@ -397,6 +398,7 @@ class SpringSecurityProcessor {
                     generatedClasses.produce(new GeneratedClassBuildItem(true, className, bytes));
                 });
 
+        List<SpringSecuredMethod> securedMethods = new ArrayList<>();
         for (Map.Entry<MethodInfo, AnnotationInstance> entry : springPreAuthorizeAnnotatedMethods.getMethodToInstanceMap()
                 .entrySet().stream().sorted(Comparator.comparing(e -> e.getKey().toString())).toList()) {
             AnnotationInstance instance = entry.getValue();
@@ -539,8 +541,9 @@ class SpringSecurityProcessor {
                         new SpringSecurityCheckSpec.RolesAllowed(List.of(securedInstance.value().asStringArray())),
                         securityCheck));
             }
-            registerSecurityCheck(serviceRegistrar, methodInfo, securityCheck);
+            securedMethods.add(securedMethod(methodInfo, securityCheck));
         }
+        registerContribution(serviceRegistrar, "spring-security-pre-authorize", securedMethods);
 
         if (!beansReferencedInPreAuthorized.isEmpty()) {
             unremovableBeans.produce((new UnremovableBeanBuildItem(
@@ -548,21 +551,28 @@ class SpringSecurityProcessor {
         }
     }
 
-    /**
-     * Registers the security check of the method as a service; the Quarkus Security extension applies every
-     * {@link SecurityCheck} service named after a method to that method.
-     */
-    private static void registerSecurityCheck(ServiceRegistrar serviceRegistrar, MethodInfo methodInfo,
-            SpringSecurityCheckSpec securityCheck) {
+    private static SpringSecuredMethod securedMethod(MethodInfo methodInfo, SpringSecurityCheckSpec securityCheck) {
         List<String> parameterTypes = new ArrayList<>(methodInfo.parametersCount());
         for (int i = 0; i < methodInfo.parametersCount(); i++) {
             parameterTypes.add(methodInfo.parameterType(i).name().toString());
         }
-        String serviceName = SecurityCheckServiceName.forMethod(methodInfo.declaringClass().name().toString(),
-                methodInfo.name(), parameterTypes);
-        serviceRegistrar.forService(SecurityCheck.class, serviceName)
+        return new SpringSecuredMethod(methodInfo.declaringClass().name().toString(), methodInfo.name(), parameterTypes,
+                securityCheck);
+    }
+
+    /**
+     * Registers the security checks of the secured methods as a {@link SecurityCheckContribution} service;
+     * the Quarkus Security extension applies the contributed checks to the methods.
+     */
+    private static void registerContribution(ServiceRegistrar serviceRegistrar, String name,
+            List<SpringSecuredMethod> securedMethods) {
+        if (securedMethods.isEmpty()) {
+            return;
+        }
+        final List<SpringSecuredMethod> capturedSecuredMethods = List.copyOf(securedMethods);
+        serviceRegistrar.forService(SecurityCheckContribution.class, name)
                 .atPhase(Phase.STATIC_INIT)
-                .onStart(ctx -> SpringSecurityCheckFactory.create(securityCheck));
+                .onStart(ctx -> SpringSecurityCheckFactory.createContribution(capturedSecuredMethods));
     }
 
     private ParameterNameAndIndex getParameterNameAndIndexForPrincipalUserNameReference(MethodInfo methodInfo, Matcher matcher,

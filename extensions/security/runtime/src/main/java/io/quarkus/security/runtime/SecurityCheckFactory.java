@@ -30,12 +30,12 @@ import io.quarkus.security.runtime.interceptor.check.MethodSecurityCheckSpec;
 import io.quarkus.security.runtime.interceptor.check.PermissionSecurityCheck;
 import io.quarkus.security.runtime.interceptor.check.PermitAllCheck;
 import io.quarkus.security.runtime.interceptor.check.RolesAllowedCheck;
-import io.quarkus.security.runtime.interceptor.check.SecurityCheckServiceName;
 import io.quarkus.security.runtime.interceptor.check.SecurityCheckSpec;
 import io.quarkus.security.runtime.interceptor.check.SecurityCheckSpec.PermissionSpec;
 import io.quarkus.security.spi.runtime.MethodDescription;
 import io.quarkus.security.spi.runtime.RolesAllowedConfigExpressions;
 import io.quarkus.security.spi.runtime.SecurityCheck;
+import io.quarkus.security.spi.runtime.SecurityCheckContribution;
 import io.smallrye.config.Expressions;
 import io.smallrye.config.common.utils.StringUtil;
 
@@ -73,12 +73,14 @@ public final class SecurityCheckFactory {
      *
      * @param methodChecks checks of the methods secured with the security annotations
      * @param defaultCheck check applied to methods without a security check, may be {@code null}
-     * @param contributedChecks all the {@link SecurityCheck} services keyed by their service name; the checks named
-     *        after a method (see {@link SecurityCheckServiceName#forMethod(String, String, List)}) are applied to
-     *        that method, the other entries are ignored
+     * @param contributions checks contributed by other extensions, keyed by the contribution service name; a
+     *        contributed check replaces the check created from the security annotations of the method
+     * @param securityCheckServices all the {@link SecurityCheck} services keyed by their service name, that is the
+     *        class-level checks; their configuration expressions are resolved eagerly as well
      */
     public static SecurityCheckStorageImpl createStorage(List<MethodSecurityCheckSpec> methodChecks,
-            SecurityCheckSpec defaultCheck, Map<String, SecurityCheck> contributedChecks) {
+            SecurityCheckSpec defaultCheck, Map<String, SecurityCheckContribution> contributions,
+            Map<String, SecurityCheck> securityCheckServices) {
         var factory = new SecurityCheckFactory();
         Map<MethodDescription, SecurityCheck> result = new HashMap<>();
         for (MethodSecurityCheckSpec methodCheck : methodChecks) {
@@ -86,13 +88,21 @@ public final class SecurityCheckFactory {
                     methodCheck.parameterTypes().toArray(String[]::new));
             result.put(method, factory.createCheck(methodCheck.check()));
         }
-        for (Map.Entry<String, SecurityCheck> entry : contributedChecks.entrySet()) {
-            MethodDescription method = SecurityCheckServiceName.parseMethod(entry.getKey());
-            if (method != null) {
-                result.put(method, entry.getValue());
+        Map<MethodDescription, String> contributors = new HashMap<>();
+        for (Map.Entry<String, SecurityCheckContribution> contribution : contributions.entrySet()) {
+            for (Map.Entry<MethodDescription, SecurityCheck> entry : contribution.getValue().securityChecks().entrySet()) {
+                String previousContributor = contributors.put(entry.getKey(), contribution.getKey());
+                if (previousContributor != null) {
+                    throw new IllegalStateException(
+                            "The security check of the method '%s#%s' is contributed by both '%s' and '%s'".formatted(
+                                    entry.getKey().getClassName(), entry.getKey().getMethodName(), previousContributor,
+                                    contribution.getKey()));
+                }
+                result.put(entry.getKey(), entry.getValue());
             }
-            if (entry.getValue() instanceof ConfigExpressionRolesAllowedCheck configExpressionCheck) {
-                // class-level checks are separate services, but their config expressions are resolved eagerly as well
+        }
+        for (SecurityCheck securityCheckService : securityCheckServices.values()) {
+            if (securityCheckService instanceof ConfigExpressionRolesAllowedCheck configExpressionCheck) {
                 factory.configExpressionChecks.add(configExpressionCheck);
             }
         }

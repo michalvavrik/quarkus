@@ -142,7 +142,6 @@ import io.quarkus.security.runtime.interceptor.SecurityCheckStorageImpl;
 import io.quarkus.security.runtime.interceptor.SecurityConstrainer;
 import io.quarkus.security.runtime.interceptor.SecurityHandler;
 import io.quarkus.security.runtime.interceptor.check.MethodSecurityCheckSpec;
-import io.quarkus.security.runtime.interceptor.check.SecurityCheckServiceName;
 import io.quarkus.security.runtime.interceptor.check.SecurityCheckSpec;
 import io.quarkus.security.spi.AdditionalSecuredMethodsBuildItem;
 import io.quarkus.security.spi.AdditionalSecurityAnnotationBuildItem;
@@ -167,6 +166,7 @@ import io.quarkus.security.spi.runtime.DevModeDisabledAuthorizationController;
 import io.quarkus.security.spi.runtime.MethodDescription;
 import io.quarkus.security.spi.runtime.RolesAllowedConfigExpressions;
 import io.quarkus.security.spi.runtime.SecurityCheck;
+import io.quarkus.security.spi.runtime.SecurityCheckContribution;
 import io.quarkus.security.spi.runtime.SecurityCheckStorage;
 
 public class SecurityProcessor {
@@ -1042,10 +1042,12 @@ public class SecurityProcessor {
         final List<MethodSecurityCheckSpec> capturedMethodChecks = List.copyOf(methodChecks);
         serviceRegistrar.forService(SecurityCheckStorage.class)
                 .atPhase(Phase.STATIC_INIT)
-                // security checks registered by other extensions, see SecurityCheckServiceName
+                // security checks contributed by other extensions for the methods they secure
+                .consumeAll(SecurityCheckContribution.class)
+                // class-level checks, their configuration expressions are resolved eagerly as well
                 .consumeAll(SecurityCheck.class)
-                .onStart((ctx, contributedChecks) -> SecurityCheckFactory.createStorage(capturedMethodChecks, defaultCheck,
-                        contributedChecks));
+                .onStart((ctx, contributions, securityCheckServices) -> SecurityCheckFactory.createStorage(
+                        capturedMethodChecks, defaultCheck, contributions, securityCheckServices));
         syntheticBeans.produce(
                 SyntheticBeanBuildItem.configure(SecurityCheckStorage.class)
                         .scope(ApplicationScoped.class)
@@ -1243,7 +1245,7 @@ public class SecurityProcessor {
                         }
 
                         // class-level checks are services, other extensions pass them to their recorders as proxies
-                        final String serviceName = SecurityCheckServiceName.forClass(item.getClassName().toString());
+                        final String serviceName = item.getClassName().toString();
                         serviceRegistrar.forService(SecurityCheck.class, serviceName)
                                 .atPhase(Phase.STATIC_INIT)
                                 .onStart(ctx -> SecurityCheckFactory.create(securityCheck));
