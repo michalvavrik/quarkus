@@ -267,6 +267,8 @@ public class SecurityProcessor {
                     "org.bouncycastle.jcajce.provider.asymmetric.EC$Mappings",
                     "org.bouncycastle.jcajce.provider.asymmetric.RSA",
                     "org.bouncycastle.jcajce.provider.asymmetric.RSA$Mappings",
+                    "org.bouncycastle.jcajce.provider.asymmetric.MLKEM",
+                    "org.bouncycastle.jcajce.provider.asymmetric.MLKEM$Mappings",
                     "org.bouncycastle.jcajce.provider.drbg.DRBG",
                     "org.bouncycastle.jcajce.provider.drbg.DRBG$Mappings").methods().fields()
                     .build());
@@ -369,7 +371,32 @@ public class SecurityProcessor {
                     "org.bouncycastle.jcajce.provider.asymmetric.rsa.KeyFactorySpi",
                     "org.bouncycastle.jcajce.provider.asymmetric.rsa.KeyPairGeneratorSpi",
                     "org.bouncycastle.jcajce.provider.asymmetric.rsa.PSSSignatureSpi",
-                    "org.bouncycastle.jcajce.provider.asymmetric.rsa.PSSSignatureSpi$SHA256withRSA").methods().fields()
+                    "org.bouncycastle.jcajce.provider.asymmetric.rsa.PSSSignatureSpi$SHA256withRSA",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMSpi",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMSpi$MLKEM",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMSpi$MLKEM512",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMSpi$MLKEM768",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMSpi$MLKEM1024",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyFactorySpi",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyFactorySpi$MLKEM",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyFactorySpi$MLKEM512",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyFactorySpi$MLKEM768",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyFactorySpi$MLKEM1024",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyPairGeneratorSpi",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyPairGeneratorSpi$MLKEM",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyPairGeneratorSpi$MLKEM512",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyPairGeneratorSpi$MLKEM768",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyPairGeneratorSpi$MLKEM1024",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyGeneratorSpi",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyGeneratorSpi$MLKEM",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyGeneratorSpi$MLKEM512",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyGeneratorSpi$MLKEM768",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMKeyGeneratorSpi$MLKEM1024",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMCipherSpi",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMCipherSpi$MLKEM512",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMCipherSpi$MLKEM768",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMCipherSpi$MLKEM1024",
+                    "org.bouncycastle.jcajce.provider.asymmetric.mlkem.MLKEMCipherSpi$Base").methods().fields()
                     .build());
         }
 
@@ -596,6 +623,15 @@ public class SecurityProcessor {
             if (bouncyCastleJsseProvider.isPresent()) {
                 additionalProviders.produce(
                         new NativeImageSecurityProviderBuildItem(SecurityProviderUtils.BOUNCYCASTLE_JSSE_PROVIDER_CLASS_NAME));
+                final String providerName = bouncyCastleJsseProvider.get().isInFipsMode()
+                        ? SecurityProviderUtils.BOUNCYCASTLE_FIPS_PROVIDER_CLASS_NAME
+                        : SecurityProviderUtils.BOUNCYCASTLE_PROVIDER_CLASS_NAME;
+                additionalProviders.produce(new NativeImageSecurityProviderBuildItem(providerName));
+            } else if (bouncyCastleProvider.isPresent()) {
+                final String providerName = bouncyCastleProvider.get().isInFipsMode()
+                        ? SecurityProviderUtils.BOUNCYCASTLE_FIPS_PROVIDER_CLASS_NAME
+                        : SecurityProviderUtils.BOUNCYCASTLE_PROVIDER_CLASS_NAME;
+                additionalProviders.produce(new NativeImageSecurityProviderBuildItem(providerName));
             }
         }
 
