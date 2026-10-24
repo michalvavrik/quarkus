@@ -536,7 +536,7 @@ final class TenantContextFactory {
                 return false;
             }
         } else {
-            oidcConfig.getAuthentication().setUserInfoRequired(true);
+            oidcConfig.setUserInfoRequired(true);
         }
         return true;
     }
