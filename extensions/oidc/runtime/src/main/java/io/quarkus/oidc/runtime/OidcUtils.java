@@ -754,6 +754,25 @@ public final class OidcUtils {
         return builder.build();
     }
 
+    /**
+     * Requires UserInfo when it is injected and the OpenId Connect provider supports it, unless it has been disabled.
+     * The tenant configuration is not modified. It is returned when UserInfo is not required,
+     * otherwise a new tenant configuration is returned.
+     *
+     * @param oidcConfig tenant configuration
+     * @param metadata OpenId Connect provider metadata
+     * @param userInfoInjected whether UserInfo is injected
+     * @return resolved tenant configuration
+     */
+    static OidcTenantConfig resolveUserInfoRequired(OidcTenantConfig oidcConfig, OidcConfigurationMetadata metadata,
+            boolean userInfoInjected) {
+        if (userInfoInjected && metadata != null && metadata.getUserInfoUri() != null
+                && oidcConfig.authentication().userInfoRequired().isEmpty()) {
+            return OidcTenantConfig.builder(oidcConfig).authentication().userInfoRequired().end().build();
+        }
+        return oidcConfig;
+    }
+
     public static byte[] getSha256Digest(String value) throws NoSuchAlgorithmException {
         return getSha256Digest(value, StandardCharsets.UTF_8);
     }

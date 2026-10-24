@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import io.quarkus.oidc.OidcRequestContext;
 import io.quarkus.oidc.OidcTenantConfig;
 import io.quarkus.oidc.TenantConfigResolver;
+import io.quarkus.oidc.UserInfo;
 import io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType;
 import io.quarkus.oidc.runtime.OidcTenantConfig.Provider;
 import io.quarkus.oidc.runtime.TenantConfigBean;
@@ -33,9 +34,11 @@ class TenantConfigResolverWellKnownProviderTest {
     @RegisterExtension
     static final QuarkusExtensionTest test = new QuarkusExtensionTest()
             .withApplicationRoot(jar -> jar.addClasses(ProtectedResource.class, MicrosoftTenantConfigResolver.class,
-                    MockDiscoveryEndpoint.class, MockJwksEndpoint.class, MockIntrospectionEndpoint.class))
+                    MockDiscoveryEndpoint.class, MockDiscoveryWithoutUserInfoEndpoint.class, MockJwksEndpoint.class,
+                    MockIntrospectionEndpoint.class, MockUserInfoEndpoint.class))
             .withConfiguration("""
                     quarkus.keycloak.devservices.enabled=false
+                    quarkus.oidc.tenant-enabled=false
                     """);
 
     @Test
@@ -53,6 +56,11 @@ class TenantConfigResolverWellKnownProviderTest {
         String updatedTenantContext = getTenantContext("updated", false);
         assertNotEquals(replacedTenantContext, updatedTenantContext);
         assertEquals(updatedTenantContext, getTenantContext(null, false));
+
+        // the replaced tenant context must not require UserInfo when the new provider does not support it
+        String tenantContextWithoutUserInfo = getTenantContext("without-userinfo", true);
+        assertNotEquals(updatedTenantContext, tenantContextWithoutUserInfo);
+        assertEquals(tenantContextWithoutUserInfo, getTenantContext(null, false));
     }
 
     private static String getTenantContext(String newTenantConfig, boolean replaceTenantContext) {
@@ -68,13 +76,13 @@ class TenantConfigResolverWellKnownProviderTest {
     public static class ProtectedResource {
 
         @Inject
-        RoutingContext routingContext;
-
-        @Inject
         TenantConfigBean tenantConfigBean;
 
         @Inject
         MicrosoftTenantConfigResolver tenantConfigResolver;
+
+        @Inject
+        UserInfo userInfo;
 
         @GET
         public String get() {
@@ -86,8 +94,14 @@ class TenantConfigResolverWellKnownProviderTest {
             if (!"any".equals(tenantConfig.token().issuer().orElse(null))) {
                 throw new IllegalStateException("Microsoft provider config must be applied to the tenant config");
             }
-            if (tenantConfig != routingContext.get(OidcTenantConfig.class.getName())) {
-                throw new IllegalStateException("Request must be authenticated with the tenant context config");
+            boolean userInfoRequired = tenantConfig.authentication().userInfoRequired().orElse(false);
+            boolean userInfoSupported = tenantContext.getOidcMetadata().getUserInfoUri() != null;
+            if (userInfoRequired != userInfoSupported) {
+                throw new IllegalStateException(
+                        "UserInfo must be required only when it is injected and the provider supports it");
+            }
+            if (userInfoRequired && !"test-user".equals(userInfo.getSubject())) {
+                throw new IllegalStateException("UserInfo must be available when it is required");
             }
             return String.valueOf(System.identityHashCode(tenantContext));
         }
@@ -116,6 +130,9 @@ class TenantConfigResolverWellKnownProviderTest {
                 tenantConfig = OidcTenantConfig.builder(tenantConfig).clientName("updated-client-name").build();
             } else if ("copy".equals(newTenantConfig)) {
                 tenantConfig = OidcTenantConfig.builder(tenantConfig).build();
+            } else if ("without-userinfo".equals(newTenantConfig)) {
+                tenantConfig = OidcTenantConfig.builder(tenantConfig)
+                        .authServerUrl("http://localhost:8081/mock-oidc-without-userinfo").build();
             }
             if (Boolean.parseBoolean(routingContext.request().getParam("replace-tenant-context"))) {
                 routingContext.put("replace-tenant-configuration-context", "true");
@@ -138,9 +155,36 @@ class TenantConfigResolverWellKnownProviderTest {
                     {
                         "issuer": "http://localhost:8081/mock-oidc",
                         "jwks_uri": "http://localhost:8081/mock-oidc/jwks",
+                        "introspection_endpoint": "http://localhost:8081/mock-oidc/introspect",
+                        "userinfo_endpoint": "http://localhost:8081/mock-oidc/userinfo"
+                    }
+                    """;
+        }
+    }
+
+    @Path("/mock-oidc-without-userinfo/.well-known/openid-configuration")
+    public static class MockDiscoveryWithoutUserInfoEndpoint {
+
+        @GET
+        @Produces(MediaType.APPLICATION_JSON)
+        public String discover() {
+            return """
+                    {
+                        "issuer": "http://localhost:8081/mock-oidc-without-userinfo",
+                        "jwks_uri": "http://localhost:8081/mock-oidc/jwks",
                         "introspection_endpoint": "http://localhost:8081/mock-oidc/introspect"
                     }
                     """;
+        }
+    }
+
+    @Path("/mock-oidc/userinfo")
+    public static class MockUserInfoEndpoint {
+
+        @GET
+        @Produces(MediaType.APPLICATION_JSON)
+        public String userInfo() {
+            return "{\"sub\":\"test-user\"}";
         }
     }
 

@@ -27,6 +27,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.oidc.OIDCException;
+import io.quarkus.oidc.OidcConfigurationMetadata;
 import io.quarkus.oidc.OidcTenantConfig;
 import io.quarkus.oidc.common.runtime.OidcCommonUtils;
 import io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType;
@@ -514,5 +515,26 @@ public class OidcUtilsTest {
 
         OidcTenantConfig withoutAuthServer = OidcTenantConfig.builder().roles().source(Source.userinfo).end().build();
         assertSame(withoutAuthServer, OidcUtils.resolveTenantConfig(withoutAuthServer));
+    }
+
+    @Test
+    public void testResolveUserInfoRequiredByProviderMetadata() {
+        OidcConfigurationMetadata metadata = new OidcConfigurationMetadata(
+                new JsonObject().put("userinfo_endpoint", "https://server/userinfo"));
+        OidcTenantConfig config = OidcTenantConfig.authServerUrl("https://server").build();
+
+        OidcTenantConfig resolved = OidcUtils.resolveUserInfoRequired(config, metadata, true);
+        assertTrue(resolved.authentication().userInfoRequired().orElseThrow());
+        assertTrue(config.authentication().userInfoRequired().isEmpty());
+        assertEquals(resolved, OidcUtils.resolveUserInfoRequired(config, metadata, true));
+
+        // UserInfo is not injected
+        assertSame(config, OidcUtils.resolveUserInfoRequired(config, metadata, false));
+        // the OIDC provider does not support UserInfo
+        assertSame(config, OidcUtils.resolveUserInfoRequired(config, new OidcConfigurationMetadata(new JsonObject()), true));
+        // UserInfo has been disabled
+        OidcTenantConfig userInfoDisabled = OidcTenantConfig.authServerUrl("https://server")
+                .authentication().userInfoRequired(false).end().build();
+        assertSame(userInfoDisabled, OidcUtils.resolveUserInfoRequired(userInfoDisabled, metadata, true));
     }
 }

@@ -50,7 +50,8 @@ public final class OidcTenantConfigBuilder extends OidcClientCommonConfigBuilder
      */
     private static volatile OidcTenantConfig configWithDefaults = null;
 
-    private static final class OidcTenantConfigImpl extends OidcClientCommonConfigImpl implements OidcTenantConfig {
+    private static final class OidcTenantConfigImpl extends OidcClientCommonConfigImpl
+            implements io.quarkus.oidc.OidcTenantConfig {
         private final Optional<String> tenantId;
         private final boolean tenantEnabled;
         private final Optional<ApplicationType> applicationType;
@@ -791,8 +792,7 @@ public final class OidcTenantConfigBuilder extends OidcClientCommonConfigBuilder
         if (tenantId.isEmpty()) {
             tenantId(OidcUtils.DEFAULT_TENANT_ID);
         }
-        var mapping = new OidcTenantConfigImpl(this);
-        return io.quarkus.oidc.OidcTenantConfig.of(mapping);
+        return new OidcTenantConfigImpl(this);
     }
 
     /**

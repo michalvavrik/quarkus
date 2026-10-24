@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
@@ -375,7 +374,8 @@ final class TenantContextFactory {
             }
         }
 
-        return createOidcProvider(oidcConfig).flatMap(p -> TenantConfigContext.createReady(p, oidcConfig));
+        return createOidcProvider(oidcConfig).flatMap(p -> TenantConfigContext.createReady(p,
+                OidcUtils.resolveUserInfoRequired(oidcConfig, p.getMetadata(), userInfoInjectionPointDetected)));
     }
 
     private void verifyAllowedRoutes(OidcTenantConfig oidcConfig, String tenantId) {
@@ -527,18 +527,6 @@ final class TenantContextFactory {
                                 + "' authority must match the client-id URL authority");
             }
         }
-    }
-
-    private boolean enableUserInfo(OidcTenantConfig oidcConfig) {
-        Optional<Boolean> userInfoRequired = oidcConfig.authentication().userInfoRequired();
-        if (userInfoRequired.isPresent()) {
-            if (!userInfoRequired.get()) {
-                return false;
-            }
-        } else {
-            oidcConfig.setUserInfoRequired(true);
-        }
-        return true;
     }
 
     private Uni<TenantConfigContext> createTenantContextFromPublicKey(OidcTenantConfig oidcConfig) {
@@ -717,9 +705,6 @@ final class TenantContextFactory {
                                         return Uni.createFrom().failure(new ConfigurationException(
                                                 "The application supports RP-Initiated Logout but the OpenID Provider does not advertise the end_session_endpoint"));
                                     }
-                                }
-                                if (userInfoInjectionPointDetected && metadata.getUserInfoUri() != null) {
-                                    enableUserInfo(oidcConfig);
                                 }
                                 if (oidcConfig.authentication().userInfoRequired().orElse(false)
                                         && metadata.getUserInfoUri() == null) {

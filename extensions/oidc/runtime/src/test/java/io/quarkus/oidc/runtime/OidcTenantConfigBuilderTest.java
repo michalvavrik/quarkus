@@ -938,17 +938,6 @@ public class OidcTenantConfigBuilderTest {
         assertEquals(countProperties(io.quarkus.oidc.runtime.OidcTenantConfig.class), comparedProperties);
     }
 
-    @Test
-    public void testPropertyChangedAfterCreationIsNotCompared() {
-        OidcTenantConfig config = OidcTenantConfig.builder().tenantId("tenant").build();
-        OidcTenantConfig sameConfig = OidcTenantConfig.builder().tenantId("tenant").build();
-        // UserInfo is required when the OIDC provider metadata is discovered and UserInfo is injected
-        config.setUserInfoRequired(true);
-        assertTrue(config.authentication().userInfoRequired().orElseThrow());
-        assertTrue(sameConfig.authentication().userInfoRequired().isEmpty());
-        assertEquals(sameConfig, config);
-    }
-
     private <T> void assertCompared(BiConsumer<OidcTenantConfigBuilder, T> setter, T value, T otherValue) {
         comparedProperties++;
         OidcTenantConfig config = build(setter, value);

@@ -257,8 +257,7 @@ public class DefaultTenantConfigResolver {
                     oidcConfig = Uni.createFrom().nullItem();
                 }
                 // resolve the tenant config before memoizing, so that the same config is used for the whole request
-                oidcConfig = oidcConfig.onItem().transform(tenantConfig -> resolveDynamicTenantConfig(context, tenantConfig))
-                        .memoize().indefinitely();
+                oidcConfig = oidcConfig.onItem().transform(OidcUtils::resolveTenantConfig).memoize().indefinitely();
                 if (oidcConfig == null) {
                     //shouldn't happen, but guard against it anyway
                     oidcConfig = Uni.createFrom().nullItem();
@@ -270,16 +269,13 @@ public class DefaultTenantConfigResolver {
         return Uni.createFrom().nullItem();
     }
 
-    private OidcTenantConfig resolveDynamicTenantConfig(RoutingContext context, OidcTenantConfig tenantConfig) {
-        OidcTenantConfig resolvedConfig = OidcUtils.resolveTenantConfig(tenantConfig);
-        if (resolvedConfig != null && resolvedConfig.tenantId().isPresent()
-                && !Boolean.parseBoolean(context.get(REPLACE_TENANT_CONFIG_CONTEXT))) {
-            TenantConfigContext tenantContext = tenantConfigBean.getDynamicTenant(resolvedConfig.tenantId().get());
-            if (tenantContext != null && resolvedConfig.equals(tenantContext.getOidcTenantConfig())) {
-                return tenantContext.getOidcTenantConfig();
-            }
+    private static boolean isTenantConfigChanged(RoutingContext context, OidcTenantConfig currentConfig,
+            OidcTenantConfig newConfig) {
+        if (currentConfig == newConfig) {
+            return false;
         }
-        return resolvedConfig;
+        // the tenant context must be replaced when requested, even if the new tenant config is equal to the current one
+        return Boolean.parseBoolean(context.get(REPLACE_TENANT_CONFIG_CONTEXT)) || !currentConfig.equals(newConfig);
     }
 
     private Uni<TenantConfigContext> getDynamicTenantContext(RoutingContext context) {
@@ -293,15 +289,20 @@ public class DefaultTenantConfigResolver {
                     var tenantContext = tenantConfigBean.getDynamicTenant(tenantId);
                     if (tenantContext == null) {
                         return tenantConfigBean.createDynamicTenantContext(tenantConfig);
-                    } else if (tenantContext.getOidcTenantConfig() != tenantConfig) {
+                    }
+                    // the OIDC provider metadata of the tenant context can require UserInfo
+                    var newTenantConfig = OidcUtils.resolveUserInfoRequired(tenantConfig, tenantContext.getOidcMetadata(),
+                            TenantContextFactory.userInfoInjectionPointDetected);
+                    if (isTenantConfigChanged(context, tenantContext.getOidcTenantConfig(), newTenantConfig)) {
 
                         Uni<TenantConfigContext> dynamicContextUni = null;
                         if (Boolean.valueOf(context.get(REPLACE_TENANT_CONFIG_CONTEXT))) {
                             // replace the context and reconnect
+                            // the new context resolves UserInfo with the newly discovered OIDC provider metadata
                             dynamicContextUni = tenantConfigBean.replaceDynamicTenantContext(tenantConfig, context.vertx());
                         } else {
                             // update the context without reconnect
-                            dynamicContextUni = tenantConfigBean.updateDynamicTenantContext(tenantConfig);
+                            dynamicContextUni = tenantConfigBean.updateDynamicTenantContext(newTenantConfig);
                         }
                         final Uni<TenantConfigContext> contextUni = dynamicContextUni;
                         if (Boolean.valueOf(context.get(REMOVE_SESSION_COOKIE))) {

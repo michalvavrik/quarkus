@@ -789,6 +789,7 @@ public class CustomTenantConfigResolver implements TenantConfigResolver {
 <4> Create an initial configuration if no configuration already exists.
 
 This is all you have to do update the already resolved dynamic tenantr configuration, without having to reconnect to the provider.
+The already resolved configuration is not updated when the returned configuration is equal to it.
 
 If reconnecting is necessary, for example, the `UserInfo` endpoint address may have changed for the tenant to rediscover it,
 then simply set a `RoutingContext` `replace-tenant-configuration-context` property to `true`:
