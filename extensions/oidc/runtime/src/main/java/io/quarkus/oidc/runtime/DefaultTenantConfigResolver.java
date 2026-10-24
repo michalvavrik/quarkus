@@ -256,18 +256,30 @@ public class DefaultTenantConfigResolver {
                     //shouldn't happen, but guard against it anyway
                     oidcConfig = Uni.createFrom().nullItem();
                 }
-                oidcConfig = oidcConfig.memoize().indefinitely();
+                // resolve the tenant config before memoizing, so that the same config is used for the whole request
+                oidcConfig = oidcConfig.onItem().transform(tenantConfig -> resolveDynamicTenantConfig(context, tenantConfig))
+                        .memoize().indefinitely();
                 if (oidcConfig == null) {
                     //shouldn't happen, but guard against it anyway
                     oidcConfig = Uni.createFrom().nullItem();
-                } else {
-                    oidcConfig = oidcConfig.onItem().transform(cfg -> OidcUtils.resolveProviderConfig(cfg));
                 }
                 context.put(CURRENT_DYNAMIC_TENANT_CONFIG, oidcConfig);
             }
             return oidcConfig;
         }
         return Uni.createFrom().nullItem();
+    }
+
+    private OidcTenantConfig resolveDynamicTenantConfig(RoutingContext context, OidcTenantConfig tenantConfig) {
+        OidcTenantConfig resolvedConfig = OidcUtils.resolveTenantConfig(tenantConfig);
+        if (resolvedConfig != null && resolvedConfig.tenantId().isPresent()
+                && !Boolean.parseBoolean(context.get(REPLACE_TENANT_CONFIG_CONTEXT))) {
+            TenantConfigContext tenantContext = tenantConfigBean.getDynamicTenant(resolvedConfig.tenantId().get());
+            if (tenantContext != null && resolvedConfig.equals(tenantContext.getOidcTenantConfig())) {
+                return tenantContext.getOidcTenantConfig();
+            }
+        }
+        return resolvedConfig;
     }
 
     private Uni<TenantConfigContext> getDynamicTenantContext(RoutingContext context) {
