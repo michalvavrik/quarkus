@@ -69,9 +69,15 @@ final class TenantContextFactory {
     TenantConfigContext createDefaultTenantConfig(Map<String, OidcTenantConfig> staticTenants, OidcTenantConfig defaultTenant) {
         String defaultTenantId = defaultTenant.tenantId().get();
         boolean foundNamedStaticTenants = !staticTenants.isEmpty();
-        var defaultTenantInitializer = createStaticTenantContextCreator(defaultTenant, foundNamedStaticTenants,
-                defaultTenantId);
-        return createStaticTenantContext(defaultTenant, foundNamedStaticTenants, defaultTenantId, defaultTenantInitializer);
+        var oidcConfig = OidcUtils.resolveTenantConfig(defaultTenant);
+        if (isDefaultTenantDisabled(oidcConfig, foundNamedStaticTenants)) {
+            LOG.debugf("Default tenant is not configured and will be disabled"
+                    + " because either 'TenantConfigResolver' which will resolve tenant configurations is registered"
+                    + " or named tenants are configured.");
+            oidcConfig = OidcTenantConfig.builder(oidcConfig).tenantEnabled(false).build();
+        }
+        var defaultTenantInitializer = createStaticTenantContextCreator(oidcConfig, defaultTenantId);
+        return createStaticTenantContext(oidcConfig, defaultTenantId, defaultTenantInitializer);
     }
 
     Map<String, TenantConfigContext> createStaticTenantConfigs(Map<String, OidcTenantConfig> staticTenants,
@@ -89,7 +95,7 @@ final class TenantContextFactory {
         if (OidcUtils.DEFAULT_TENANT_ID.equals(tenantId)) {
             throw new ConfigurationException("Dynamic tenant ID cannot be same as the default tenant ID: " + tenantId);
         }
-        return createTenantContext(oidcConfig, false, tenantId)
+        return createTenantContext(oidcConfig, tenantId)
                 .onFailure().transform(new Function<Throwable, Throwable>() {
                     @Override
                     public Throwable apply(Throwable t) {
@@ -101,16 +107,27 @@ final class TenantContextFactory {
     private void createStaticTenantConfig(String defaultTenantId, String tenantKey, OidcTenantConfig namedTenantConfig,
             Map<String, TenantConfigContext> staticTenantsConfig) {
         OidcCommonUtils.verifyConfigurationId(defaultTenantId, tenantKey, namedTenantConfig.tenantId());
-        var staticTenantInitializer = createStaticTenantContextCreator(namedTenantConfig, false, tenantKey);
+        var oidcConfig = OidcUtils.resolveTenantConfig(namedTenantConfig);
+        var staticTenantInitializer = createStaticTenantContextCreator(oidcConfig, tenantKey);
         staticTenantsConfig.put(tenantKey,
-                createStaticTenantContext(namedTenantConfig, false, tenantKey, staticTenantInitializer));
+                createStaticTenantContext(oidcConfig, tenantKey, staticTenantInitializer));
     }
 
-    private TenantConfigContext createStaticTenantContext(
-            OidcTenantConfig oidcConfig, boolean checkNamedTenants, String tenantId,
+    private static boolean isDefaultTenantDisabled(OidcTenantConfig oidcConfig, boolean foundNamedStaticTenants) {
+        if (oidcConfig.tenantEnabled() && oidcConfig.authServerUrl().isEmpty() && oidcConfig.publicKey().isEmpty()
+                && oidcConfig.certificateChain().trustStoreFile().isEmpty()
+                && DEFAULT_TENANT_ID.equals(oidcConfig.tenantId().get())) {
+            ArcContainer container = Arc.container();
+            return container != null
+                    && (container.instance(TenantConfigResolver.class).isAvailable() || foundNamedStaticTenants);
+        }
+        return false;
+    }
+
+    private TenantConfigContext createStaticTenantContext(OidcTenantConfig oidcConfig, String tenantId,
             Supplier<Uni<TenantConfigContext>> staticTenantCreator) {
 
-        Uni<TenantConfigContext> uniContext = createTenantContext(oidcConfig, checkNamedTenants, tenantId);
+        Uni<TenantConfigContext> uniContext = createTenantContext(oidcConfig, tenantId);
         try {
             return uniContext.onFailure()
                     .recoverWithItem(new Function<Throwable, TenantConfigContext>() {
@@ -145,11 +162,11 @@ final class TenantContextFactory {
     }
 
     private Supplier<Uni<TenantConfigContext>> createStaticTenantContextCreator(OidcTenantConfig oidcConfig,
-            boolean checkNamedTenants, String tenantId) {
+            String tenantId) {
         return new Supplier<Uni<TenantConfigContext>>() {
             @Override
             public Uni<TenantConfigContext> get() {
-                return createTenantContext(oidcConfig, checkNamedTenants, tenantId)
+                return createTenantContext(oidcConfig, tenantId)
                         .onFailure().transform(new Function<Throwable, Throwable>() {
                             @Override
                             public Throwable apply(Throwable t) {
@@ -168,9 +185,7 @@ final class TenantContextFactory {
     }
 
     @SuppressWarnings("resource")
-    private Uni<TenantConfigContext> createTenantContext(OidcTenantConfig oidcTenantConfig,
-            boolean checkNamedTenants, String tenantId) {
-        final OidcTenantConfig oidcConfig = OidcUtils.resolveProviderConfig(oidcTenantConfig);
+    private Uni<TenantConfigContext> createTenantContext(OidcTenantConfig oidcConfig, String tenantId) {
 
         if (!oidcConfig.tenantEnabled()) {
             LOG.debugf("'%s' tenant configuration is disabled", tenantId);
@@ -192,17 +207,6 @@ final class TenantContextFactory {
 
         try {
             if (oidcConfig.authServerUrl().isEmpty()) {
-                if (DEFAULT_TENANT_ID.equals(oidcConfig.tenantId().get())) {
-                    ArcContainer container = Arc.container();
-                    if (container != null
-                            && (container.instance(TenantConfigResolver.class).isAvailable() || checkNamedTenants)) {
-                        LOG.debugf("Default tenant is not configured and will be disabled"
-                                + " because either 'TenantConfigResolver' which will resolve tenant configurations is registered"
-                                + " or named tenants are configured.");
-                        oidcConfig.tenantEnabled = false;
-                        return TenantConfigContext.createReady(new OidcProvider(null, null, null), oidcConfig);
-                    }
-                }
                 throw new ConfigurationException(
                         "'" + getConfigPropertyForTenant(tenantId, "auth-server-url") + "' property must be configured");
             }
@@ -223,12 +227,12 @@ final class TenantContextFactory {
         }
 
         if (oidcConfig.roles().source().orElse(null) == io.quarkus.oidc.runtime.OidcTenantConfig.Roles.Source.userinfo
-                && !enableUserInfo(oidcConfig)) {
+                && !oidcConfig.authentication().userInfoRequired().orElse(false)) {
             throw new ConfigurationException(
                     "UserInfo is not required but UserInfo is expected to be the source of authorization roles");
         }
         if (oidcConfig.token().verifyAccessTokenWithUserInfo().orElse(false) && !OidcUtils.isWebApp(oidcConfig)
-                && !enableUserInfo(oidcConfig)) {
+                && !oidcConfig.authentication().userInfoRequired().orElse(false)) {
             String propertyName = getConfigPropertyForTenant(tenantId, "token.verify-access-token-with-user-info");
             throw new ConfigurationException("UserInfo is not required but '%s' is enabled".formatted(propertyName));
         }
@@ -241,7 +245,8 @@ final class TenantContextFactory {
                     + " generated by Quarkus. Please see the '%s' configuration property documentation for more information",
                     tenantId, propertyName);
         }
-        if (!oidcConfig.authentication().idTokenRequired().orElse(true) && !enableUserInfo(oidcConfig)
+        if (!oidcConfig.authentication().idTokenRequired().orElse(true)
+                && !oidcConfig.authentication().userInfoRequired().orElse(false)
                 && oidcConfig.token().verifyAccessTokenWithUserInfo().orElse(false)) {
             throw new ConfigurationException(
                     "UserInfo is not required for OIDC tenant '%s' but it will be needed to verify a code flow access token"
@@ -308,9 +313,6 @@ final class TenantContextFactory {
                                 + " application types");
             }
         } else {
-            if (oidcConfig.token().refreshTokenTimeSkew().isPresent()) {
-                oidcConfig.token.setRefreshExpired(true);
-            }
             if (oidcConfig.authentication().sessionAgeExtension().isPresent()
                     && !oidcConfig.token().refreshExpired()) {
                 LOG.warn(
@@ -534,7 +536,7 @@ final class TenantContextFactory {
                 return false;
             }
         } else {
-            oidcConfig.authentication.setUserInfoRequired(true);
+            oidcConfig.getAuthentication().setUserInfoRequired(true);
         }
         return true;
     }
