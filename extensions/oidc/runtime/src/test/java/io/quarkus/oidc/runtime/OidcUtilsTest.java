@@ -3,6 +3,7 @@ package io.quarkus.oidc.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -25,8 +27,11 @@ import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.oidc.OIDCException;
+import io.quarkus.oidc.OidcConfigurationMetadata;
 import io.quarkus.oidc.OidcTenantConfig;
 import io.quarkus.oidc.common.runtime.OidcCommonUtils;
+import io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType;
+import io.quarkus.oidc.runtime.OidcTenantConfig.Roles.Source;
 import io.smallrye.jwt.algorithm.SignatureAlgorithm;
 import io.smallrye.jwt.build.Jwt;
 import io.vertx.core.http.Cookie;
@@ -56,8 +61,7 @@ public class OidcUtilsTest {
     @Test
     public void testGetSingleSessionCookie() throws Exception {
 
-        OidcTenantConfig oidcConfig = new OidcTenantConfig();
-        oidcConfig.setTenantId("test");
+        OidcTenantConfig oidcConfig = OidcTenantConfig.builder().tenantId("test").build();
         Map<String, Object> context = new HashMap<>();
         String sessionCookieValue = OidcUtils.getSessionCookie(context,
                 Map.of("q_session_test", new CookieImpl("q_session_test", "tokens")), oidcConfig);
@@ -71,8 +75,7 @@ public class OidcUtilsTest {
     @Test
     public void testGetMultipleSessionCookies() throws Exception {
 
-        OidcTenantConfig oidcConfig = new OidcTenantConfig();
-        oidcConfig.setTenantId("test");
+        OidcTenantConfig oidcConfig = OidcTenantConfig.builder().tenantId("test").build();
 
         char[] alphabet = "abcdefghijklmnopqrstuvwxyz".toCharArray();
 
@@ -163,21 +166,19 @@ public class OidcUtilsTest {
 
     @Test
     public void testCorrectTokenType() throws Exception {
-        OidcTenantConfig.Token tokenClaims = new OidcTenantConfig.Token();
-        tokenClaims.setTokenType("access_token");
+        OidcTenantConfig config = OidcTenantConfig.builder().token().tokenType("access_token").end().build();
         JsonObject json = new JsonObject();
         json.put("typ", "access_token");
-        OidcUtils.validatePrimaryJwtTokenType(tokenClaims, json);
+        OidcUtils.validatePrimaryJwtTokenType(config.token(), json);
     }
 
     @Test
     public void testWrongTokenType() throws Exception {
-        OidcTenantConfig.Token tokenClaims = new OidcTenantConfig.Token();
-        tokenClaims.setTokenType("access_token");
+        OidcTenantConfig config = OidcTenantConfig.builder().token().tokenType("access_token").end().build();
         JsonObject json = new JsonObject();
         json.put("typ", "refresh_token");
         try {
-            OidcUtils.validatePrimaryJwtTokenType(tokenClaims, json);
+            OidcUtils.validatePrimaryJwtTokenType(config.token(), json);
             fail("Exception expected: wrong token type");
         } catch (OIDCException ex) {
             // expected
@@ -186,10 +187,11 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRefreshTokenType() throws Exception {
+        OidcTenantConfig config = OidcTenantConfig.builder().build();
         JsonObject json = new JsonObject();
         json.put("typ", "Refresh");
         try {
-            OidcUtils.validatePrimaryJwtTokenType(new OidcTenantConfig.Token(), json);
+            OidcUtils.validatePrimaryJwtTokenType(config.token(), json);
             fail("Exception expected: wrong token type");
         } catch (OIDCException ex) {
             // expected
@@ -198,7 +200,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRealmAccessToken() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg,
                 read(getClass().getResourceAsStream("/tokenKeycloakRealmAccess.json")));
         assertEquals(2, roles.size());
@@ -208,7 +210,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRealmAndResourceAccessTokenClient1() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles("client1", rolesCfg,
                 read(getClass().getResourceAsStream("/tokenKeycloakResourceAccess.json")));
         assertEquals(2, roles.size());
@@ -218,7 +220,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRealmAndResourceAccessTokenClient2() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles("client2", rolesCfg,
                 read(getClass().getResourceAsStream("/tokenKeycloakResourceAccess.json")));
         assertEquals(2, roles.size());
@@ -228,7 +230,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRealmAndResourceAccessTokenNullClient() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg,
                 read(getClass().getResourceAsStream("/tokenKeycloakResourceAccess.json")));
         assertEquals(1, roles.size());
@@ -237,7 +239,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithGroups() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenGroups.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("group1"));
@@ -246,8 +248,9 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomRoles() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(Collections.singletonList("application_card/embedded/roles"));
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().roles()
+                .roleClaimPath(Collections.singletonList("application_card/embedded/roles")).end()
+                .build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenCustomPath.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("r1"));
@@ -256,8 +259,9 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithMultipleCustomRolePaths() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(List.of("application_card/embedded/roles", "application_card/embedded2/roles"));
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().roles()
+                .roleClaimPath(List.of("application_card/embedded/roles", "application_card/embedded2/roles")).end()
+                .build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenCustomPath.json")));
         assertEquals(4, roles.size());
         assertTrue(roles.contains("r1"));
@@ -268,8 +272,9 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomNamespacedRoles() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(Collections.singletonList("application_card/embedded/\"https://custom/roles\""));
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().roles()
+                .roleClaimPath(Collections.singletonList("application_card/embedded/\"https://custom/roles\"")).end()
+                .build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenCustomPath.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("r3"));
@@ -278,8 +283,9 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomNamespacedRolesWithSpaces() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(Collections.singletonList(" application_card/embedded/\"https://custom/roles\" "));
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().roles()
+                .roleClaimPath(Collections.singletonList(" application_card/embedded/\"https://custom/roles\" ")).end()
+                .build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenCustomPath.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("r3"));
@@ -288,7 +294,9 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithScope() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(Collections.singletonList("scope"));
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().roles().roleClaimPath(Collections.singletonList("scope"))
+                .end()
+                .build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenScope.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("s1"));
@@ -297,8 +305,9 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomScope() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPathAndSeparator(Collections.singletonList("customScope"), ",");
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().roles()
+                .roleClaimPath(Collections.singletonList("customScope")).roleClaimSeparator(",").end()
+                .build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg,
                 read(getClass().getResourceAsStream("/tokenCustomScope.json")));
         assertEquals(2, roles.size());
@@ -308,8 +317,9 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomRolesWrongPath() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(Collections.singletonList("application-card/embedded/roles"));
+        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.builder().roles()
+                .roleClaimPath(Collections.singletonList("application-card/embedded/roles")).end()
+                .build().roles();
         InputStream is = getClass().getResourceAsStream("/tokenCustomPath.json");
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(is));
         assertEquals(0, roles.size());
@@ -349,31 +359,29 @@ public class OidcUtilsTest {
 
     @Test
     public void testEncodeScopesOpenidAdded() throws Exception {
-        OidcTenantConfig config = new OidcTenantConfig();
+        OidcTenantConfig config = OidcTenantConfig.builder().build();
         assertEquals("openid", OidcUtils.encodeScopes(config));
     }
 
     @Test
     public void testEncodeScopesOpenidNotAdded() throws Exception {
-        OidcTenantConfig config = new OidcTenantConfig();
-        config.authentication.setAddOpenidScope(false);
+        OidcTenantConfig config = OidcTenantConfig.builder().authentication().addOpenidScope(false).end().build();
         assertEquals("", OidcUtils.encodeScopes(config));
     }
 
     @Test
     public void testEncodeAllScopes() throws Exception {
-        OidcTenantConfig config = new OidcTenantConfig();
-        config.authentication.setScopes(List.of("a:1", "b:2"));
-        config.authentication.setExtraParams(Map.of("scope", "c,d"));
+        OidcTenantConfig config = OidcTenantConfig.builder()
+                .authentication().scopes(List.of("a:1", "b:2")).extraParams(Map.of("scope", "c,d")).end()
+                .build();
         assertEquals("openid+a%3A1+b%3A2+c+d", OidcUtils.encodeScopes(config));
     }
 
     @Test
     public void testEncodeAllScopesWithCustomSeparator() throws Exception {
-        OidcTenantConfig config = new OidcTenantConfig();
-        config.authentication.setScopeSeparator(",");
-        config.authentication.setScopes(List.of("a:1", "b:2"));
-        config.authentication.setExtraParams(Map.of("scope", "c,d"));
+        OidcTenantConfig config = OidcTenantConfig.builder()
+                .authentication().scopeSeparator(",").scopes(List.of("a:1", "b:2")).extraParams(Map.of("scope", "c,d")).end()
+                .build();
         assertEquals("openid%2Ca%3A1%2Cb%3A2%2Cc%2Cd", OidcUtils.encodeScopes(config));
     }
 
@@ -468,5 +476,65 @@ public class OidcUtilsTest {
         assertEquals("secp256r1", OidcUtils.resolveAttestationEcCurve(SignatureAlgorithm.ES256));
         assertEquals("secp384r1", OidcUtils.resolveAttestationEcCurve(SignatureAlgorithm.ES384));
         assertEquals("secp521r1", OidcUtils.resolveAttestationEcCurve(SignatureAlgorithm.ES512));
+    }
+
+    @Test
+    public void testResolveRefreshExpired() {
+        OidcTenantConfig webApp = OidcTenantConfig.authServerUrl("https://server").applicationType(ApplicationType.WEB_APP)
+                .token().refreshTokenTimeSkew(Duration.ofSeconds(5)).end().build();
+        OidcTenantConfig resolved = OidcUtils.resolveTenantConfig(webApp);
+        assertTrue(resolved.token().refreshExpired());
+        assertFalse(webApp.token().refreshExpired());
+        assertSame(resolved, OidcUtils.resolveTenantConfig(resolved));
+
+        OidcTenantConfig service = OidcTenantConfig.authServerUrl("https://server")
+                .token().refreshTokenTimeSkew(Duration.ofSeconds(5)).end().build();
+        assertSame(service, OidcUtils.resolveTenantConfig(service));
+    }
+
+    @Test
+    public void testResolveUserInfoRequired() {
+        OidcTenantConfig rolesSource = OidcTenantConfig.authServerUrl("https://server").roles().source(Source.userinfo).end()
+                .build();
+        OidcTenantConfig resolved = OidcUtils.resolveTenantConfig(rolesSource);
+        assertTrue(resolved.authentication().userInfoRequired().orElseThrow());
+        assertTrue(rolesSource.authentication().userInfoRequired().isEmpty());
+        assertSame(resolved, OidcUtils.resolveTenantConfig(resolved));
+
+        OidcTenantConfig serviceVerification = OidcTenantConfig.authServerUrl("https://server")
+                .token().verifyAccessTokenWithUserInfo().end().build();
+        assertTrue(OidcUtils.resolveTenantConfig(serviceVerification).authentication().userInfoRequired().orElseThrow());
+
+        OidcTenantConfig idTokenNotRequired = OidcTenantConfig.authServerUrl("https://server")
+                .authentication().idTokenRequired(false).end().build();
+        assertTrue(OidcUtils.resolveTenantConfig(idTokenNotRequired).authentication().userInfoRequired().orElseThrow());
+
+        OidcTenantConfig userInfoDisabled = OidcTenantConfig.authServerUrl("https://server").roles().source(Source.userinfo)
+                .end().authentication().userInfoRequired(false).end().build();
+        assertSame(userInfoDisabled, OidcUtils.resolveTenantConfig(userInfoDisabled));
+
+        OidcTenantConfig withoutAuthServer = OidcTenantConfig.builder().roles().source(Source.userinfo).end().build();
+        assertSame(withoutAuthServer, OidcUtils.resolveTenantConfig(withoutAuthServer));
+    }
+
+    @Test
+    public void testResolveUserInfoRequiredByProviderMetadata() {
+        OidcConfigurationMetadata metadata = new OidcConfigurationMetadata(
+                new JsonObject().put("userinfo_endpoint", "https://server/userinfo"));
+        OidcTenantConfig config = OidcTenantConfig.authServerUrl("https://server").build();
+
+        OidcTenantConfig resolved = OidcUtils.resolveUserInfoRequired(config, metadata, true);
+        assertTrue(resolved.authentication().userInfoRequired().orElseThrow());
+        assertTrue(config.authentication().userInfoRequired().isEmpty());
+        assertEquals(resolved, OidcUtils.resolveUserInfoRequired(config, metadata, true));
+
+        // UserInfo is not injected
+        assertSame(config, OidcUtils.resolveUserInfoRequired(config, metadata, false));
+        // the OIDC provider does not support UserInfo
+        assertSame(config, OidcUtils.resolveUserInfoRequired(config, new OidcConfigurationMetadata(new JsonObject()), true));
+        // UserInfo has been disabled
+        OidcTenantConfig userInfoDisabled = OidcTenantConfig.authServerUrl("https://server")
+                .authentication().userInfoRequired(false).end().build();
+        assertSame(userInfoDisabled, OidcUtils.resolveUserInfoRequired(userInfoDisabled, metadata, true));
     }
 }
