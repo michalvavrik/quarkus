@@ -575,6 +575,24 @@ public final class OidcUtils {
         }
     }
 
+    /**
+     * UserInfo is required when the {@link UserInfo} injection point is detected and the OpenID Provider
+     * supports the UserInfo endpoint, unless the tenant configuration has already enabled or disabled it.
+     *
+     * @param oidcConfig tenant configuration
+     * @param metadata OpenID Provider configuration metadata, can be null
+     * @param userInfoInjected true if the {@link UserInfo} injection point has been detected
+     * @return tenant configuration requiring UserInfo, or the {@code oidcConfig} if nothing has changed
+     */
+    static OidcTenantConfig resolveUserInfoRequired(OidcTenantConfig oidcConfig, OidcConfigurationMetadata metadata,
+            boolean userInfoInjected) {
+        if (userInfoInjected && metadata != null && metadata.getUserInfoUri() != null
+                && oidcConfig.authentication().userInfoRequired().isEmpty()) {
+            return OidcTenantConfig.builder(oidcConfig).authentication().userInfoRequired().end().build();
+        }
+        return oidcConfig;
+    }
+
     public static byte[] getSha256Digest(String value) throws NoSuchAlgorithmException {
         return getSha256Digest(value, StandardCharsets.UTF_8);
     }

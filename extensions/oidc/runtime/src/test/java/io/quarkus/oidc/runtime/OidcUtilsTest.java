@@ -3,6 +3,7 @@ package io.quarkus.oidc.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -25,6 +26,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.oidc.OIDCException;
+import io.quarkus.oidc.OidcConfigurationMetadata;
 import io.quarkus.oidc.OidcTenantConfig;
 import io.quarkus.oidc.common.runtime.OidcCommonUtils;
 import io.smallrye.jwt.algorithm.SignatureAlgorithm;
@@ -463,5 +465,32 @@ public class OidcUtilsTest {
         assertEquals("secp256r1", OidcUtils.resolveAttestationEcCurve(SignatureAlgorithm.ES256));
         assertEquals("secp384r1", OidcUtils.resolveAttestationEcCurve(SignatureAlgorithm.ES384));
         assertEquals("secp521r1", OidcUtils.resolveAttestationEcCurve(SignatureAlgorithm.ES512));
+    }
+
+    @Test
+    public void testResolveUserInfoRequiredByProviderMetadata() {
+        OidcConfigurationMetadata metadata = new OidcConfigurationMetadata(
+                new JsonObject().put("userinfo_endpoint", "https://server/userinfo"));
+        OidcTenantConfig config = OidcTenantConfig.authServerUrl("https://server").build();
+
+        // UserInfo is required when it is injected and the OpenID Provider supports it
+        OidcTenantConfig resolved = OidcUtils.resolveUserInfoRequired(config, metadata, true);
+        assertTrue(resolved.authentication().userInfoRequired().orElseThrow());
+        assertEquals("https://server", resolved.authServerUrl().orElseThrow());
+        // the tenant configuration is not modified
+        assertTrue(config.authentication().userInfoRequired().isEmpty());
+
+        // UserInfo is not injected
+        assertSame(config, OidcUtils.resolveUserInfoRequired(config, metadata, false));
+        // the OpenID Provider does not support UserInfo
+        assertSame(config, OidcUtils.resolveUserInfoRequired(config, new OidcConfigurationMetadata(new JsonObject()), true));
+        assertSame(config, OidcUtils.resolveUserInfoRequired(config, null, true));
+        // the tenant configuration takes priority
+        OidcTenantConfig userInfoDisabled = OidcTenantConfig.authServerUrl("https://server")
+                .authentication().userInfoRequired(false).end().build();
+        assertSame(userInfoDisabled, OidcUtils.resolveUserInfoRequired(userInfoDisabled, metadata, true));
+        OidcTenantConfig userInfoEnabled = OidcTenantConfig.authServerUrl("https://server")
+                .authentication().userInfoRequired().end().build();
+        assertSame(userInfoEnabled, OidcUtils.resolveUserInfoRequired(userInfoEnabled, metadata, true));
     }
 }

@@ -740,30 +740,6 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
     }
 
     /**
-     * @deprecated use the {@link #token()} method instead
-     */
-    @Deprecated(since = "3.18", forRemoval = true)
-    public Token getToken() {
-        return token;
-    }
-
-    /**
-     * @deprecated use the {@link #authentication()} method instead
-     */
-    @Deprecated(since = "3.18", forRemoval = true)
-    public Authentication getAuthentication() {
-        return authentication;
-    }
-
-    /**
-     * @deprecated build this config with the {@link OidcTenantConfigBuilder} builder
-     */
-    @Deprecated(since = "3.18", forRemoval = true)
-    public void setTenantEnabled(boolean enabled) {
-        this.tenantEnabled = enabled;
-    }
-
-    /**
      * @deprecated use the {@link OidcTenantConfigBuilder.RolesBuilder} builder
      */
     @Deprecated(since = "3.18", forRemoval = true)
@@ -1395,10 +1371,6 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
 
         private String rarTypeField = null;
 
-        public void setUserInfoRequired(boolean userInfoRequired) {
-            this.userInfoRequired = Optional.of(userInfoRequired);
-        }
-
         @Override
         public Optional<Set<CacheControl>> cacheControl() {
             return cacheControl;
@@ -1742,10 +1714,6 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
          * Token binding options
          */
         Binding binding = new Binding();
-
-        public void setRefreshExpired(boolean refreshExpired) {
-            this.refreshExpired = refreshExpired;
-        }
 
         public io.quarkus.oidc.runtime.OidcTenantConfig.Binding binding() {
             return binding;
@@ -2215,18 +2183,19 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
     }
 
     /**
-     * Creates {@link OidcTenantConfig} from the {@code mapping}. This method is more efficient than
-     * the {@link #builder()} method if you don't need to modify the {@code mapping}.
+     * Creates {@link OidcTenantConfig} from the {@code mapping}. The well-known OpenId Connect provider configuration
+     * is merged and the implied properties are enabled by the {@link OidcTenantConfigBuilder#build()} method,
+     * unless the {@code mapping} already is an {@link OidcTenantConfig} instance.
      *
      * @param mapping existing io.quarkus.oidc.runtime.OidcTenantConfig
      * @return OidcTenantConfig
      */
     public static OidcTenantConfig of(io.quarkus.oidc.runtime.OidcTenantConfig mapping) {
-        if (mapping.provider().isPresent()) {
-            // the well-known OpenId Connect provider configuration is merged by the builder
-            return builder(mapping).build();
+        if (mapping instanceof OidcTenantConfig oidcTenantConfig) {
+            // this config has been built by the OidcTenantConfigBuilder, there is nothing to merge or enable
+            return oidcTenantConfig;
         }
-        return new OidcTenantConfig(mapping);
+        return builder(mapping).build();
     }
 
     /**
