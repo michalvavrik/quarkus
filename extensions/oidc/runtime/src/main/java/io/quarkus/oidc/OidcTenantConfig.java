@@ -2,7 +2,6 @@ package io.quarkus.oidc;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -748,17 +747,6 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
         private Roles() {
         }
 
-        public static Roles fromClaimPath(List<String> path) {
-            return fromClaimPathAndSeparator(path, null);
-        }
-
-        public static Roles fromClaimPathAndSeparator(List<String> path, String sep) {
-            Roles roles = new Roles();
-            roles.roleClaimPath = Optional.ofNullable(path);
-            roles.roleClaimSeparator = Optional.ofNullable(sep);
-            return roles;
-        }
-
         /**
          * A list of paths to claims containing an array of groups.
          * Each path starts from the top level JWT JSON object
@@ -1488,20 +1476,6 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
         private Token() {
         }
 
-        public static Token fromIssuer(String issuer) {
-            Token tokenClaims = new Token();
-            tokenClaims.issuer = Optional.of(issuer);
-            tokenClaims.audience = Optional.ofNullable(null);
-            return tokenClaims;
-        }
-
-        public static Token fromAudience(String... audience) {
-            Token tokenClaims = new Token();
-            tokenClaims.issuer = Optional.ofNullable(null);
-            tokenClaims.audience = Optional.of(Arrays.asList(audience));
-            return tokenClaims;
-        }
-
         /**
          * The expected issuer `iss` claim value.
          * This property overrides the `issuer` property, which might be set in OpenId Connect provider's well-known
@@ -1713,7 +1687,7 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
         /**
          * Token binding options
          */
-        Binding binding = new Binding();
+        private Binding binding = new Binding();
 
         public io.quarkus.oidc.runtime.OidcTenantConfig.Binding binding() {
             return binding;
@@ -1903,11 +1877,9 @@ public class OidcTenantConfig extends OidcClientCommonConfig implements io.quark
         }
     }
 
-    @Deprecated(since = "3.25", forRemoval = true)
-    ResourceMetadata resourceMetadata = new ResourceMetadata();
+    private ResourceMetadata resourceMetadata = new ResourceMetadata();
 
-    @Deprecated(forRemoval = true)
-    ClientIdMetadata clientIdMetadata = new ClientIdMetadata();
+    private ClientIdMetadata clientIdMetadata = new ClientIdMetadata();
 
     @Deprecated(forRemoval = true)
     public static class ClientIdMetadata implements io.quarkus.oidc.runtime.OidcTenantConfig.ClientIdMetadata {

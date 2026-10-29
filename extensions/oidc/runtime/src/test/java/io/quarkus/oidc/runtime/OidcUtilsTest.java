@@ -14,7 +14,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -197,7 +196,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRealmAccessToken() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        var rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg,
                 read(getClass().getResourceAsStream("/tokenKeycloakRealmAccess.json")));
         assertEquals(2, roles.size());
@@ -207,7 +206,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRealmAndResourceAccessTokenClient1() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        var rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles("client1", rolesCfg,
                 read(getClass().getResourceAsStream("/tokenKeycloakResourceAccess.json")));
         assertEquals(2, roles.size());
@@ -217,7 +216,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRealmAndResourceAccessTokenClient2() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        var rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles("client2", rolesCfg,
                 read(getClass().getResourceAsStream("/tokenKeycloakResourceAccess.json")));
         assertEquals(2, roles.size());
@@ -227,7 +226,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testKeycloakRealmAndResourceAccessTokenNullClient() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        var rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg,
                 read(getClass().getResourceAsStream("/tokenKeycloakResourceAccess.json")));
         assertEquals(1, roles.size());
@@ -236,7 +235,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithGroups() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(null);
+        var rolesCfg = OidcTenantConfig.builder().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenGroups.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("group1"));
@@ -245,8 +244,8 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomRoles() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(Collections.singletonList("application_card/embedded/roles"));
+        var rolesCfg = OidcTenantConfig.builder().roles().roleClaimPath("application_card/embedded/roles").end().build()
+                .roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenCustomPath.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("r1"));
@@ -255,8 +254,8 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithMultipleCustomRolePaths() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(List.of("application_card/embedded/roles", "application_card/embedded2/roles"));
+        var rolesCfg = OidcTenantConfig.builder().roles()
+                .roleClaimPath("application_card/embedded/roles", "application_card/embedded2/roles").end().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenCustomPath.json")));
         assertEquals(4, roles.size());
         assertTrue(roles.contains("r1"));
@@ -267,8 +266,8 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomNamespacedRoles() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(Collections.singletonList("application_card/embedded/\"https://custom/roles\""));
+        var rolesCfg = OidcTenantConfig.builder().roles().roleClaimPath("application_card/embedded/\"https://custom/roles\"")
+                .end().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenCustomPath.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("r3"));
@@ -277,8 +276,8 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomNamespacedRolesWithSpaces() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(Collections.singletonList(" application_card/embedded/\"https://custom/roles\" "));
+        var rolesCfg = OidcTenantConfig.builder().roles()
+                .roleClaimPath(" application_card/embedded/\"https://custom/roles\" ").end().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenCustomPath.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("r3"));
@@ -287,7 +286,7 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithScope() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles.fromClaimPath(Collections.singletonList("scope"));
+        var rolesCfg = OidcTenantConfig.builder().roles().roleClaimPath("scope").end().build().roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(getClass().getResourceAsStream("/tokenScope.json")));
         assertEquals(2, roles.size());
         assertTrue(roles.contains("s1"));
@@ -296,8 +295,8 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomScope() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPathAndSeparator(Collections.singletonList("customScope"), ",");
+        var rolesCfg = OidcTenantConfig.builder().roles().roleClaimPath("customScope").roleClaimSeparator(",").end().build()
+                .roles();
         List<String> roles = OidcUtils.findRoles(null, rolesCfg,
                 read(getClass().getResourceAsStream("/tokenCustomScope.json")));
         assertEquals(2, roles.size());
@@ -307,8 +306,8 @@ public class OidcUtilsTest {
 
     @Test
     public void testTokenWithCustomRolesWrongPath() throws Exception {
-        OidcTenantConfig.Roles rolesCfg = OidcTenantConfig.Roles
-                .fromClaimPath(Collections.singletonList("application-card/embedded/roles"));
+        var rolesCfg = OidcTenantConfig.builder().roles().roleClaimPath("application-card/embedded/roles").end().build()
+                .roles();
         InputStream is = getClass().getResourceAsStream("/tokenCustomPath.json");
         List<String> roles = OidcUtils.findRoles(null, rolesCfg, read(is));
         assertEquals(0, roles.size());
