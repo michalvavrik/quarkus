@@ -51,7 +51,11 @@ public final class OidcTenantConfigBuilder extends OidcClientCommonConfigBuilder
      */
     private static volatile OidcTenantConfig configWithDefaults = null;
 
-    private static final class OidcTenantConfigImpl extends OidcClientCommonConfigImpl implements OidcTenantConfig {
+    /**
+     * The only {@link io.quarkus.oidc.OidcTenantConfig} implementation. It is created by the {@link #build()} method
+     * once the well-known OpenId Connect provider configuration is merged and the implied properties are enabled.
+     */
+    static final class OidcTenantConfigImpl extends OidcClientCommonConfigImpl implements io.quarkus.oidc.OidcTenantConfig {
         private final Optional<String> tenantId;
         private final boolean tenantEnabled;
         private final Optional<ApplicationType> applicationType;
@@ -755,7 +759,7 @@ public final class OidcTenantConfigBuilder extends OidcClientCommonConfigBuilder
             mergeProviderConfig(KnownOidcProviders.provider(provider.get()));
         }
         enableImpliedProperties();
-        return new io.quarkus.oidc.OidcTenantConfig(new OidcTenantConfigImpl(this));
+        return new OidcTenantConfigImpl(this);
     }
 
     private void enableImpliedProperties() {
