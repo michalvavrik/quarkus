@@ -16,6 +16,7 @@ import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.inject.Singleton;
 
 import io.quarkus.runtime.BlockingOperationNotAllowedException;
+import io.quarkus.runtime.ExecutionMode;
 import io.quarkus.security.identity.CurrentIdentityAssociation;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.spi.runtime.AuthorizationFailureEvent;
@@ -24,6 +25,7 @@ import io.quarkus.security.spi.runtime.MethodDescription;
 import io.quarkus.security.spi.runtime.SecurityCheck;
 import io.quarkus.security.spi.runtime.SecurityCheckStorage;
 import io.quarkus.security.spi.runtime.SecurityEventHelper;
+import io.smallrye.config.Config;
 import io.smallrye.mutiny.Uni;
 
 /**
@@ -43,9 +45,16 @@ public final class SecurityConstrainer {
             Instance<CurrentIdentityAssociation> securityIdentityAssociation) {
         this.securityIdentityAssociation = securityIdentityAssociation;
         this.storage = storage;
-        // static interceptors are initialized during the static init, therefore we need to initialize the helper lazily
-        this.securityEventHelper = SecurityEventHelper.lazilyOf(authZSuccessEvent, authZFailureEvent,
-                AUTHORIZATION_SUCCESS, AUTHORIZATION_FAILURE, beanManager);
+        if (isRuntimeConfigReady()) {
+            boolean securityEventsEnabled = Config.get().getValue("quarkus.security.events.enabled",
+                    Boolean.class);
+            this.securityEventHelper = new SecurityEventHelper<>(authZSuccessEvent, authZFailureEvent, AUTHORIZATION_SUCCESS,
+                    AUTHORIZATION_FAILURE, beanManager, securityEventsEnabled);
+        } else {
+            // static interceptors are initialized during the static init, therefore we need to initialize the helper lazily
+            this.securityEventHelper = SecurityEventHelper.lazilyOf(authZSuccessEvent, authZFailureEvent,
+                    AUTHORIZATION_SUCCESS, AUTHORIZATION_FAILURE, beanManager);
+        }
     }
 
     public void check(Method method, Object[] parameters) {
@@ -131,6 +140,12 @@ public final class SecurityConstrainer {
         securityEventHelper
                 .fireFailureEvent(new AuthorizationFailureEvent(identity, failure, securityCheck.getClass().getName(),
                         additionalEventPropsSupplier.get(), MethodDescription.ofMethod(method)));
+    }
+
+    private static boolean isRuntimeConfigReady() {
+        // the runtime config is created when the runtime init starts, before any runtime service runs
+        ExecutionMode executionMode = ExecutionMode.current();
+        return executionMode == ExecutionMode.RUNTIME_INIT || executionMode == ExecutionMode.RUNNING;
     }
 
     public static void setAdditionalSecurityEventPropsSupplier(Supplier<Map<String, Object>> additionalEventPropsSupplier) {
