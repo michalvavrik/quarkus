@@ -16,6 +16,7 @@ import io.quarkus.core.deployment.service.ServiceRegistrar;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.annotations.BuildStep;
+import io.quarkus.deployment.builditem.AdditionalIndexedClassesBuildItem;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.spiffe.client.runtime.internal.SpiffeTlsConfigurationManager;
@@ -42,6 +43,12 @@ final class SpiffeClientProcessor {
                 .setDefaultScope(APPLICATION_SCOPED)
                 .setUnremovable()
                 .build();
+    }
+
+    // the API module ships no Jandex index, and the repeatable annotation lookup needs the annotation definitions
+    @BuildStep(onlyIf = SpiffeClientEnabled.class)
+    AdditionalIndexedClassesBuildItem indexX509SvidAnnotation() {
+        return new AdditionalIndexedClassesBuildItem(X509Svid.class.getName(), X509Svid.List.class.getName());
     }
 
     @BuildStep(onlyIf = SpiffeClientEnabled.class)
