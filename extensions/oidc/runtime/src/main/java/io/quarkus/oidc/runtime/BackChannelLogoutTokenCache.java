@@ -10,7 +10,7 @@ import io.vertx.core.json.JsonObject;
 public class BackChannelLogoutTokenCache {
 
     private static final Logger LOG = Logger.getLogger(BackChannelLogoutTokenCache.class);
-    private static final String SESSION_KEY_SEPARATOR = "/";
+    private static final String SESSION_KEY_SEPARATOR = "\u0000";
 
     private final MemoryCache<TokenVerificationResult> cache;
     private final String logoutTokenKey;
