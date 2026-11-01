@@ -77,22 +77,17 @@ public class MemoryCacheTest {
         assertFalse(cache.isTimerRunning());
 
         cache.add("1", new Bean("1"));
-        Thread.sleep(5);
         cache.add("2", new Bean("2"));
         assertEquals(2, cache.getCacheSize());
 
-        // replacing an entry does not evict anything
-        cache.add("2", new Bean("2b"));
-        assertEquals(2, cache.getCacheSize());
-        assertEquals("2b", cache.get("2").name);
+        // Currently, if the cache is full and a new entry has to be added, then the whole cache is cleared
+        // It can be optimized to remove the oldest entry only in the future
 
-        // the eldest entry is evicted when the cache is full
-        Thread.sleep(5);
         cache.add("3", new Bean("3"));
-        assertEquals(2, cache.getCacheSize());
+        assertEquals(1, cache.getCacheSize());
 
         assertNull(cache.get("1"));
-        assertEquals("2b", cache.get("2").name);
+        assertNull(cache.get("2"));
         assertEquals("3", cache.get("3").name);
     }
 

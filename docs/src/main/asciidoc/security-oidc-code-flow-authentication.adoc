@@ -1721,6 +1721,7 @@ A logout token which has a `sid` (session id) claim logs out the session whose I
 A logout token without the `sid` claim logs out the first session of the user identified by the logout token `sub` (subject) claim which is found after this token has arrived.
 If the same user logs in from several browsers, set `quarkus.oidc.logout.backchannel.logout-all-sessions=true` to log out every session this user had when the logout token was issued.
 Quarkus then keeps such a logout token cached and makes a best effort to log out all the other sessions of this user.
+Pending logout tokens are dropped when this cache is full, so increase `quarkus.oidc.logout.backchannel.token-cache-size` if many sessions can be logged out at the same time.
 
 [[front-channel-logout]]
 ==== Front-channel logout

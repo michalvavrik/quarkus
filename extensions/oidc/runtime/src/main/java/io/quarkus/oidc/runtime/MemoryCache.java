@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 import io.vertx.core.Handler;
@@ -15,6 +16,7 @@ public class MemoryCache<T> {
     private volatile Long timerId = null;
 
     private final Map<String, CacheEntry<T>> cacheMap = new ConcurrentHashMap<>();
+    private final AtomicInteger size = new AtomicInteger();
     private final Duration cacheTimeToLive;
     private final int cacheSize;
     private final Runnable startTimer;
@@ -47,13 +49,10 @@ public class MemoryCache<T> {
     public void add(String key, T result) {
         if (cacheSize > 0) {
             startTimerIfNotRunning();
-            if (cacheMap.size() >= cacheSize) {
-                removeInvalidEntries();
+            if (!prepareSpaceForNewCacheEntry()) {
+                clearCache();
             }
             cacheMap.put(key, new CacheEntry<>(result, now()));
-            if (cacheMap.size() > cacheSize) {
-                evictEldest();
-            }
         }
     }
 
@@ -64,7 +63,7 @@ public class MemoryCache<T> {
     }
 
     public T remove(String key) {
-        CacheEntry<T> entry = cacheMap.remove(key);
+        CacheEntry<T> entry = removeCacheEntry(key);
         return entry == null ? null : entry.result;
     }
 
@@ -93,7 +92,9 @@ public class MemoryCache<T> {
     }
 
     private void removeCacheEntry(String key, CacheEntry<T> entry) {
-        cacheMap.remove(key, entry);
+        if (cacheMap.remove(key, entry)) {
+            size.decrementAndGet();
+        }
     }
 
     private void evictEldest() {
@@ -126,6 +127,25 @@ public class MemoryCache<T> {
         entries.forEach(e -> removeCacheEntry(e.getKey(), e.getValue()));
     }
 
+    private boolean prepareSpaceForNewCacheEntry() {
+        int currentSize;
+        do {
+            currentSize = size.get();
+            if (currentSize == cacheSize) {
+                return false;
+            }
+        } while (!size.compareAndSet(currentSize, currentSize + 1));
+        return true;
+    }
+
+    private CacheEntry<T> removeCacheEntry(String token) {
+        CacheEntry<T> entry = cacheMap.remove(token);
+        if (entry != null) {
+            size.decrementAndGet();
+        }
+        return entry;
+    }
+
     private boolean isEntryExpired(CacheEntry<T> entry, long now) {
         return entry.createdTime + cacheTimeToLive.toMillis() < now;
     }
@@ -140,6 +160,7 @@ public class MemoryCache<T> {
 
     public void clearCache() {
         cacheMap.clear();
+        size.set(0);
     }
 
     public void stopTimer(Vertx vertx) {
@@ -191,6 +212,7 @@ public class MemoryCache<T> {
                 cacheEntry = cacheMap.computeIfAbsent(key, createIfAbsent);
                 if (createIfAbsent.applied) {
                     startTimerIfNotRunning();
+                    size.incrementAndGet();
                     if (cacheMap.size() > cacheSize) {
                         evictEldest();
                     }
