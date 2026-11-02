@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import io.quarkus.oidc.OidcTenantConfigBuilder;
 import io.quarkus.oidc.TokenIntrospection;
+import io.quarkus.oidc.UserInfo;
 
 public class TokenIntrospectionCacheTest {
     DefaultTokenIntrospectionUserInfoCache cache = new DefaultTokenIntrospectionUserInfoCache(createOidcConfig(), null);
@@ -83,18 +84,58 @@ public class TokenIntrospectionCacheTest {
         assertTrue(cache.containsCacheKey("tenant-two", "token"));
     }
 
+    @Test
+    public void testEntryExpiresAfterTimeToLive() {
+        DefaultTokenIntrospectionUserInfoCache shortLivedCache = new DefaultTokenIntrospectionUserInfoCache(
+                createOidcConfig(Duration.ofSeconds(1)), null);
+        io.quarkus.oidc.OidcTenantConfig tenantConfig = createTenantConfig("tenant-a");
+
+        // the token itself is valid for a long time, only the cache entry expires
+        TokenIntrospection introspection = new TokenIntrospection(
+                "{\"active\": true,"
+                        + "\"exp\":" + (System.currentTimeMillis() / 1000 + 300) + "}");
+        shortLivedCache.addIntrospection("token", introspection, tenantConfig, null);
+        shortLivedCache.addUserInfo("token", new UserInfo("{\"sub\": \"alice\"}"), tenantConfig, null);
+        assertNotNull(shortLivedCache.getIntrospection("token", tenantConfig, null).await().indefinitely());
+        assertNotNull(shortLivedCache.getUserInfo("token", tenantConfig, null).await().indefinitely());
+        assertEquals(1, shortLivedCache.getCacheSize());
+
+        // no clean up timer is running, the expired entry must still not be returned
+        await().atMost(Duration.ofSeconds(5)).pollInterval(200, TimeUnit.MILLISECONDS)
+                .until(new Callable<Boolean>() {
+
+                    @Override
+                    public Boolean call() throws Exception {
+                        return shortLivedCache.getIntrospection("token", tenantConfig, null).await()
+                                .indefinitely() == null;
+                    }
+
+                });
+        assertNull(shortLivedCache.getUserInfo("token", tenantConfig, null).await().indefinitely());
+        assertEquals(0, shortLivedCache.getCacheSize());
+
+        // the expired entry is replaced by a new one
+        shortLivedCache.addIntrospection("token", introspection, tenantConfig, null);
+        assertNotNull(shortLivedCache.getIntrospection("token", tenantConfig, null).await().indefinitely());
+        assertEquals(1, shortLivedCache.getCacheSize());
+    }
+
     private static io.quarkus.oidc.OidcTenantConfig createTenantConfig(String tenantId) {
         return new OidcTenantConfigBuilder().tenantId(tenantId).build();
     }
 
     private static OidcConfig createOidcConfig() {
+        return createOidcConfig(Duration.ofMinutes(3));
+    }
+
+    private static OidcConfig createOidcConfig(Duration timeToLive) {
         record OidcConfigImpl(OidcTenantConfig defaultTenant, Map<String, OidcTenantConfig> namedTenants, TokenCache tokenCache,
                 boolean resolveTenantsWithIssuer, int priority) implements OidcConfig {
         }
         record TokenCacheImpl(int maxSize, Duration timeToLive,
                 Optional<Duration> cleanUpTimerInterval) implements OidcConfig.TokenCache {
         }
-        var tokenCache = new TokenCacheImpl(2, Duration.ofMinutes(3), Optional.empty());
+        var tokenCache = new TokenCacheImpl(2, timeToLive, Optional.empty());
         return new OidcConfigImpl(null, Map.of(), tokenCache, false, 0);
     }
 }

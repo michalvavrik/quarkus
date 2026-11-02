@@ -25,6 +25,9 @@ import io.vertx.core.Vertx;
  * <p>
  * In either case, if a remote request to fetch UserInfo is required then it will be the same access token
  * which has been introspected which will be used to request UserInfo.
+ * <p>
+ * Cache entries which are older than the configured time to live are not used even if the clean up timer
+ * which removes the expired entries periodically is not enabled.
  */
 public class DefaultTokenIntrospectionUserInfoCache implements TokenIntrospectionCache, UserInfoCache {
     private static final Logger LOG = Logger.getLogger(DefaultTokenIntrospectionUserInfoCache.class);
@@ -33,17 +36,19 @@ public class DefaultTokenIntrospectionUserInfoCache implements TokenIntrospectio
     private static final String CACHE_KEY_DELIM = "|";
 
     final MemoryCache<CacheEntry> cache;
+    private final long timeToLiveMillis;
 
     public DefaultTokenIntrospectionUserInfoCache(OidcConfig oidcConfig, Vertx vertx) {
         cache = new MemoryCache<CacheEntry>(vertx, oidcConfig.tokenCache().cleanUpTimerInterval(),
                 oidcConfig.tokenCache().timeToLive(), oidcConfig.tokenCache().maxSize());
+        timeToLiveMillis = oidcConfig.tokenCache().timeToLive().toMillis();
     }
 
     @Override
     public Uni<Void> addIntrospection(String token, TokenIntrospection introspection, OidcTenantConfig oidcTenantConfig,
             OidcRequestContext<Void> requestContext) {
         final String key = getCacheKey(oidcTenantConfig, token);
-        CacheEntry entry = cache.get(key);
+        CacheEntry entry = getValidCacheEntry(key);
         if (entry != null) {
             entry.introspection = introspection;
         } else {
@@ -57,13 +62,13 @@ public class DefaultTokenIntrospectionUserInfoCache implements TokenIntrospectio
     public Uni<TokenIntrospection> getIntrospection(String token, OidcTenantConfig oidcConfig,
             OidcRequestContext<TokenIntrospection> requestContext) {
         final String key = getCacheKey(oidcConfig, token);
-        CacheEntry entry = cache.get(key);
+        CacheEntry entry = getValidCacheEntry(key);
         if (entry == null || entry.introspection == null) {
             return NULL_INTROSPECTION_UNI;
         }
         if (isTokenExpired(entry.introspection.getLong(OidcConstants.INTROSPECTION_TOKEN_EXP), oidcConfig)) {
             LOG.debug("Introspected token has expired, removing it from the token introspection cache");
-            cache.remove(key);
+            cache.remove(key, entry);
             return NULL_INTROSPECTION_UNI;
         }
 
@@ -80,7 +85,7 @@ public class DefaultTokenIntrospectionUserInfoCache implements TokenIntrospectio
     public Uni<Void> addUserInfo(String token, UserInfo userInfo, OidcTenantConfig oidcTenantConfig,
             OidcRequestContext<Void> requestContext) {
         final String key = getCacheKey(oidcTenantConfig, token);
-        CacheEntry entry = cache.get(key);
+        CacheEntry entry = getValidCacheEntry(key);
         if (entry != null) {
             entry.userInfo = userInfo;
         } else {
@@ -94,11 +99,24 @@ public class DefaultTokenIntrospectionUserInfoCache implements TokenIntrospectio
     public Uni<UserInfo> getUserInfo(String token, OidcTenantConfig oidcConfig,
             OidcRequestContext<UserInfo> requestContext) {
         final String key = getCacheKey(oidcConfig, token);
-        CacheEntry entry = cache.get(key);
+        CacheEntry entry = getValidCacheEntry(key);
         return entry == null ? NULL_USERINFO_UNI : Uni.createFrom().item(entry.userInfo);
     }
 
+    private CacheEntry getValidCacheEntry(String key) {
+        CacheEntry entry = cache.get(key);
+        if (entry != null && entry.createdTime + timeToLiveMillis < System.currentTimeMillis()) {
+            LOG.debug("Cache entry has expired, removing it from the token cache");
+            cache.remove(key, entry);
+            return null;
+        }
+        return entry;
+    }
+
     private static class CacheEntry {
+        // The entry age is measured from the moment the first value was cached in it, a value which is added
+        // to an existing entry later is therefore used for less than the time to live.
+        final long createdTime = System.currentTimeMillis();
         volatile TokenIntrospection introspection;
         volatile UserInfo userInfo;
 

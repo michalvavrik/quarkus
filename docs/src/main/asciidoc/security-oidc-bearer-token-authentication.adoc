@@ -300,7 +300,6 @@ quarkus.oidc.token-cache.clean-up-timer-interval=1M
 
 The default cache uses a token as a key, and each entry can have `TokenIntrospection`, `UserInfo`, or both.
 It will only keep up to a `max-size` number of entries.
-If the cache is already full when a new entry is to be added, an attempt is made to find a space by removing a single expired entry.
 Additionally, the cleanup timer, if activated, periodically checks for expired entries and removes them.
 
 You can experiment with the default cache implementation or register a custom one.

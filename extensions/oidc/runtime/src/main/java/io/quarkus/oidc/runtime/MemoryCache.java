@@ -1,11 +1,12 @@
 package io.quarkus.oidc.runtime;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 import io.vertx.core.Handler;
@@ -15,6 +16,12 @@ public class MemoryCache<T> {
     private volatile Long timerId = null;
 
     private final Map<String, CacheEntry<T>> cacheMap = new ConcurrentHashMap<>();
+    // Keys of the cached entries ordered by the entry insertion sequence, the eldest entry first.
+    // It makes it possible to evict the eldest entry without scanning the whole cache.
+    // An entry is always added to the cache map before it is added here, so an entry found here but not in the cache
+    // map is stale and is skipped. Stale entries can only exist while a concurrent update of the same key is in progress.
+    private final ConcurrentSkipListMap<Long, String> insertionOrder = new ConcurrentSkipListMap<>();
+    private final AtomicLong sequence = new AtomicLong();
     private final Duration cacheTimeToLive;
     private final int cacheSize;
     private final Runnable startTimer;
@@ -47,13 +54,13 @@ public class MemoryCache<T> {
     public void add(String key, T result) {
         if (cacheSize > 0) {
             startTimerIfNotRunning();
-            if (cacheMap.size() >= cacheSize) {
-                removeInvalidEntries();
+            CacheEntry<T> entry = new CacheEntry<>(result, now(), nextSequence());
+            CacheEntry<T> previous = cacheMap.put(key, entry);
+            if (previous != null) {
+                insertionOrder.remove(previous.sequence());
             }
-            cacheMap.put(key, new CacheEntry<>(result, now()));
-            if (cacheMap.size() > cacheSize) {
-                evictEldest();
-            }
+            indexEntry(key, entry);
+            evictIfFull();
         }
     }
 
@@ -65,12 +72,34 @@ public class MemoryCache<T> {
 
     public T remove(String key) {
         CacheEntry<T> entry = cacheMap.remove(key);
-        return entry == null ? null : entry.result;
+        if (entry == null) {
+            return null;
+        }
+        insertionOrder.remove(entry.sequence());
+        return entry.result();
+    }
+
+    /**
+     * Removes the entry only if it still holds the given value.
+     *
+     * @return true if the entry has been removed
+     */
+    boolean remove(String key, T value) {
+        boolean[] removed = new boolean[1];
+        cacheMap.computeIfPresent(key, (k, entry) -> {
+            if (entry.result() == value) {
+                insertionOrder.remove(entry.sequence());
+                removed[0] = true;
+                return null;
+            }
+            return entry;
+        });
+        return removed[0];
     }
 
     public T get(String key) {
         CacheEntry<T> entry = cacheMap.get(key);
-        return entry == null ? null : entry.result;
+        return entry == null ? null : entry.result();
     }
 
     public boolean containsKey(String key) {
@@ -93,37 +122,46 @@ public class MemoryCache<T> {
     }
 
     private void removeCacheEntry(String key, CacheEntry<T> entry) {
-        cacheMap.remove(key, entry);
+        if (cacheMap.remove(key, entry)) {
+            insertionOrder.remove(entry.sequence());
+        }
     }
 
-    private void evictEldest() {
-        int overflow = cacheMap.size() - cacheSize;
-        if (overflow <= 0) {
-            return;
+    private void indexEntry(String key, CacheEntry<T> entry) {
+        insertionOrder.put(entry.sequence(), key);
+        // A concurrent removal or replacement of the entry could not see its position in the insertion order yet,
+        // the position must not be left behind in such a case
+        CacheEntry<T> current = cacheMap.get(key);
+        if (current == null || current.sequence() != entry.sequence()) {
+            insertionOrder.remove(entry.sequence());
         }
-        long[] times = new long[overflow];
-        var entries = new ArrayList<Map.Entry<String, CacheEntry<T>>>(overflow);
-        int found = 0;
-        for (var next : cacheMap.entrySet()) {
-            long createdTime = next.getValue().createdTime();
-            if (found < overflow) {
-                times[found] = createdTime;
-                entries.add(next);
-                found++;
-            } else {
-                int youngest = 0;
-                for (int i = 1; i < overflow; i++) {
-                    if (times[i] > times[youngest]) {
-                        youngest = i;
-                    }
-                }
-                if (createdTime < times[youngest]) {
-                    times[youngest] = createdTime;
-                    entries.set(youngest, next);
-                }
+    }
+
+    /**
+     * Evicts the eldest entries while the maximum cache size is exceeded.
+     * <p>
+     * It is called right after an entry has been added. Concurrent additions evict different entries because polling
+     * the insertion order is atomic. The size of the cache map is approximate while it is updated concurrently, so
+     * concurrent additions can evict an entry too many, which later additions make up for, or leave an entry too many
+     * behind, which the next eviction corrects. An entry which has just been added can only be evicted if the number
+     * of additions in flight reaches the maximum cache size because such entries have no position in the insertion
+     * order yet.
+     */
+    private void evictIfFull() {
+        while (cacheMap.size() > cacheSize) {
+            Map.Entry<Long, String> eldest = insertionOrder.pollFirstEntry();
+            if (eldest == null) {
+                return;
             }
+            // a stale position is skipped and the next eldest entry is evicted instead
+            evict(eldest.getValue(), eldest.getKey());
         }
-        entries.forEach(e -> removeCacheEntry(e.getKey(), e.getValue()));
+    }
+
+    private void evict(String key, long sequence) {
+        // The entry is removed only if it still has the polled sequence. It is done atomically because the entry
+        // can be replaced with a new one having the same sequence when its caching period is restarted.
+        cacheMap.computeIfPresent(key, (k, entry) -> entry.sequence() == sequence ? null : entry);
     }
 
     private boolean isEntryExpired(CacheEntry<T> entry, long now) {
@@ -134,12 +172,19 @@ public class MemoryCache<T> {
         return System.currentTimeMillis();
     }
 
+    private long nextSequence() {
+        return sequence.incrementAndGet();
+    }
+
     public int getCacheSize() {
         return cacheMap.size();
     }
 
     public void clearCache() {
-        cacheMap.clear();
+        // the entries are removed one by one to keep the insertion order in sync with the cache map
+        for (String key : cacheMap.keySet()) {
+            remove(key);
+        }
     }
 
     public void stopTimer(Vertx vertx) {
@@ -152,7 +197,7 @@ public class MemoryCache<T> {
         return timerId != null;
     }
 
-    private record CacheEntry<S>(S result, long createdTime) {
+    private record CacheEntry<S>(S result, long createdTime, long sequence) {
 
     }
 
@@ -174,9 +219,6 @@ public class MemoryCache<T> {
                 return valueFactory.apply(this);
             }
             if (cacheEntry == null) {
-                if (cacheMap.size() >= cacheSize) {
-                    removeInvalidEntries();
-                }
                 var createIfAbsent = new Function<String, CacheEntry<T>>() {
 
                     private boolean applied = false;
@@ -185,15 +227,15 @@ public class MemoryCache<T> {
                     public CacheEntry<T> apply(String k) {
                         applied = true;
                         long entryCreated = now() + GRACE_PERIOD_MILLIS;
-                        return new CacheEntry<>(valueFactory.apply(DeferredCacheValue.this), entryCreated);
+                        return new CacheEntry<>(valueFactory.apply(DeferredCacheValue.this), entryCreated,
+                                nextSequence());
                     }
                 };
                 cacheEntry = cacheMap.computeIfAbsent(key, createIfAbsent);
                 if (createIfAbsent.applied) {
+                    indexEntry(key, cacheEntry);
                     startTimerIfNotRunning();
-                    if (cacheMap.size() > cacheSize) {
-                        evictEldest();
-                    }
+                    evictIfFull();
                 }
             }
             return cacheEntry.result();
@@ -212,7 +254,8 @@ public class MemoryCache<T> {
         public void startCachingPeriod() {
             var oldEntry = cacheEntry;
             if (oldEntry != null) {
-                var newEntry = cacheEntry = new CacheEntry<>(oldEntry.result(), now());
+                // the sequence is kept so that the position in the insertion order does not change
+                var newEntry = cacheEntry = new CacheEntry<>(oldEntry.result(), now(), oldEntry.sequence());
                 cacheMap.replace(key, oldEntry, newEntry);
             }
         }
