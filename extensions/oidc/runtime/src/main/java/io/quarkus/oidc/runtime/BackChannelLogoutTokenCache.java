@@ -51,7 +51,8 @@ public class BackChannelLogoutTokenCache {
             }
         }
         if (logoutToken == null) {
-            // logout token without the session id targets all the sessions of the subject
+            // logout token without the session id matches any session of the subject created before the token was issued,
+            // logoutCompleted decides whether it is dropped after the first logout or kept to log out all the sessions
             logoutToken = findLogoutToken(logoutTokenKeyValue, idTokenJson);
         }
         return logoutToken;
@@ -60,6 +61,7 @@ public class BackChannelLogoutTokenCache {
     public void logoutCompleted(TokenVerificationResult logoutToken) {
         JsonObject claims = logoutToken.localVerificationResult();
         if (logoutAllSessions && claims.getString(OidcConstants.BACK_CHANNEL_LOGOUT_SID_CLAIM) == null) {
+            // keep the logout token cached so that the other sessions of the subject are logged out too
             return;
         }
         cache.remove(cacheKey(claims));
