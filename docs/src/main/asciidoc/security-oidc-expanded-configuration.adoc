@@ -773,8 +773,6 @@ Set `quarkus.oidc.logout.backchannel.logout-all-sessions=true` to log out all th
 This property cannot be enabled when `quarkus.oidc.logout.backchannel.logout-token-key` is set to `sid`.
 
 `quarkus.oidc.logout.backchannel.token-cache-size`, `quarkus.oidc.logout.backchannel.token-cache-time-to-live` and `quarkus.oidc.logout.backchannel.clean-up-timer-interval` are properties for managing the back-channel notification cache.
-When `quarkus.oidc.logout.backchannel.logout-all-sessions` is enabled, logout tokens without the `sid` claim stay in this cache after they log out the first session.
-They log out the other sessions only while they remain cached, so consider increasing the cache size.
 
 [NOTE]
 ====
