@@ -64,19 +64,6 @@ public class BackChannelLogoutTokenCacheTest {
     }
 
     @Test
-    public void testLatestLogoutTokenForSubjectIsKept() {
-        BackChannelLogoutTokenCache cache = newCache(true, "sub");
-        TokenVerificationResult newerLogoutToken = logoutToken("alice", null, 1000);
-        cache.addTokenVerification(newerLogoutToken);
-        cache.addTokenVerification(logoutToken("alice", null, 990));
-        assertSame(newerLogoutToken, cache.findLogoutToken(idToken("alice", "sid-1", 995)));
-
-        TokenVerificationResult newestLogoutToken = logoutToken("alice", null, 1010);
-        cache.addTokenVerification(newestLogoutToken);
-        assertSame(newestLogoutToken, cache.findLogoutToken(idToken("alice", "sid-1", 1005)));
-    }
-
-    @Test
     public void testSessionIdLogoutTokenKey() {
         BackChannelLogoutTokenCache cache = newCache(false, "sid");
         TokenVerificationResult logoutToken = logoutToken("alice", "sid-1", 1000);

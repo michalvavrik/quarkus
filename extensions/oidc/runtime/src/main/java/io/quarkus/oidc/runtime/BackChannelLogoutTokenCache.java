@@ -27,14 +27,7 @@ public class BackChannelLogoutTokenCache {
     }
 
     public void addTokenVerification(TokenVerificationResult logoutToken) {
-        JsonObject claims = logoutToken.localVerificationResult();
-        String cacheKey = cacheKey(claims);
-        TokenVerificationResult cachedLogoutToken = cache.get(cacheKey);
-        if (cachedLogoutToken != null && isIssuedAfter(cachedLogoutToken.localVerificationResult(), claims)) {
-            // logout tokens can arrive out of order, the latest one must win
-            return;
-        }
-        cache.add(cacheKey, logoutToken);
+        cache.add(cacheKey(logoutToken.localVerificationResult()), logoutToken);
     }
 
     public TokenVerificationResult findLogoutToken(JsonObject idTokenJson) {
@@ -112,16 +105,16 @@ public class BackChannelLogoutTokenCache {
             LOG.debug("Logout token session id does not match the ID token session id");
             return false;
         }
-        if (logoutTokenSid == null && isIssuedAfter(idTokenJson, logoutTokenJson)) {
+        if (logoutTokenSid == null && isIdTokenIssuedAfterLogoutToken(idTokenJson, logoutTokenJson)) {
             LOG.trace("ID token was issued after the logout token, the session is not affected");
             return false;
         }
         return true;
     }
 
-    private static boolean isIssuedAfter(JsonObject token, JsonObject referenceToken) {
-        Long tokenIssuedAt = token.getLong(Claims.iat.name());
-        Long referenceTokenIssuedAt = referenceToken.getLong(Claims.iat.name());
-        return tokenIssuedAt != null && referenceTokenIssuedAt != null && tokenIssuedAt > referenceTokenIssuedAt;
+    private static boolean isIdTokenIssuedAfterLogoutToken(JsonObject idToken, JsonObject logoutToken) {
+        Long idTokenIssuedAt = idToken.getLong(Claims.iat.name());
+        Long logoutTokenIssuedAt = logoutToken.getLong(Claims.iat.name());
+        return idTokenIssuedAt != null && logoutTokenIssuedAt != null && idTokenIssuedAt > logoutTokenIssuedAt;
     }
 }
