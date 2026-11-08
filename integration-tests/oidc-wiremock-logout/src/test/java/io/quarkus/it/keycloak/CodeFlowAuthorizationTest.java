@@ -148,6 +148,49 @@ public class CodeFlowAuthorizationTest {
         }
     }
 
+    @Test
+    public void testLogoutTokenWithoutSessionIdReplacesEarlierSessionLogoutTokens() throws Exception {
+        wireMockServer.resetRequests();
+        List<StubMapping> stubs = defineCodeFlowTokenStubs(
+                getIdToken("bob", "654321", "sid-3"),
+                getIdToken("alice", "123456", "sid-1"),
+                getIdToken("alice", "123456", "sid-2"));
+        try (WebClient bobBrowser = createWebClient();
+                WebClient aliceBrowser = createWebClient();
+                WebClient aliceOtherBrowser = createWebClient()) {
+            assertEquals("bob", login(bobBrowser, "logout-all-sessions"));
+            postLogoutToken("back-channel-logout/logout-all-sessions", OidcWiremockTestResource.getLogoutToken("654321", null));
+
+            assertEquals("alice", login(aliceBrowser, "logout-all-sessions"));
+            assertEquals("alice", login(aliceOtherBrowser, "logout-all-sessions"));
+            // the tenant caches at most 3 logout tokens, the cache is full now
+            postLogoutToken("back-channel-logout/logout-all-sessions",
+                    OidcWiremockTestResource.getLogoutToken("123456", "sid-1"));
+            postLogoutToken("back-channel-logout/logout-all-sessions",
+                    OidcWiremockTestResource.getLogoutToken("123456", "sid-2"));
+            // the logout token without the session id covers both alice's sessions, the logout tokens with the session id
+            // are dropped before it is cached so that bob's logout token is not evicted from the full cache
+            String logoutToken = OidcWiremockTestResource.getLogoutToken("123456", null);
+            postLogoutToken("back-channel-logout/logout-all-sessions", logoutToken);
+
+            assertLoggedOut(bobBrowser, "logout-all-sessions");
+            assertLoggedOut(aliceBrowser, "logout-all-sessions");
+            assertLoggedOut(aliceOtherBrowser, "logout-all-sessions");
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+                wireMockServer.verify(3, postRequestedFor(urlPathMatching("/auth/realms/quarkus/revoke"))
+                        .withHeader("token-revocation-filter", equalTo("access-token")));
+                wireMockServer.verify(3, postRequestedFor(urlPathMatching("/auth/realms/quarkus/revoke"))
+                        .withHeader("token-revocation-filter", equalTo("refresh-token")));
+            });
+
+            // the logout token stays cached, sessions created by the other tests must be issued after it
+            long logoutTokenIssuedAt = OidcCommonUtils.decodeJwtContent(logoutToken).getLong("iat");
+            await().until(() -> Instant.now().getEpochSecond() > logoutTokenIssuedAt);
+        } finally {
+            removeStubs(stubs);
+        }
+    }
+
     private void testCodeFlowFormPostAndBackChannelLogout(String tenantId, String backChannelPath) throws Exception {
         try (final WebClient webClient = createWebClient()) {
             webClient.getOptions().setRedirectEnabled(true);

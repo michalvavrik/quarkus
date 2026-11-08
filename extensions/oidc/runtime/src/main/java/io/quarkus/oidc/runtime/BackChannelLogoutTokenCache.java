@@ -27,7 +27,11 @@ public class BackChannelLogoutTokenCache {
     }
 
     public void addTokenVerification(TokenVerificationResult logoutToken) {
-        cache.add(cacheKey(logoutToken.localVerificationResult()), logoutToken);
+        JsonObject claims = logoutToken.localVerificationResult();
+        if (logoutAllSessions && claims.getString(OidcConstants.BACK_CHANNEL_LOGOUT_SID_CLAIM) == null) {
+            removeRedundantSessionLogoutTokens(claims);
+        }
+        cache.add(cacheKey(claims), logoutToken);
     }
 
     public TokenVerificationResult findLogoutToken(JsonObject idTokenJson) {
@@ -72,6 +76,21 @@ public class BackChannelLogoutTokenCache {
         return null;
     }
 
+    private void removeRedundantSessionLogoutTokens(JsonObject subjectLogoutTokenJson) {
+        // the logout token without the session id stays cached and logs out every session of the subject
+        // created before it was issued, which includes the sessions targeted by the logout tokens with the session id
+        // issued before it, so these tokens are redundant now; they are removed before the new token is cached
+        // so that they do not push an unrelated logout token out of a full cache
+        String logoutTokenKeyValue = subjectLogoutTokenJson.getString(logoutTokenKey);
+        Long subjectLogoutTokenIssuedAt = subjectLogoutTokenJson.getLong(Claims.iat.name());
+        cache.removeIf(cachedLogoutToken -> {
+            JsonObject cachedLogoutTokenJson = cachedLogoutToken.localVerificationResult();
+            return cachedLogoutTokenJson.getString(OidcConstants.BACK_CHANNEL_LOGOUT_SID_CLAIM) != null
+                    && logoutTokenKeyValue.equals(cachedLogoutTokenJson.getString(logoutTokenKey))
+                    && !isIssuedAfter(cachedLogoutTokenJson, subjectLogoutTokenIssuedAt);
+        });
+    }
+
     private String cacheKey(JsonObject logoutTokenJson) {
         String logoutTokenKeyValue = logoutTokenJson.getString(logoutTokenKey);
         if (logoutTokenKeyIsSid) {
@@ -113,8 +132,11 @@ public class BackChannelLogoutTokenCache {
     }
 
     private static boolean isIdTokenIssuedAfterLogoutToken(JsonObject idToken, JsonObject logoutToken) {
-        Long idTokenIssuedAt = idToken.getLong(Claims.iat.name());
-        Long logoutTokenIssuedAt = logoutToken.getLong(Claims.iat.name());
-        return idTokenIssuedAt != null && logoutTokenIssuedAt != null && idTokenIssuedAt > logoutTokenIssuedAt;
+        return isIssuedAfter(idToken, logoutToken.getLong(Claims.iat.name()));
+    }
+
+    private static boolean isIssuedAfter(JsonObject token, Long issuedAt) {
+        Long tokenIssuedAt = token.getLong(Claims.iat.name());
+        return tokenIssuedAt != null && issuedAt != null && tokenIssuedAt > issuedAt;
     }
 }
