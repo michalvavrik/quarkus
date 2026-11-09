@@ -789,6 +789,20 @@ public interface OidcTenantConfig extends OidcClientCommonConfig {
         Optional<String> sessionExpiredPath();
 
         /**
+         * Relative path of the public application login page shown before the user is redirected to the OIDC provider.
+         * <p>
+         * A user who requests a secured resource is redirected to this page with a `redirect` query parameter.
+         * The parameter value is the original request path and query with an added `q_login` query parameter.
+         * The page must link to this value. Following the link redirects the user to the OIDC provider and the user
+         * returns to the original request path after the authentication.
+         * <p>
+         * It has to start from a forward slash and is appended to the request URI's host and port.
+         * `/login` and `/login/` are considered equal.
+         * The page must be public and requests to it are not authenticated by Quarkus OIDC.
+         */
+        Optional<String> applicationLoginPath();
+
+        /**
          * Both ID and access tokens are fetched from the OIDC provider as part of the authorization code flow.
          * <p>
          * ID token is always verified on every user request as the primary token which is used

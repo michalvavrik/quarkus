@@ -303,6 +303,12 @@ final class TenantContextFactory {
                         "The '" + getConfigPropertyForTenant(tenantId, "logout.path") + "' property can only be enabled for "
                                 + io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType.WEB_APP + " application types");
             }
+            if (oidcConfig.authentication().applicationLoginPath().isPresent()) {
+                throw new ConfigurationException(
+                        "The '" + getConfigPropertyForTenant(tenantId, "authentication.application-login-path")
+                                + "' property can only be enabled for "
+                                + io.quarkus.oidc.runtime.OidcTenantConfig.ApplicationType.WEB_APP + " application types");
+            }
             if (oidcConfig.roles().source().isPresent()
                     && oidcConfig.roles().source().get() == io.quarkus.oidc.runtime.OidcTenantConfig.Roles.Source.idtoken) {
                 throw new ConfigurationException(
@@ -312,6 +318,7 @@ final class TenantContextFactory {
                                 + " application types");
             }
         } else {
+            verifyApplicationLoginPath(oidcConfig, tenantId);
             if (oidcConfig.authentication().sessionAgeExtension().isPresent()
                     && !oidcConfig.token().refreshExpired()) {
                 LOG.warn(
@@ -415,6 +422,46 @@ final class TenantContextFactory {
                     + " 'quarkus.oidc.allowed-routes'; this tenant will not publish its Client ID Metadata Document",
                     getConfigPropertyForTenant(tenantId, "client-id"));
         }
+    }
+
+    private static void verifyApplicationLoginPath(OidcTenantConfig oidcConfig, String tenantId) {
+        if (oidcConfig.authentication().applicationLoginPath().isEmpty()) {
+            return;
+        }
+        String property = getConfigPropertyForTenant(tenantId, "authentication.application-login-path");
+        String loginPath = oidcConfig.authentication().applicationLoginPath().get();
+        if (!isCanonicalPath(loginPath)) {
+            throw new ConfigurationException(
+                    "'" + property + "' must be a relative path starting with a forward slash", Set.of(property));
+        }
+        if (oidcConfig.authentication().redirectPath().isPresent()
+                && isSamePath(loginPath, oidcConfig.authentication().redirectPath().get())) {
+            throw new ConfigurationException("'" + property + "' must not be equal to '"
+                    + getConfigPropertyForTenant(tenantId, "authentication.redirect-path") + "'", Set.of(property));
+        }
+        if (oidcConfig.logout().path().isPresent() && isSamePath(loginPath, oidcConfig.logout().path().get())) {
+            throw new ConfigurationException("'" + property + "' must not be equal to '"
+                    + getConfigPropertyForTenant(tenantId, "logout.path") + "'", Set.of(property));
+        }
+    }
+
+    private static boolean isCanonicalPath(String path) {
+        try {
+            URI uri = URI.create(path);
+            if (uri.isAbsolute() || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                return false;
+            }
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+        return path.startsWith("/") && !path.contains("//");
+    }
+
+    private static boolean isSamePath(String loginPath, String otherPath) {
+        // the login path is always relative, the redirect path can be an absolute URL
+        String other = otherPath.startsWith("http") ? URI.create(otherPath).getPath() : otherPath;
+        return CodeAuthenticationMechanism.withoutTrailingSlash(loginPath)
+                .equals(CodeAuthenticationMechanism.withoutTrailingSlash(other));
     }
 
     static String getConfigPropertyForTenant(String tenantId, String configSubKey) {
