@@ -17,17 +17,12 @@ public class QuarkusSecurityCommonProcessor {
     void exportPasswordImplementations(BuildProducer<ModuleExportBuildItem> exports) {
         exports.produce(new ModuleExportBuildItem("org.wildfly.security.wildfly.elytron.password.impl",
                 "org.wildfly.security.wildfly.elytron.credential", "org.wildfly.security.password.impl"));
-        // the password provider also advertises the SHA-512-256 MessageDigest implemented by the digest module
-        exports.produce(new ModuleExportBuildItem("org.wildfly.security.wildfly.elytron.digest",
-                "org.wildfly.security.wildfly.elytron.credential", "org.wildfly.security.digest"));
     }
 
     @BuildStep
-    void linkPasswordProviderToImplementations(BuildProducer<AddDependencyBuildItem> dependencies) {
-        dependencies.produce(new AddDependencyBuildItem("org.wildfly.security.wildfly.elytron.credential",
-                "org.wildfly.security.wildfly.elytron.password.impl", Modifier.Set.of(Modifier.READ, Modifier.LINKED)));
-        dependencies.produce(new AddDependencyBuildItem("org.wildfly.security.wildfly.elytron.credential",
-                "org.wildfly.security.wildfly.elytron.digest", Modifier.Set.of(Modifier.READ, Modifier.LINKED)));
+    AddDependencyBuildItem linkPasswordProviderToImplementations() {
+        return new AddDependencyBuildItem("org.wildfly.security.wildfly.elytron.credential",
+                "org.wildfly.security.wildfly.elytron.password.impl", Modifier.Set.of(Modifier.READ, Modifier.LINKED));
     }
 
     @BuildStep
@@ -57,8 +52,7 @@ public class QuarkusSecurityCommonProcessor {
     }
 
     /**
-     * Register the Elytron-provided password factory SPI implementation and the SHA-512-256 message digest,
-     * both of which the password provider instantiates reflectively
+     * Register the Elytron-provided password factory SPI implementation
      *
      * @param classes producer factory for ReflectiveClassBuildItems
      */
@@ -67,8 +61,5 @@ public class QuarkusSecurityCommonProcessor {
         classes.produce(ReflectiveClassBuildItem.builder("org.wildfly.security.password.impl.PasswordFactorySpiImpl")
                 .reason(getClass().getName())
                 .methods().build());
-        classes.produce(ReflectiveClassBuildItem.builder("org.wildfly.security.digest.SHA512_256MessageDigest")
-                .reason(getClass().getName())
-                .build());
     }
 }
