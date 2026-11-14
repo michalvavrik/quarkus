@@ -403,10 +403,11 @@ public class HttpSecurityProcessor {
                     .require(BeanContainer.class)
                     .require(VertxHttpConfig.class)
                     .after(TlsConfigurationRegistry.class) // we may need to register a TLS configuration for the mTLS
-                    // the mTLS auth event fired from prepareHttpSecurityConfiguration reads the TlsConfigurationRegistry
-                    // synthetic bean, which is initialized during RUNTIME_INIT; ensure that init has run first
-                    // (the HttpSecurity event observers and custom HttpSecurityPolicy beans created by this service
-                    // can inject other such beans as well, like the Vert.x instance)
+                    // this service fires the HttpSecurity event; when an observer configures the mTLS with a TLS
+                    // configuration, we register it in the TlsConfigurationRegistry, which we look up as a synthetic
+                    // bean initialized during RUNTIME_INIT; the observers and custom HttpSecurityPolicy beans created
+                    // by this service can inject other such beans as well (like the Vert.x instance),
+                    // therefore ensure that init has run first
                     .afterBuildItem(SyntheticBeansRuntimeInitBuildItem.class)
                     .onStart((ctx, authHandler, beanContainer, httpConfig) -> {
                         HttpSecurityConfiguration httpSecurityConfiguration = HttpSecurityRecorder
