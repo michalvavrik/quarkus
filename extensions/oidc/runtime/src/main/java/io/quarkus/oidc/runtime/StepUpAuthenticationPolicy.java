@@ -6,7 +6,8 @@ import static io.quarkus.vertx.http.runtime.security.HttpSecurityUtils.getAuthen
 import static io.quarkus.vertx.http.runtime.security.HttpSecurityUtils.getRoutingContextAttribute;
 
 import java.time.Duration;
-import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -21,12 +22,16 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
 
-record StepUpAuthenticationPolicy(String[] expectedAcrValues, Long maxAge) implements Consumer<TokenVerificationResult> {
+public record StepUpAuthenticationPolicy(List<String> expectedAcrValues,
+        Long maxAge) implements Consumer<TokenVerificationResult> {
 
-    private static volatile boolean enabled = false;
+    public StepUpAuthenticationPolicy {
+        expectedAcrValues = List.copyOf(expectedAcrValues);
+    }
 
     StepUpAuthenticationPolicy(String acrValues, Duration maxAge) {
-        this(splitAcrValues(acrValues), maxAge == null ? null : maxAge.toSeconds());
+        // we need to keep the order of the 'acr' values, so that every build captures the same policy
+        this(List.of(acrValues.split(",")), maxAge == null ? null : maxAge.toSeconds());
     }
 
     private static final Logger LOG = Logger.getLogger(StepUpAuthenticationPolicy.class);
@@ -77,13 +82,13 @@ record StepUpAuthenticationPolicy(String[] expectedAcrValues, Long maxAge) imple
                 if (acrFound) {
                     return;
                 }
-            } else if (expectedAcrValues.length == 1 && expectedAcrValues[0].equals(acrObject)) {
+            } else if (expectedAcrValues.size() == 1 && expectedAcrValues.get(0).equals(acrObject)) {
                 return;
             }
         }
 
         final String message = "Valid token with '%s' acr claim values is required"
-                .formatted(Arrays.toString(expectedAcrValues));
+                .formatted(expectedAcrValues);
         throwAuthenticationFailedException(message);
     }
 
@@ -91,7 +96,8 @@ record StepUpAuthenticationPolicy(String[] expectedAcrValues, Long maxAge) imple
         throwAuthenticationFailedException(exceptionMessage, expectedAcrValues, maxAge);
     }
 
-    private static void throwAuthenticationFailedException(String exceptionMessage, String[] expectedAcrValues, Long maxAge) {
+    private static void throwAuthenticationFailedException(String exceptionMessage, Collection<String> expectedAcrValues,
+            Long maxAge) {
         final Map<String, Object> failureContext;
         if (maxAge == null) {
             failureContext = Map.of(ACR_VALUES, String.join(",", expectedAcrValues));
@@ -102,7 +108,7 @@ record StepUpAuthenticationPolicy(String[] expectedAcrValues, Long maxAge) imple
     }
 
     static void throwAuthenticationFailedException(String exceptionMessage, Set<String> expectedAcrValues) {
-        throwAuthenticationFailedException(exceptionMessage, expectedAcrValues.toArray(new String[] {}), null);
+        throwAuthenticationFailedException(exceptionMessage, expectedAcrValues, null);
     }
 
     void storeSelfOnContext(RoutingContext routingContext) {
@@ -150,21 +156,5 @@ record StepUpAuthenticationPolicy(String[] expectedAcrValues, Long maxAge) imple
     private static boolean isInsufficientUserAuthException(AuthenticationFailedException authFailure) {
         return authFailure != null
                 && (authFailure.getAttribute(ACR_VALUES) != null || authFailure.getAttribute(MAX_AGE) != null);
-    }
-
-    static void markAsEnabled() {
-        enabled = true;
-    }
-
-    static boolean isEnabled() {
-        return enabled;
-    }
-
-    private static String[] splitAcrValues(String acrValues) {
-        String[] acrValuesArr = acrValues.split(",");
-        if (acrValuesArr.length > 1) {
-            return Set.of(acrValuesArr).toArray(String[]::new);
-        }
-        return acrValuesArr;
     }
 }

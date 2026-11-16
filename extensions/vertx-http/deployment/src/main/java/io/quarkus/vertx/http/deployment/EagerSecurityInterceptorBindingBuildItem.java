@@ -20,6 +20,10 @@ import io.vertx.ext.web.RoutingContext;
  * attribute.
  * With disabled proactive authentication, these interceptors are guaranteed to run before any other security code
  * of supported extensions (currently RESTEasy Classic and RESTEasy Reactive).
+ * <p>
+ * The interceptor creator is invoked at build time and the interceptor it creates is captured by a service action
+ * of the Vert.x HTTP extension. Therefore, the interceptor must be a value the service system is able to capture,
+ * for example a record whose components are capturable as well.
  */
 public final class EagerSecurityInterceptorBindingBuildItem extends MultiBuildItem {
 

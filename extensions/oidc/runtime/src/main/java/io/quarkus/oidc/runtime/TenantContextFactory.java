@@ -55,16 +55,18 @@ final class TenantContextFactory {
     private final boolean securityEventsEnabled;
     private final ProxyConfigurationRegistry proxyConfigurationRegistry;
     private final Set<OidcRoute> allowedRoutes;
+    private final boolean stepUpAuthenticationPolicyEnabled;
 
     TenantContextFactory(Vertx vertx, TlsConfigurationRegistry tlsConfigurationRegistry, boolean securityEventsEnabled,
             ProxyConfigurationRegistry proxyConfigurationRegistry,
-            Set<OidcRoute> allowedRoutes) {
+            Set<OidcRoute> allowedRoutes, boolean stepUpAuthenticationPolicyEnabled) {
         this.vertx = vertx;
         this.tlsSupport = OidcTlsSupport.of(tlsConfigurationRegistry);
         this.securityEventsEnabled = securityEventsEnabled;
         this.tenantsExpectingServerAvailableEvents = ConcurrentHashMap.newKeySet();
         this.proxyConfigurationRegistry = proxyConfigurationRegistry;
         this.allowedRoutes = allowedRoutes;
+        this.stepUpAuthenticationPolicyEnabled = stepUpAuthenticationPolicyEnabled;
     }
 
     TenantConfigContext createDefaultTenantConfig(Map<String, OidcTenantConfig> staticTenants, OidcTenantConfig defaultTenant) {
@@ -236,7 +238,7 @@ final class TenantContextFactory {
             throw new ConfigurationException("UserInfo is not required but '%s' is enabled".formatted(propertyName));
         }
         if (!oidcConfig.authentication().idTokenRequired().orElse(true) && OidcUtils.isWebApp(oidcConfig)
-                && StepUpAuthenticationPolicy.isEnabled()) {
+                && stepUpAuthenticationPolicyEnabled) {
             String propertyName = getConfigPropertyForTenant(tenantId, "authentication.id-token-required");
             // this can be false alarm in case Quarkus application have multiple tenants and 'acr' values are not
             // required for this tenant, which we cannot know

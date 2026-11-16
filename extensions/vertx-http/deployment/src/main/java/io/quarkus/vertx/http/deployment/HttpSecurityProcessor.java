@@ -16,14 +16,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -76,7 +77,6 @@ import io.quarkus.gizmo.ClassTransformer;
 import io.quarkus.gizmo.DescriptorUtils;
 import io.quarkus.gizmo.MethodDescriptor;
 import io.quarkus.gizmo.ResultHandle;
-import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.spi.AdditionalSecuredMethodsBuildItem;
@@ -95,11 +95,13 @@ import io.quarkus.vertx.http.runtime.RouteHandler;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.runtime.management.ManagementInterfaceBuildTimeConfig;
-import io.quarkus.vertx.http.runtime.security.AuthMechanismSelectionInterceptorCreator;
+import io.quarkus.vertx.http.runtime.security.AuthMechanismSelectionInterceptor;
 import io.quarkus.vertx.http.runtime.security.AuthorizationPolicyStorage;
 import io.quarkus.vertx.http.runtime.security.BasicAuthenticationMechanism;
 import io.quarkus.vertx.http.runtime.security.DuplicatedContextSecurityIdentityAssociation;
 import io.quarkus.vertx.http.runtime.security.EagerSecurityInterceptorStorage;
+import io.quarkus.vertx.http.runtime.security.EagerSecurityInterceptorStorage.CompoundInterceptor;
+import io.quarkus.vertx.http.runtime.security.EagerSecurityInterceptorStorage.InterceptedMethod;
 import io.quarkus.vertx.http.runtime.security.FormAuthenticationMechanism;
 import io.quarkus.vertx.http.runtime.security.HttpAuthenticator;
 import io.quarkus.vertx.http.runtime.security.HttpAuthorizer;
@@ -516,7 +518,7 @@ public class HttpSecurityProcessor {
                     .collect(Collectors.toUnmodifiableMap(item -> item.annotationName.toString(),
                             item -> item.authMechanismScheme));
             bindingProducer.produce(new EagerSecurityInterceptorBindingBuildItem(
-                    new AuthMechanismSelectionInterceptorCreator(), knownBindingValues, mechNames));
+                    AuthMechanismSelectionInterceptor::new, knownBindingValues, mechNames));
             serviceRegistrar.forService("io.quarkus.vertx.http.security.select-auth-mechanism-via-annotation")
                     .atPhase(Phase.STATIC_INIT)
                     .onStart(ctx -> HttpSecurityRecorder.selectAuthMechanismViaAnnotation());
@@ -569,8 +571,7 @@ public class HttpSecurityProcessor {
     }
 
     @BuildStep
-    @Record(ExecutionTime.STATIC_INIT)
-    void produceEagerSecurityInterceptorStorage(HttpSecurityRecorder recorder,
+    void produceEagerSecurityInterceptorStorage(ServiceRegistrar serviceRegistrar,
             BuildProducer<SyntheticBeanBuildItem> producer,
             List<EagerSecurityInterceptorBindingBuildItem> interceptorBindings,
             List<EagerSecurityInterceptorClassesBuildItem> interceptorClasses,
@@ -582,29 +583,19 @@ public class HttpSecurityProcessor {
                             .map(name -> Map.entry(name, binding.getInterceptorCreator())))
                     .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
 
-            final var methodCache = new HashMap<MethodInfo, RuntimeValue<MethodDescription>>();
-            final var methodDescriptionToInterceptor = new LinkedHashMap<RuntimeValue<MethodDescription>, Consumer<RoutingContext>>();
+            final var methodToInterceptor = new HashMap<MethodInfo, Consumer<RoutingContext>>();
             for (EagerSecurityInterceptorMethodsBuildItem interceptorMethod : interceptorMethods) {
                 var interceptorCreator = bindingNameToInterceptorCreator.get(interceptorMethod.interceptorBinding);
-                for (Map.Entry<String, List<MethodInfo>> e : interceptorMethod.bindingValueToInterceptedMethods.entrySet()) {
+                for (Map.Entry<String, List<MethodInfo>> e : new TreeMap<>(interceptorMethod.bindingValueToInterceptedMethods)
+                        .entrySet()) {
                     var annotationValue = e.getKey();
                     var annotatedMethods = e.getValue();
-                    var interceptor = recorder.createEagerSecurityInterceptor(interceptorCreator, annotationValue);
+                    var interceptor = interceptorCreator.apply(annotationValue);
                     for (MethodInfo method : annotatedMethods) {
-                        // transform method info to description
-                        final RuntimeValue<MethodDescription> methodDescription = methodCache
-                                .computeIfAbsent(method, mi -> {
-                                    String[] paramTypes = mi.parameterTypes().stream().map(t -> t.name().toString())
-                                            .toArray(String[]::new);
-                                    String className = mi.declaringClass().name().toString();
-                                    String methodName = mi.name();
-                                    return recorder.createMethodDescription(className, methodName, paramTypes);
-                                });
-
-                        // add (methodDesc -> interceptor) to the storage
-                        methodDescriptionToInterceptor.compute(methodDescription,
-                                (desc, existingInterceptor) -> existingInterceptor == null ? interceptor
-                                        : recorder.compoundSecurityInterceptor(interceptor, existingInterceptor));
+                        // add (method -> interceptor) to the storage
+                        methodToInterceptor.compute(method,
+                                (m, existingInterceptor) -> existingInterceptor == null ? interceptor
+                                        : new CompoundInterceptor(interceptor, existingInterceptor));
                     }
                 }
             }
@@ -612,22 +603,41 @@ public class HttpSecurityProcessor {
             final var classNameToInterceptor = new HashMap<String, Consumer<RoutingContext>>();
             for (EagerSecurityInterceptorClassesBuildItem interceptorClass : interceptorClasses) {
                 var interceptorCreator = bindingNameToInterceptorCreator.get(interceptorClass.interceptorBinding);
-                interceptorClass.bindingValueToInterceptedClasses.forEach((annotationValue, annotatedClasses) -> {
-                    Consumer<RoutingContext> interceptor = recorder.createEagerSecurityInterceptor(interceptorCreator,
-                            annotationValue);
-                    for (String annotatedClass : annotatedClasses) {
-                        // add (class name -> interceptor) to the storage
-                        classNameToInterceptor.compute(annotatedClass,
-                                (c, existingInterceptor) -> existingInterceptor == null ? interceptor
-                                        : recorder.compoundSecurityInterceptor(interceptor, existingInterceptor));
-                    }
-                });
+                new TreeMap<>(interceptorClass.bindingValueToInterceptedClasses)
+                        .forEach((annotationValue, annotatedClasses) -> {
+                            Consumer<RoutingContext> interceptor = interceptorCreator.apply(annotationValue);
+                            for (String annotatedClass : annotatedClasses) {
+                                // add (class name -> interceptor) to the storage
+                                classNameToInterceptor.compute(annotatedClass,
+                                        (c, existingInterceptor) -> existingInterceptor == null ? interceptor
+                                                : new CompoundInterceptor(interceptor, existingInterceptor));
+                            }
+                        });
             }
+
+            final List<InterceptedMethod> interceptedMethods = methodToInterceptor.entrySet().stream()
+                    // the methods are sorted by a unique key, so that the generated bytecode is always the same
+                    .sorted(Map.Entry.comparingByKey(Comparator.comparing(
+                            (MethodInfo mi) -> mi.declaringClass().name() + "#" + mi.name() + mi.descriptor())))
+                    .map(e -> {
+                        // transform method info to description
+                        MethodInfo mi = e.getKey();
+                        List<String> paramTypes = mi.parameterTypes().stream().map(t -> t.name().toString()).toList();
+                        String className = mi.declaringClass().name().toString();
+                        String methodName = mi.name();
+                        return new InterceptedMethod(className, methodName, paramTypes, e.getValue());
+                    })
+                    .toList();
+            final Map<String, Consumer<RoutingContext>> capturedClassNameToInterceptor = Map.copyOf(classNameToInterceptor);
+            serviceRegistrar.forService(EagerSecurityInterceptorStorage.class)
+                    .atPhase(Phase.STATIC_INIT)
+                    .onStart(ctx -> EagerSecurityInterceptorStorage.create(interceptedMethods,
+                            capturedClassNameToInterceptor));
 
             producer.produce(SyntheticBeanBuildItem
                     .configure(EagerSecurityInterceptorStorage.class)
                     .scope(ApplicationScoped.class)
-                    .supplier(recorder.createSecurityInterceptorStorage(methodDescriptionToInterceptor, classNameToInterceptor))
+                    .serviceValue(EagerSecurityInterceptorStorage.class)
                     .unremovable()
                     .done());
         }

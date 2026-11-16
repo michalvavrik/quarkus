@@ -1,5 +1,7 @@
 package io.quarkus.vertx.http.runtime.security;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -26,6 +28,17 @@ public class EagerSecurityInterceptorStorage {
         this.classNameToInterceptor = classNameToInterceptor.isEmpty() ? Map.of() : Map.copyOf(classNameToInterceptor);
     }
 
+    public static EagerSecurityInterceptorStorage create(List<InterceptedMethod> interceptedMethods,
+            Map<String, Consumer<RoutingContext>> classNameToInterceptor) {
+        final Map<MethodDescription, Consumer<RoutingContext>> methodToInterceptor = new HashMap<>();
+        for (InterceptedMethod method : interceptedMethods) {
+            var methodDescription = new MethodDescription(method.className(), method.methodName(),
+                    method.parameterTypes().toArray(new String[0]));
+            methodToInterceptor.put(methodDescription, method.interceptor());
+        }
+        return new EagerSecurityInterceptorStorage(methodToInterceptor, classNameToInterceptor);
+    }
+
     /**
      * This method should be invoked prior to any security check is run if proactive auth is disabled.
      *
@@ -45,5 +58,23 @@ public class EagerSecurityInterceptorStorage {
      */
     public Consumer<RoutingContext> getClassInterceptor(String className) {
         return classNameToInterceptor.get(className);
+    }
+
+    public record InterceptedMethod(String className, String methodName, List<String> parameterTypes,
+            Consumer<RoutingContext> interceptor) {
+
+        public InterceptedMethod {
+            parameterTypes = List.copyOf(parameterTypes);
+        }
+    }
+
+    public record CompoundInterceptor(Consumer<RoutingContext> interceptor1,
+            Consumer<RoutingContext> interceptor2) implements Consumer<RoutingContext> {
+
+        @Override
+        public void accept(RoutingContext routingContext) {
+            interceptor1.accept(routingContext);
+            interceptor2.accept(routingContext);
+        }
     }
 }
