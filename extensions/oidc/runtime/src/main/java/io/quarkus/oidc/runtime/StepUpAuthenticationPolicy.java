@@ -72,8 +72,7 @@ public record StepUpAuthenticationPolicy(List<String> expectedAcrValues,
         if (acrObject != null) {
             if (acrObject instanceof JsonArray acr && !acr.isEmpty()) {
                 boolean acrFound = true;
-                for (int i = 0; i < expectedAcrValues.size(); i++) {
-                    String expectedAcrValue = expectedAcrValues.get(i);
+                for (String expectedAcrValue : expectedAcrValues) {
                     if (!acr.contains(expectedAcrValue)) {
                         LOG.debug("Acr value " + expectedAcrValue + " is required but not found in token 'acr' claim: " + acr);
                         acrFound = false;
