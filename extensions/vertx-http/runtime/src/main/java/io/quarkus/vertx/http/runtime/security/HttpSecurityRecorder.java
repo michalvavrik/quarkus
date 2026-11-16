@@ -37,7 +37,6 @@ import io.quarkus.security.AuthenticationFailedException;
 import io.quarkus.security.AuthenticationRedirectException;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.identity.request.AnonymousAuthenticationRequest;
-import io.quarkus.security.spi.runtime.MethodDescription;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.VertxHttpConfig;
 import io.quarkus.vertx.http.security.MTLS;
@@ -115,23 +114,6 @@ public class HttpSecurityRecorder {
                         }
                     });
         }
-    }
-
-    public Supplier<EagerSecurityInterceptorStorage> createSecurityInterceptorStorage(
-            Map<RuntimeValue<MethodDescription>, Consumer<RoutingContext>> endpointRuntimeValToInterceptor,
-            Map<String, Consumer<RoutingContext>> classNameToInterceptor) {
-
-        final Map<MethodDescription, Consumer<RoutingContext>> endpointToInterceptor = new HashMap<>();
-        for (var entry : endpointRuntimeValToInterceptor.entrySet()) {
-            endpointToInterceptor.put(entry.getKey().getValue(), entry.getValue());
-        }
-
-        return new Supplier<EagerSecurityInterceptorStorage>() {
-            @Override
-            public EagerSecurityInterceptorStorage get() {
-                return new EagerSecurityInterceptorStorage(endpointToInterceptor, classNameToInterceptor);
-            }
-        };
     }
 
     public static HttpSecurityConfiguration prepareHttpSecurityConfiguration(VertxHttpConfig httpConfig,
@@ -463,26 +445,6 @@ public class HttpSecurityRecorder {
                 }
             }
         }
-    }
-
-    public RuntimeValue<MethodDescription> createMethodDescription(String className, String methodName, String[] paramTypes) {
-        return new RuntimeValue<>(new MethodDescription(className, methodName, paramTypes));
-    }
-
-    public Consumer<RoutingContext> createEagerSecurityInterceptor(
-            Function<String, Consumer<RoutingContext>> interceptorCreator, String annotationValue) {
-        return interceptorCreator.apply(annotationValue);
-    }
-
-    public Consumer<RoutingContext> compoundSecurityInterceptor(Consumer<RoutingContext> interceptor1,
-            Consumer<RoutingContext> interceptor2) {
-        return new Consumer<RoutingContext>() {
-            @Override
-            public void accept(RoutingContext routingContext) {
-                interceptor1.accept(routingContext);
-                interceptor2.accept(routingContext);
-            }
-        };
     }
 
     public static void selectAuthMechanismViaAnnotation() {
