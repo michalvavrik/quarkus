@@ -22,6 +22,8 @@ import io.quarkus.arc.deployment.GeneratedBeanGizmo2Adaptor;
 import io.quarkus.arc.deployment.SyntheticBeanBuildItem;
 import io.quarkus.arc.deployment.SyntheticBeansRuntimeInitBuildItem;
 import io.quarkus.arc.processor.DotNames;
+import io.quarkus.arc.runtime.BeanContainer;
+import io.quarkus.core.deployment.service.ServiceRegistrar;
 import io.quarkus.deployment.ApplicationArchive;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.Capability;
@@ -29,9 +31,6 @@ import io.quarkus.deployment.Feature;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.BuildSteps;
-import io.quarkus.deployment.annotations.Consume;
-import io.quarkus.deployment.annotations.ExecutionTime;
-import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.ApplicationArchivesBuildItem;
 import io.quarkus.deployment.builditem.ExtensionSslNativeSupportBuildItem;
 import io.quarkus.deployment.builditem.RunTimeConfigBuilderBuildItem;
@@ -45,6 +44,7 @@ import io.quarkus.oidc.client.OidcClient;
 import io.quarkus.oidc.client.OidcClients;
 import io.quarkus.oidc.client.Tokens;
 import io.quarkus.oidc.client.runtime.AbstractTokensProducer;
+import io.quarkus.oidc.client.runtime.NamedOidcClientCreator;
 import io.quarkus.oidc.client.runtime.OidcClientBuildTimeConfig;
 import io.quarkus.oidc.client.runtime.OidcClientDefaultIdConfigBuilder;
 import io.quarkus.oidc.client.runtime.OidcClientHealthCheck;
@@ -93,11 +93,15 @@ public class OidcClientBuildStep {
                 .collect(Collectors.toSet());
     }
 
-    @Consume(SyntheticBeansRuntimeInitBuildItem.class)
-    @Record(ExecutionTime.RUNTIME_INIT)
     @BuildStep
-    void initOidcClients(OidcClientRecorder recorder) {
-        recorder.initOidcClients();
+    void initOidcClients(ServiceRegistrar serviceRegistrar) {
+        serviceRegistrar
+                .forService("io.quarkus.oidc-client.init-clients")
+                .require(BeanContainer.class)
+                // OIDC clients are created with synthetic beans initialized during RUNTIME_INIT, like the Vert.x instance,
+                // the TLS registry or a CredentialsProvider recorded at runtime, therefore ensure that init has run first
+                .afterBuildItem(SyntheticBeansRuntimeInitBuildItem.class)
+                .onStart((ctx, beanContainer) -> OidcClientRecorder.initOidcClients(beanContainer));
     }
 
     @BuildStep
@@ -105,24 +109,23 @@ public class OidcClientBuildStep {
         return AdditionalBeanBuildItem.unremovableOf(OidcClientsImpl.class);
     }
 
-    @Record(ExecutionTime.RUNTIME_INIT)
     @BuildStep
-    void produceNamedOidcClientBeans(OidcClientRecorder recorder, OidcClientNamesBuildItem oidcClientNames,
+    void produceNamedOidcClientBeans(OidcClientNamesBuildItem oidcClientNames,
             BuildProducer<SyntheticBeanBuildItem> syntheticBean) {
         oidcClientNames.oidcClientNames().stream()
                 .sorted()
-                .map(clientName -> syntheticNamedOidcClientBeanFor(clientName, recorder))
+                .map(OidcClientBuildStep::syntheticNamedOidcClientBeanFor)
                 .forEach(syntheticBean::produce);
     }
 
-    private static SyntheticBeanBuildItem syntheticNamedOidcClientBeanFor(String clientName, OidcClientRecorder recorder) {
+    private static SyntheticBeanBuildItem syntheticNamedOidcClientBeanFor(String clientName) {
         return SyntheticBeanBuildItem.configure(OidcClient.class).unremovable()
                 .types(OidcClient.class)
                 .addInjectionPoint(ClassType.create(OidcClients.class))
-                .createWith(recorder.createOidcClientBean(clientName))
+                .creator(NamedOidcClientCreator.class)
+                .param(NamedOidcClientCreator.CLIENT_NAME_PARAM, clientName)
                 .scope(Singleton.class)
                 .addQualifier().annotation(NamedOidcClient.class).addValue("value", clientName).done()
-                .setRuntimeInit()
                 .destroyer(BeanDestroyer.CloseableDestroyer.class)
                 .done();
     }
