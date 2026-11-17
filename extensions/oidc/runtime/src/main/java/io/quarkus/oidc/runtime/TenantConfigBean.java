@@ -31,9 +31,9 @@ public final class TenantConfigBean {
 
     TenantConfigBean(Vertx vertx, TlsConfigurationRegistry tlsConfigurationRegistry, OidcImpl oidc,
             boolean securityEventsEnabled, ProxyConfigurationRegistry proxyConfigurationRegistry,
-            Set<OidcRoute> allowedRoutes, boolean stepUpAuthenticationPolicyEnabled) {
+            Set<OidcRoute> allowedRoutes) {
         this.tenantContextFactory = new TenantContextFactory(vertx, tlsConfigurationRegistry, securityEventsEnabled,
-                proxyConfigurationRegistry, allowedRoutes, stepUpAuthenticationPolicyEnabled);
+                proxyConfigurationRegistry, allowedRoutes);
         this.dynamicTenantsConfig = new ConcurrentHashMap<>();
 
         this.staticTenantsConfig = tenantContextFactory.createStaticTenantConfigs(oidc.getStaticTenantConfigs(),

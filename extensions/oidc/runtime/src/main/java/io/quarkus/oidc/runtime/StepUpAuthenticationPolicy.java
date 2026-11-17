@@ -25,6 +25,8 @@ import io.vertx.ext.web.RoutingContext;
 public record StepUpAuthenticationPolicy(List<String> expectedAcrValues,
         Long maxAge) implements Consumer<TokenVerificationResult> {
 
+    private static volatile boolean enabled = false;
+
     public StepUpAuthenticationPolicy {
         expectedAcrValues = List.copyOf(expectedAcrValues);
     }
@@ -156,5 +158,13 @@ public record StepUpAuthenticationPolicy(List<String> expectedAcrValues,
     private static boolean isInsufficientUserAuthException(AuthenticationFailedException authFailure) {
         return authFailure != null
                 && (authFailure.getAttribute(ACR_VALUES) != null || authFailure.getAttribute(MAX_AGE) != null);
+    }
+
+    public static void markAsEnabled() {
+        enabled = true;
+    }
+
+    static boolean isEnabled() {
+        return enabled;
     }
 }
