@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
@@ -581,7 +582,9 @@ public class HttpSecurityProcessor {
             final var methodToInterceptorBindings = new LinkedHashMap<MethodInfo, List<InterceptorBinding>>();
             for (EagerSecurityInterceptorMethodsBuildItem interceptorMethod : interceptorMethods) {
                 var annotationName = interceptorMethod.interceptorBinding.toString();
-                for (Map.Entry<String, List<MethodInfo>> e : interceptorMethod.bindingValueToInterceptedMethods.entrySet()) {
+                // binding values are sorted, because the iteration order of the map differs between builds
+                var bindingValueToInterceptedMethods = new TreeMap<>(interceptorMethod.bindingValueToInterceptedMethods);
+                for (Map.Entry<String, List<MethodInfo>> e : bindingValueToInterceptedMethods.entrySet()) {
                     var annotationValue = e.getKey();
                     var annotatedMethods = e.getValue();
                     var interceptorBinding = new InterceptorBinding(annotationName, annotationValue);
@@ -607,7 +610,9 @@ public class HttpSecurityProcessor {
             final var classNameToInterceptorBindings = new HashMap<String, List<InterceptorBinding>>();
             for (EagerSecurityInterceptorClassesBuildItem interceptorClass : interceptorClasses) {
                 var annotationName = interceptorClass.interceptorBinding.toString();
-                interceptorClass.bindingValueToInterceptedClasses.forEach((annotationValue, annotatedClasses) -> {
+                // binding values are sorted, because the iteration order of the map differs between builds
+                var bindingValueToInterceptedClasses = new TreeMap<>(interceptorClass.bindingValueToInterceptedClasses);
+                bindingValueToInterceptedClasses.forEach((annotationValue, annotatedClasses) -> {
                     var interceptorBinding = new InterceptorBinding(annotationName, annotationValue);
                     for (String annotatedClass : annotatedClasses) {
                         // add (class name -> interceptor binding) to the storage
