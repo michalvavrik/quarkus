@@ -195,6 +195,11 @@ public final class BackChannelLogoutHandler implements Handler<RoutingContext> {
                                         LOG.warn("Back channel logout token is invalid");
                                         context.response().setStatusCode(400);
 
+                                    } catch (RuntimeException e) {
+                                        // Otherwise the request is not answered until the connection times out
+                                        LOG.warnf("Back channel logout request can not be processed: %s", e.toString());
+                                        LOG.debug("Back channel logout request failure", e);
+                                        context.response().setStatusCode(400);
                                     }
                                 }
                                 context.response().end();

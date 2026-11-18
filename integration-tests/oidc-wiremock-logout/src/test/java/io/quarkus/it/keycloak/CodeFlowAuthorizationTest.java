@@ -40,7 +40,9 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.oidc.server.OidcWireMock;
 import io.quarkus.test.oidc.server.OidcWiremockTestResource;
 import io.restassured.RestAssured;
+import io.restassured.config.HttpClientConfig;
 import io.restassured.http.ContentType;
+import io.smallrye.jwt.build.Jwt;
 
 @QuarkusTest
 @QuarkusTestResource(OidcWiremockTestResource.class)
@@ -191,6 +193,25 @@ public class CodeFlowAuthorizationTest {
         }
     }
 
+    @Test
+    public void testLogoutTokenWithNullHeaderIsRejected() {
+        // the JOSE header of this logout token is the JSON literal 'null'
+        postInvalidLogoutToken("back-channel-logout", "bnVsbA.e30.AAAA");
+    }
+
+    @Test
+    public void testLogoutTokenWithInvalidEventsClaimIsRejected() {
+        // this logout token is signed correctly but its 'events' claim is not a JSON object
+        String logoutToken = Jwt.issuer("https://server.example.com")
+                .audience("https://server.example.com")
+                .subject("123456")
+                .claim("events", "http://schemas.openid.net/event/backchannel-logout")
+                .jws()
+                .keyId("1")
+                .sign("privateKey.jwk");
+        postInvalidLogoutToken("back-channel-logout", logoutToken);
+    }
+
     private void testCodeFlowFormPostAndBackChannelLogout(String tenantId, String backChannelPath) throws Exception {
         try (final WebClient webClient = createWebClient()) {
             webClient.getOptions().setRedirectEnabled(true);
@@ -297,6 +318,18 @@ public class CodeFlowAuthorizationTest {
                 .post("http://localhost:8081/service/" + backChannelPath)
                 .then()
                 .statusCode(200);
+    }
+
+    private void postInvalidLogoutToken(String backChannelPath, String logoutToken) {
+        RestAssured.given()
+                // fail if the request is not answered instead of waiting until the connection times out
+                .config(RestAssured.config().httpClient(HttpClientConfig.httpClientConfig()
+                        .setParam("http.socket.timeout", 10_000)))
+                .when().contentType(ContentType.URLENC)
+                .body("logout_token=" + logoutToken)
+                .post("http://localhost:8081/service/" + backChannelPath)
+                .then()
+                .statusCode(400);
     }
 
     private static String getIdToken(String user, String sub, String sid) {

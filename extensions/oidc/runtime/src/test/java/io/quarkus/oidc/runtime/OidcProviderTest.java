@@ -1,5 +1,6 @@
 package io.quarkus.oidc.runtime;
 
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,6 +60,20 @@ public class OidcProviderTest {
         }, null)) {
             TokenVerificationResult result = provider.verifyJwtToken(newToken, false, false, null);
             assertEquals("http://keycloak/realm", result.localVerificationResult().getString("iss"));
+        }
+    }
+
+    @Test
+    public void testLogoutTokenWithoutVerificationKeys() throws Exception {
+        RsaJsonWebKey rsaKey = RsaJsonWebKey.builder(2048).keyId("k1").build();
+        String logoutToken = Jwt.subject("subject").jws().keyId("k1").sign(rsaKey.privateKey());
+        OidcTenantConfig oidcConfig = OidcTenantConfig.builder().clientId("client").build();
+
+        // No JWK set is available, as when the provider is created with 'quarkus.oidc.jwks.resolve-early=false'
+        try (OidcProvider provider = new OidcProvider(null, oidcConfig, null)) {
+            assertThatExceptionOfType(InvalidJWTException.class)
+                    .isThrownBy(() -> provider.verifyLogoutJwtToken(logoutToken))
+                    .withMessageContaining("verification keys are not available");
         }
     }
 
