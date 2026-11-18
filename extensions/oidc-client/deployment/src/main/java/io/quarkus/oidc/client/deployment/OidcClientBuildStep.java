@@ -23,6 +23,7 @@ import io.quarkus.arc.deployment.SyntheticBeanBuildItem;
 import io.quarkus.arc.deployment.SyntheticBeansRuntimeInitBuildItem;
 import io.quarkus.arc.processor.DotNames;
 import io.quarkus.arc.runtime.BeanContainer;
+import io.quarkus.core.Phase;
 import io.quarkus.core.deployment.service.ServiceRegistrar;
 import io.quarkus.deployment.ApplicationArchive;
 import io.quarkus.deployment.Capabilities;
@@ -97,6 +98,7 @@ public class OidcClientBuildStep {
     void initOidcClients(ServiceRegistrar serviceRegistrar) {
         serviceRegistrar
                 .forService("io.quarkus.oidc-client.init-clients")
+                .atPhase(Phase.DATA)
                 .require(BeanContainer.class)
                 // OIDC clients are created with synthetic beans initialized during RUNTIME_INIT, like the Vert.x instance,
                 // the TLS registry or a CredentialsProvider recorded at runtime, therefore ensure that init has run first
