@@ -182,9 +182,14 @@ public class OidcProvider implements Closeable {
     }
 
     public TokenVerificationResult verifyLogoutJwtToken(String token) throws InvalidJWTException {
+        return verifyLogoutJwtToken(token, asymmetricKeyResolver);
+    }
+
+    private TokenVerificationResult verifyLogoutJwtToken(String token, VerificationKeyResolver verificationKeyResolver)
+            throws InvalidJWTException {
         final boolean enforceExpReq = !oidcConfig.token().age().isPresent();
         TokenVerificationResult result = verifyJwtTokenInternal(token, true, false, null, ASYMMETRIC_ALLOWED_ALGORITHMS,
-                asymmetricKeyResolver, enforceExpReq, oidcConfig.token().issuedAtRequired());
+                verificationKeyResolver, enforceExpReq, oidcConfig.token().issuedAtRequired());
         if (!enforceExpReq) {
             // Expiry check was skipped during the initial verification but if the logout token contains the exp claim
             // then it must be verified
@@ -210,6 +215,12 @@ public class OidcProvider implements Closeable {
             Set<SignatureAlgorithm> allowedAlgorithms,
             VerificationKeyResolver verificationKeyResolver, boolean enforceExpReq, boolean issuedAtRequired)
             throws InvalidJWTException {
+
+        if (verificationKeyResolver == null) {
+            String error = "Token verification keys are not available";
+            logVerificationFailure(error);
+            throw new InvalidJWTException(error);
+        }
 
         JwtVerifier.Builder builder = JwtVerifier.builder()
                 .verificationKeyResolver(verificationKeyResolver)
@@ -353,6 +364,22 @@ public class OidcProvider implements Closeable {
                                             (requiredAllowedAlgorithms != null ? requiredAllowedAlgorithms
                                                     : ASYMMETRIC_ALLOWED_ALGORITHMS),
                                             resolver, true, issuedAtRequired));
+                        } catch (Throwable t) {
+                            return Uni.createFrom().failure(t);
+                        }
+                    }
+
+                });
+    }
+
+    Uni<TokenVerificationResult> getKeyResolverAndVerifyLogoutJwtToken(TokenCredential tokenCred) {
+        return keyResolverProvider.resolve(tokenCred).onItem()
+                .transformToUni(new Function<VerificationKeyResolver, Uni<? extends TokenVerificationResult>>() {
+
+                    @Override
+                    public Uni<? extends TokenVerificationResult> apply(VerificationKeyResolver resolver) {
+                        try {
+                            return Uni.createFrom().item(verifyLogoutJwtToken(tokenCred.getToken(), resolver));
                         } catch (Throwable t) {
                             return Uni.createFrom().failure(t);
                         }
