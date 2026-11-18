@@ -64,6 +64,29 @@ public class SpiffeClientAssertionProviderTest {
     }
 
     @Test
+    public void testGetClientAssertionWithDefaultAudiences() {
+        String token = createSpiffeSvidToken();
+        WorkloadJsonWebToken svid = new TestJwtSvid(token, ISSUER, SPIFFE_ID, Set.of(AUDIENCE),
+                Instant.now().plusSeconds(60));
+        AtomicInteger defaultAudiencesFetchCount = new AtomicInteger();
+        SpiffeClient spiffeClient = new StubSpiffeClient(svid) {
+            @Override
+            public Uni<WorkloadJsonWebToken> getWorkloadJsonWebToken() {
+                defaultAudiencesFetchCount.incrementAndGet();
+                return Uni.createFrom().item(svid);
+            }
+        };
+        // null audience: the default audiences configured for the SPIFFE client are used
+        try (var provider = new SpiffeClientAssertionProvider(spiffeClient, null, vertx)) {
+            assertEquals(token, awaitAssertion(provider));
+            assertEquals(token, awaitAssertion(provider));
+            assertEquals(1, defaultAudiencesFetchCount.get());
+            // the explicit audience methods must not be called
+            assertEquals(0, ((StubSpiffeClient) spiffeClient).fetchCount());
+        }
+    }
+
+    @Test
     public void testTokenRefreshOnExpiry() {
         String firstToken = createSpiffeSvidToken();
         String secondToken = createSpiffeSvidToken();
