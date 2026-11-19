@@ -195,7 +195,7 @@ public final class BackChannelLogoutHandler implements Handler<RoutingContext> {
         private Uni<TokenVerificationResult> verifyLogoutToken(String encodedLogoutToken) {
             final OidcProvider provider = tenantContext.provider();
             try {
-                if (provider.keyResolverProvider == null) {
+                if (tenantContext.oidcConfig().jwks().resolveEarly()) {
                     return Uni.createFrom().item(provider.verifyLogoutJwtToken(encodedLogoutToken));
                 } else {
                     // when 'quarkus.oidc.jwks.resolve-early' is disabled, resolve the verification key

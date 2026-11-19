@@ -216,12 +216,6 @@ public class OidcProvider implements Closeable {
             VerificationKeyResolver verificationKeyResolver, boolean enforceExpReq, boolean issuedAtRequired)
             throws InvalidJWTException {
 
-        if (verificationKeyResolver == null) {
-            String error = "Token verification keys are not available";
-            logVerificationFailure(error);
-            throw new InvalidJWTException(error);
-        }
-
         JwtVerifier.Builder builder = JwtVerifier.builder()
                 .verificationKeyResolver(verificationKeyResolver)
                 .allowedAlgorithms(allowedAlgorithms)

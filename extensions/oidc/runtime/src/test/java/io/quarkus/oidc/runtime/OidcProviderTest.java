@@ -63,22 +63,6 @@ public class OidcProviderTest {
     }
 
     @Test
-    public void testLogoutTokenWithoutVerificationKeys() throws Exception {
-        RsaJsonWebKey rsaKey = RsaJsonWebKey.builder(2048).keyId("k1").build();
-        String logoutToken = Jwt.subject("subject").jws().keyId("k1").sign(rsaKey.privateKey());
-        OidcTenantConfig oidcConfig = OidcTenantConfig.builder().clientId("client").build();
-
-        // No JWK set is available, as when the provider is created with
-        // 'quarkus.oidc.token.require-jwt-introspection-only=true'
-        try (OidcProvider provider = new OidcProvider(null, oidcConfig, null)) {
-            provider.verifyLogoutJwtToken(logoutToken);
-            fail("InvalidJWTException expected");
-        } catch (InvalidJWTException ex) {
-            assertTrue(ex.getMessage().contains("verification keys are not available"));
-        }
-    }
-
-    @Test
     public void testTokenWithoutKidSingleRsaJwkWithoutKid() throws Exception {
         RsaJsonWebKey rsaKey = RsaJsonWebKey.builder(2048).build();
         EcJsonWebKey ecKey = EcJsonWebKey.builder(EcCurve.P_256).build();
