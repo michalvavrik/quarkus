@@ -2,19 +2,17 @@ package io.quarkus.oidc.db.token.state.manager.runtime;
 
 import static io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManager.now;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import jakarta.enterprise.event.Observes;
-import jakarta.inject.Singleton;
-
 import org.jboss.logging.Logger;
 
-import io.quarkus.runtime.ShutdownEvent;
-import io.quarkus.runtime.StartupEvent;
+import io.quarkus.datasource.common.runtime.DataSourceUtil;
+import io.quarkus.runtime.configuration.ConfigurationException;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
@@ -22,7 +20,6 @@ import io.vertx.sqlclient.Pool;
 import io.vertx.sqlclient.Row;
 import io.vertx.sqlclient.RowSet;
 
-@Singleton
 public final class OidcDbTokenStateManagerInitializer {
 
     private static final Logger LOG = Logger.getLogger(OidcDbTokenStateManagerInitializer.class);
@@ -31,30 +28,26 @@ public final class OidcDbTokenStateManagerInitializer {
      * Extra 30 seconds before we delete expired tokens.
      */
     private static final long EXPIRED_EXTRA_GRACE = 30;
-    private volatile Long timerId = null;
-    private volatile SupportedReactiveSqlClient supportedReactiveSqlClient = null;
 
-    public void setSupportedReactiveSqlClient(SupportedReactiveSqlClient supportedReactiveSqlClient) {
-        this.supportedReactiveSqlClient = supportedReactiveSqlClient;
-    }
-
-    void initialize(@Observes StartupEvent event, OidcDbTokenStateManagerRunTimeConfig config, Vertx vertx, Pool pool) {
+    public static long initialize(SupportedReactiveSqlClient supportedReactiveSqlClient,
+            OidcDbTokenStateManagerRunTimeConfig config, Vertx vertx, Pool pool) {
         Objects.requireNonNull(supportedReactiveSqlClient);
         if (config.createDatabaseTableIfNotExists()) {
             createDatabaseTable(pool, supportedReactiveSqlClient.getCreateTableDdl(config),
                     supportedReactiveSqlClient.supportsIfTableNotExists);
         }
-        periodicallyDeleteExpiredTokens(vertx, pool, config.deleteExpiredDelay().toMillis());
+        return periodicallyDeleteExpiredTokens(vertx, pool, config.deleteExpiredDelay().toMillis());
     }
 
-    void shutdown(@Observes ShutdownEvent event, Vertx vertx) {
-        if (timerId != null) {
-            vertx.cancelTimer(timerId);
-        }
+    public static Pool getDefaultPool(Map<String, Pool> poolMap) {
+        return poolMap.entrySet().stream().filter(e -> DataSourceUtil.isDefault(e.getKey()))
+                // TODO: fix exception message
+                .map(Map.Entry::getValue).findFirst()
+                .orElseThrow(() -> new ConfigurationException("Default pool is required but not found"));
     }
 
-    private void periodicallyDeleteExpiredTokens(Vertx vertx, Pool pool, long delayBetweenChecks) {
-        timerId = vertx
+    private static long periodicallyDeleteExpiredTokens(Vertx vertx, Pool pool, long delayBetweenChecks) {
+        return vertx
                 .setPeriodic(5000, delayBetweenChecks, new Handler<Long>() {
 
                     private final AtomicBoolean deleteInProgress = new AtomicBoolean(false);

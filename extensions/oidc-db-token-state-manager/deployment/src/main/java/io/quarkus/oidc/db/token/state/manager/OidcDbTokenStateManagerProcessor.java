@@ -5,33 +5,28 @@ import static io.quarkus.deployment.Capability.REACTIVE_MSSQL_CLIENT;
 import static io.quarkus.deployment.Capability.REACTIVE_MYSQL_CLIENT;
 import static io.quarkus.deployment.Capability.REACTIVE_ORACLE_CLIENT;
 import static io.quarkus.deployment.Capability.REACTIVE_PG_CLIENT;
-import static io.quarkus.deployment.annotations.ExecutionTime.RUNTIME_INIT;
-import static io.quarkus.deployment.annotations.ExecutionTime.STATIC_INIT;
 import static java.lang.String.format;
 
 import java.util.function.BooleanSupplier;
 
 import jakarta.inject.Singleton;
 
-import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
-import io.quarkus.arc.deployment.BeanContainerBuildItem;
 import io.quarkus.arc.deployment.SyntheticBeanBuildItem;
-import io.quarkus.arc.deployment.SyntheticBeansRuntimeInitBuildItem;
-import io.quarkus.arc.runtime.BeanContainer;
 import io.quarkus.builder.item.SimpleBuildItem;
 import io.quarkus.core.Phase;
 import io.quarkus.core.deployment.service.ServiceRegistrar;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.BuildSteps;
-import io.quarkus.deployment.annotations.Consume;
-import io.quarkus.deployment.annotations.Record;
+import io.quarkus.deployment.builditem.ServiceStartBuildItem;
 import io.quarkus.oidc.TokenStateManager;
 import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManager;
 import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManagerInitializer;
 import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManagerInitializer.SupportedReactiveSqlClient;
-import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManagerRecorder;
+import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManagerRunTimeConfig;
 import io.quarkus.runtime.configuration.ConfigurationException;
+import io.vertx.core.Vertx;
+import io.vertx.sqlclient.Pool;
 
 @BuildSteps(onlyIf = OidcDbTokenStateManagerProcessor.OidcDbTokenStateManagerEnabled.class)
 public class OidcDbTokenStateManagerProcessor {
@@ -39,10 +34,9 @@ public class OidcDbTokenStateManagerProcessor {
     private static final String[] SUPPORTED_REACTIVE_CLIENTS = new String[] { REACTIVE_PG_CLIENT, REACTIVE_MYSQL_CLIENT,
             REACTIVE_MSSQL_CLIENT, REACTIVE_DB2_CLIENT, REACTIVE_ORACLE_CLIENT };
 
-    @Record(STATIC_INIT)
     @BuildStep
-    SyntheticBeanBuildItem produceDbTokenStateManagerBean(OidcDbTokenStateManagerRecorder recorder,
-            ReactiveSqlClientBuildItem sqlClientBuildItem) {
+    SyntheticBeanBuildItem produceDbTokenStateManagerBean(ReactiveSqlClientBuildItem sqlClientBuildItem,
+            ServiceRegistrar serviceRegistrar) {
         final String[] queryParamPlaceholders;
         switch (sqlClientBuildItem.reactiveClient) {
             case REACTIVE_PG_CLIENT:
@@ -71,6 +65,12 @@ public class OidcDbTokenStateManagerProcessor {
                 queryParamPlaceholders[1],
                 queryParamPlaceholders[2], queryParamPlaceholders[3], queryParamPlaceholders[4], queryParamPlaceholders[5],
                 queryParamPlaceholders[6]);
+        serviceRegistrar
+                .forService(OidcDbTokenStateManager.class)
+                .atPhase(Phase.DATA)
+                .consumeAll(Pool.class)
+                .onStart((ctx, poolMap) -> new OidcDbTokenStateManager(insertStatement, deleteStatement, getQuery,
+                        OidcDbTokenStateManagerInitializer.getDefaultPool(poolMap)));
         return SyntheticBeanBuildItem
                 .configure(OidcDbTokenStateManager.class)
                 .alternative(true)
@@ -78,7 +78,7 @@ public class OidcDbTokenStateManagerProcessor {
                 .addType(TokenStateManager.class)
                 .unremovable()
                 .scope(Singleton.class)
-                .supplier(recorder.createTokenStateManager(insertStatement, deleteStatement, getQuery))
+                .serviceValue(OidcDbTokenStateManager.class)
                 .done();
     }
 
@@ -105,11 +105,6 @@ public class OidcDbTokenStateManagerProcessor {
     }
 
     @BuildStep
-    AdditionalBeanBuildItem makeDbTokenStateManagerInitializerBean() {
-        return new AdditionalBeanBuildItem(OidcDbTokenStateManagerInitializer.class);
-    }
-
-    @BuildStep
     void createDbTokenStateInitializerProps(ReactiveSqlClientBuildItem sqlClientBuildItem, ServiceRegistrar reg) {
         var supportedReactiveSqlClient = switch (sqlClientBuildItem.reactiveClient) {
             case REACTIVE_PG_CLIENT -> SupportedReactiveSqlClient.POSTGRESQL;
@@ -119,24 +114,20 @@ public class OidcDbTokenStateManagerProcessor {
             case REACTIVE_ORACLE_CLIENT -> SupportedReactiveSqlClient.ORACLE;
             default -> throw new ConfigurationException("Unknown Reactive Sql Client " + sqlClientBuildItem.reactiveClient);
         };
-        // Formerly a BeanContainerListener; now a static-init service that pushes the
-        // build-time-selected SQL client into the initializer bean as soon as the bean
-        // container is available. The value is consumed at StartupEvent (runtime init),
-        // so the static-init -> runtime-init phase boundary preserves ordering; only a
-        // BeanContainer dependency is required.
         reg
                 .forService("io.quarkus.oidc.db.token.state.manager.initializer")
-                .atPhase(Phase.STATIC_INIT)
-                .require(BeanContainer.class)
-                .onStart((ctx, container) -> container.beanInstance(OidcDbTokenStateManagerInitializer.class)
-                        .setSupportedReactiveSqlClient(supportedReactiveSqlClient));
-    }
-
-    @Consume(SyntheticBeansRuntimeInitBuildItem.class)
-    @Record(RUNTIME_INIT)
-    @BuildStep
-    void setSqlClientPool(OidcDbTokenStateManagerRecorder recorder, BeanContainerBuildItem beanContainer) {
-        recorder.setSqlClientPool(beanContainer.getValue());
+                .afterBuildItem(ServiceStartBuildItem.class)
+                // TODO: actually it would be ideal to schedule this between startup event and io.quarkus.vertx.http.deployment.VertxHttpProcessor.openSocket
+                //      but there doesn't seem to be a way for now
+                .before("io.quarkus.arc.startup-event")
+                .require(OidcDbTokenStateManagerRunTimeConfig.class)
+                .require(Vertx.class)
+                .consumeAll(Pool.class)
+                .onStart((ctx, config, vertx, poolMap) -> {
+                    long taskId = OidcDbTokenStateManagerInitializer.initialize(supportedReactiveSqlClient, config, vertx,
+                            OidcDbTokenStateManagerInitializer.getDefaultPool(poolMap));
+                    ctx.onStop(() -> vertx.cancelTimer(taskId));
+                });
     }
 
     static final class OidcDbTokenStateManagerEnabled implements BooleanSupplier {
