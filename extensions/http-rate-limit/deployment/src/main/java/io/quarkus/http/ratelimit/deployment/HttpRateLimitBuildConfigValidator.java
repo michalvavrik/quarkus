@@ -1,12 +1,10 @@
 package io.quarkus.http.ratelimit.deployment;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 import io.quarkus.http.ratelimit.RateLimitPhase;
@@ -88,76 +86,6 @@ public final class HttpRateLimitBuildConfigValidator {
             }
         }
         return warnings;
-    }
-
-    /**
-     * A post-authentication rule authenticates the request before the endpoint has been matched. When proactive
-     * authentication is disabled, such a rule cannot be combined with annotations that select the authentication
-     * mechanism or resolve the OIDC tenant, because they apply only after the endpoint has been matched. A rule that
-     * matches every path would also leave disabling proactive authentication without effect.
-     *
-     * @param proactive {@code quarkus.http.auth.proactive}
-     * @param rootPath {@code quarkus.http.root-path}
-     * @param annotatedEndpoints the endpoint classes and methods with an annotation that selects the authentication
-     *        mechanism or resolves the OIDC tenant, such as {@code @BasicAuthentication} or {@code @Tenant}
-     * @return one message per post-authentication rule that conflicts with the authentication of the application
-     */
-    public static List<String> validateAuthentication(HttpRateLimitBuildTimeConfig config, boolean proactive,
-            String rootPath, Collection<String> annotatedEndpoints) {
-        List<String> errors = new ArrayList<>();
-        if (proactive) {
-            // proactive authentication authenticates every request when it arrives, and the annotations require it to
-            // be disabled
-            return errors;
-        }
-        for (Map.Entry<String, Rule> entry : config.rules().entrySet()) {
-            Rule rule = entry.getValue();
-            if (RateLimitRuleConfig.phase(config, rule) != RateLimitPhase.POST_AUTHENTICATION) {
-                continue;
-            }
-            String prefix = "Rate limit rule '" + entry.getKey() + "' has phase=post-authentication";
-            if (!annotatedEndpoints.isEmpty()) {
-                // HttpAuthenticator.getPathSpecificMechanism reads routing context data that only the REST layer sets
-                errors.add(prefix + ", but the application uses annotations such as @BasicAuthentication or @Tenant"
-                        + " (found on " + summary(annotatedEndpoints) + "). These annotations can select the"
-                        + " authentication mechanism or resolve the OIDC tenant only after the endpoint has been matched,"
-                        + " and the rule authenticates the request before that. Use phase=pre-authentication, or select"
-                        + " the authentication mechanism or the tenant by path.");
-            } else if (matchesEveryPath(rule, rootPath)) {
-                errors.add(prefix + " and matches every path, so it authenticates every request and"
-                        + " quarkus.http.auth.proactive=false has no effect. Set quarkus.http.auth.proactive=true, or"
-                        + " restrict the paths or methods of the rule.");
-            }
-        }
-        return errors;
-    }
-
-    /**
-     * @return whether the rule matches every request under {@code quarkus.http.root-path}, whatever its method
-     */
-    private static boolean matchesEveryPath(Rule rule, String rootPath) {
-        if (rule.methods().isPresent()) {
-            return false;
-        }
-        String root = directory(rootPath);
-        for (String path : rule.paths()) {
-            // like RateLimitRules, a path without a leading slash is relative to the root path
-            String absolute = path.startsWith("/") ? path : root + path;
-            if (absolute.equals("/*") || absolute.equals(root + "*")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * @return the first names in alphabetical order, and how many more there are
-     */
-    private static String summary(Collection<String> names) {
-        List<String> sorted = new ArrayList<>(new TreeSet<>(names));
-        int shown = Math.min(sorted.size(), 3);
-        String summary = String.join(", ", sorted.subList(0, shown));
-        return sorted.size() == shown ? summary : summary + " and " + (sorted.size() - shown) + " more";
     }
 
     /**

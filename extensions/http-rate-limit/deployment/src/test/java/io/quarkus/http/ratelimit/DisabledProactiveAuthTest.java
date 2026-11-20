@@ -26,8 +26,8 @@ import io.quarkus.test.common.http.TestHTTPResource;
 import io.vertx.core.Vertx;
 
 /**
- * When proactive authentication is disabled, a post-authentication rule on some of the paths is a valid configuration.
- * The rule authenticates the requests to its paths, and the build logs no warning.
+ * When proactive authentication is disabled, a post-authentication rule authenticates the requests to its paths. This is
+ * a valid configuration, and the build logs no warning.
  */
 public class DisabledProactiveAuthTest {
 

@@ -37,20 +37,28 @@ import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpResponse;
 
 /**
- * A pre-authentication rule does not authenticate the request, so it can limit an endpoint whose authentication
- * mechanism is selected by an annotation. The request is still authenticated with that mechanism, even when a mechanism
- * with a higher priority accepts the request too.
+ * An annotation such as {@code @BasicAuthentication} can select the authentication mechanism only after the endpoint has
+ * been matched. A pre-authentication rule does not authenticate the request, so the annotation still applies. A
+ * post-authentication rule authenticates the request before the annotation applies. Quarkus then rejects a request
+ * that another mechanism authenticated, and never serves it with the identity of that mechanism.
  */
-public class AuthenticationAnnotationPreAuthenticationTest {
+public class AuthenticationAnnotationTest {
+
+    private static final String AFTER = "quarkus.http.rate-limit.rules.after.";
 
     @RegisterExtension
     static final QuarkusExtensionTest config = TestHttp.ipRule(TestHttp.withUsers(new QuarkusExtensionTest()
             .withApplicationRoot(jar -> jar.addClasses(TestHttp.class, TestClient.class, AdminResource.class,
                     HeaderMechanism.class))),
-            "admin", "/admin/*", 2, "1m")
+            "before", "/before/*", 2, "1m")
             .overrideConfigKey("quarkus.vertx.event-loops-pool-size", "1")
             // required by the annotation
             .overrideConfigKey("quarkus.http.auth.proactive", "false")
+            .overrideConfigKey(AFTER + "paths", "/after/*")
+            .overrideConfigKey(AFTER + "phase", "post-authentication")
+            .overrideConfigKey(AFTER + "request-key", "principal")
+            .overrideRuntimeConfigKey(AFTER + "permits", "100")
+            .overrideRuntimeConfigKey(AFTER + "window", "1m")
             .setForcedDependencies(List.of(
                     Dependency.of("io.quarkus", "quarkus-elytron-security-properties-file-deployment", Version.getVersion())));
 
@@ -73,28 +81,47 @@ public class AuthenticationAnnotationPreAuthenticationTest {
     }
 
     @Test
-    void annotationSelectsTheMechanismOfALimitedEndpoint() {
-        Map<String, String> aliceAndBob = new HashMap<>(TestHttp.basic("alice", "alice"));
-        aliceAndBob.put("X-User", "bob");
-        HttpResponse<Buffer> served = http.get("/admin", aliceAndBob);
+    void preAuthenticationRuleLeavesTheSelectionToTheAnnotation() {
+        // both mechanisms accept the request, and the annotation selects basic authentication
+        HttpResponse<Buffer> served = http.get("/before/admin", aliceAndBob());
         assertThat(served.statusCode()).isEqualTo(200);
         assertThat(served.bodyAsString()).isEqualTo("alice");
 
         // the selected mechanism sends the challenge, and a request that fails authentication spends a permit too
-        HttpResponse<Buffer> challenged = http.get("/admin");
+        HttpResponse<Buffer> challenged = http.get("/before/admin");
         assertThat(challenged.statusCode()).isEqualTo(401);
         assertThat(challenged.getHeader("WWW-Authenticate")).startsWithIgnoringCase("basic");
 
-        assertThat(http.get("/admin", aliceAndBob).statusCode()).isEqualTo(429);
+        assertThat(http.get("/before/admin", aliceAndBob()).statusCode()).isEqualTo(429);
     }
 
-    @Path("/admin")
+    @Test
+    void postAuthenticationRuleAuthenticatesBeforeTheAnnotationApplies() {
+        // only basic authentication accepts the request, which is the mechanism that the annotation requires
+        HttpResponse<Buffer> served = http.get("/after/admin", TestHttp.basic("alice", "alice"));
+        assertThat(served.statusCode()).isEqualTo(200);
+        assertThat(served.bodyAsString()).isEqualTo("alice");
+
+        // the mechanism with the higher priority authenticates the request first, and the annotation does not accept it
+        assertThat(http.get("/after/admin", aliceAndBob()).statusCode()).isEqualTo(401);
+        assertThat(http.get("/after/admin", Map.of("X-User", "bob")).statusCode()).isEqualTo(401);
+        assertThat(http.get("/after/admin").statusCode()).isEqualTo(401);
+    }
+
+    private static Map<String, String> aliceAndBob() {
+        Map<String, String> headers = new HashMap<>(TestHttp.basic("alice", "alice"));
+        headers.put("X-User", "bob");
+        return headers;
+    }
+
+    @Path("/")
     public static class AdminResource {
 
         @Inject
         SecurityIdentity identity;
 
         @GET
+        @Path("{phase}/admin")
         @BasicAuthentication
         public String user() {
             return identity.getPrincipal().getName();
