@@ -26,8 +26,8 @@ import io.quarkus.test.common.http.TestHTTPResource;
 import io.vertx.core.Vertx;
 
 /**
- * With proactive authentication disabled, a post-authentication rule on some of the paths is a valid configuration: it
- * authenticates the requests to its paths, and the build has nothing to warn about.
+ * When proactive authentication is disabled, a post-authentication rule on some of the paths is a valid configuration.
+ * The rule authenticates the requests to its paths, and the build logs no warning.
  */
 public class DisabledProactiveAuthTest {
 
@@ -47,7 +47,8 @@ public class DisabledProactiveAuthTest {
             .setForcedDependencies(List.of(
                     Dependency.of("io.quarkus", "quarkus-elytron-security-properties-file-deployment", Version.getVersion())))
             .setLogRecordPredicate(r -> r.getLoggerName().startsWith("io.quarkus.http.ratelimit"))
-            // neither about the rule nor about its principal key: basic authentication is a mechanism
+            // the build warns neither about the rule nor about its principal key, because basic authentication is a
+            // mechanism
             .assertLogRecords(records -> assertThat(records)
                     .filteredOn(r -> r.getLevel().intValue() >= Level.WARNING.intValue())
                     .extracting(LogRecord::getMessage).isEmpty());

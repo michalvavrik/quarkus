@@ -17,10 +17,10 @@ import io.quarkus.test.QuarkusExtensionTest;
 import io.quarkus.vertx.http.runtime.security.annotation.BasicAuthentication;
 
 /**
- * An annotation such as {@code @BasicAuthentication} selects the mechanism that authenticates the requests of an
- * endpoint, once the endpoint is known. A post-authentication rule authenticates a request before that, with whichever
- * mechanism accepts it, so an application cannot have both. The build does not know the paths of an endpoint: it fails
- * even when, as here, the rule and the annotated endpoint have different paths.
+ * An annotation such as {@code @BasicAuthentication} can select the authentication mechanism only after the endpoint
+ * has been matched. A post-authentication rule authenticates the request before that, so an application cannot have
+ * both. The build does not know the paths of an endpoint, so it fails even when the rule and the annotated endpoint
+ * have different paths, as they do here.
  */
 public class AuthenticationAnnotationFailsBuildTest {
 
@@ -39,12 +39,12 @@ public class AuthenticationAnnotationFailsBuildTest {
             .setForcedDependencies(List.of(
                     Dependency.of("io.quarkus", "quarkus-elytron-security-properties-file-deployment", Version.getVersion())))
             .assertException(t -> assertThat(t).rootCause().isInstanceOf(ConfigurationException.class)
-                    .hasMessageContaining("Rate limit rule 'api' has phase=post-authentication, which cannot be used in an"
-                            + " application that selects how a request is authenticated with annotations such as"
-                            + " @BasicAuthentication or @Tenant (found on " + AdminResource.class.getName()
-                            + "#list): the rule authenticates a request before its endpoint, and with it the annotation,"
-                            + " is known. Use phase=pre-authentication, or select the mechanism or tenant by path"
-                            + " instead"));
+                    .hasMessageContaining("Rate limit rule 'api' has phase=post-authentication, but the application uses"
+                            + " annotations such as @BasicAuthentication or @Tenant (found on "
+                            + AdminResource.class.getName() + "#list). These annotations can select the authentication"
+                            + " mechanism or resolve the OIDC tenant only after the endpoint has been matched, and the"
+                            + " rule authenticates the request before that. Use phase=pre-authentication, or select the"
+                            + " authentication mechanism or the tenant by path."));
 
     @Test
     void buildFails() {

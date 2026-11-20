@@ -50,9 +50,11 @@ public final class HttpAuthMechanismAnnotationBuildItem extends MultiBuildItem {
     }
 
     /**
+     * A target is excluded when it is a class that implements an excluded interface, a method of such a class, or a
+     * registered annotation itself.
+     *
      * @return whether the target carries an authentication mechanism annotation without being an endpoint whose
-     *         authentication the annotation selects: a class that implements an excluded interface, a method of such a
-     *         class, or a registered annotation itself
+     *         authentication mechanism the annotation selects
      */
     public static Predicate<AnnotationTarget> isExcludedAnnotationTarget(List<HttpAuthMechanismAnnotationBuildItem> items) {
         final Set<DotName> excludedInterfaceNames = items.stream().map(i -> i.excludedTargetInterfaces)

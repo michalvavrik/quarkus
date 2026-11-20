@@ -91,22 +91,23 @@ public final class HttpRateLimitBuildConfigValidator {
     }
 
     /**
-     * When proactive authentication is disabled, a post-authentication rule still authenticates a request when it
-     * arrives, before its endpoint is known. That rules out the annotations that select how the requests of an endpoint
-     * are authenticated, and, when the rule matches every path, leaves disabling proactive authentication without effect.
+     * A post-authentication rule authenticates the request before the endpoint has been matched. When proactive
+     * authentication is disabled, such a rule cannot be combined with annotations that select the authentication
+     * mechanism or resolve the OIDC tenant, because they apply only after the endpoint has been matched. A rule that
+     * matches every path would also leave disabling proactive authentication without effect.
      *
      * @param proactive {@code quarkus.http.auth.proactive}
      * @param rootPath {@code quarkus.http.root-path}
-     * @param annotatedEndpoints the endpoint classes and methods with an annotation that selects how their requests are
-     *        authenticated, such as {@code @BasicAuthentication} or the {@code @Tenant} of OIDC
+     * @param annotatedEndpoints the endpoint classes and methods with an annotation that selects the authentication
+     *        mechanism or resolves the OIDC tenant, such as {@code @BasicAuthentication} or {@code @Tenant}
      * @return one message per post-authentication rule that conflicts with the authentication of the application
      */
     public static List<String> validateAuthentication(HttpRateLimitBuildTimeConfig config, boolean proactive,
             String rootPath, Collection<String> annotatedEndpoints) {
         List<String> errors = new ArrayList<>();
         if (proactive) {
-            // every request is authenticated when it arrives anyway, and no annotation selects how: that requires
-            // proactive authentication to be disabled
+            // proactive authentication authenticates every request when it arrives, and the annotations require it to
+            // be disabled
             return errors;
         }
         for (Map.Entry<String, Rule> entry : config.rules().entrySet()) {
@@ -117,15 +118,15 @@ public final class HttpRateLimitBuildConfigValidator {
             String prefix = "Rate limit rule '" + entry.getKey() + "' has phase=post-authentication";
             if (!annotatedEndpoints.isEmpty()) {
                 // HttpAuthenticator.getPathSpecificMechanism reads routing context data that only the REST layer sets
-                errors.add(prefix + ", which cannot be used in an application that selects how a request is authenticated"
-                        + " with annotations such as @BasicAuthentication or @Tenant (found on "
-                        + summary(annotatedEndpoints) + "): the rule authenticates a request before its endpoint, and"
-                        + " with it the annotation, is known. Use phase=pre-authentication, or select the mechanism or"
-                        + " tenant by path instead");
+                errors.add(prefix + ", but the application uses annotations such as @BasicAuthentication or @Tenant"
+                        + " (found on " + summary(annotatedEndpoints) + "). These annotations can select the"
+                        + " authentication mechanism or resolve the OIDC tenant only after the endpoint has been matched,"
+                        + " and the rule authenticates the request before that. Use phase=pre-authentication, or select"
+                        + " the authentication mechanism or the tenant by path.");
             } else if (matchesEveryPath(rule, rootPath)) {
-                errors.add(prefix + " and matches every path, so every request is authenticated when it arrives and"
-                        + " quarkus.http.auth.proactive=false has no effect: set quarkus.http.auth.proactive=true, or"
-                        + " restrict the paths or methods of the rule");
+                errors.add(prefix + " and matches every path, so it authenticates every request and"
+                        + " quarkus.http.auth.proactive=false has no effect. Set quarkus.http.auth.proactive=true, or"
+                        + " restrict the paths or methods of the rule.");
             }
         }
         return errors;

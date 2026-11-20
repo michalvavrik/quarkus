@@ -27,9 +27,8 @@ public class DisabledProactiveAuthOnEveryPathFailsBuildTest {
             .overrideRuntimeConfigKey(PREFIX + "window", "1m")
             .assertException(t -> assertThat(t).rootCause().isInstanceOf(ConfigurationException.class)
                     .hasMessageContaining("Rate limit rule 'api' has phase=post-authentication and matches every path,"
-                            + " so every request is authenticated when it arrives and quarkus.http.auth.proactive=false"
-                            + " has no effect: set quarkus.http.auth.proactive=true, or restrict the paths or methods of"
-                            + " the rule"));
+                            + " so it authenticates every request and quarkus.http.auth.proactive=false has no effect."
+                            + " Set quarkus.http.auth.proactive=true, or restrict the paths or methods of the rule."));
 
     @Test
     void buildFails() {

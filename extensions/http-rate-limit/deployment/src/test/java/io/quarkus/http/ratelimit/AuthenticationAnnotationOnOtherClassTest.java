@@ -27,9 +27,9 @@ import io.quarkus.vertx.http.runtime.security.annotation.HttpAuthenticationMecha
 import io.vertx.core.Vertx;
 
 /**
- * An extension can accept its authentication annotation on classes that are not endpoints: OIDC applies a request filter
- * annotated {@code @BearerTokenAuthentication} to that mechanism only. Such a class selects the authentication of no
- * request, so the application can still have a post-authentication rule.
+ * An extension can accept its authentication annotation on classes that are not endpoints. For example, OIDC applies a
+ * request filter annotated with {@code @BearerTokenAuthentication} to that mechanism only. Such a class selects the
+ * authentication mechanism of no request, so the application can still have a post-authentication rule.
  */
 public class AuthenticationAnnotationOnOtherClassTest {
 

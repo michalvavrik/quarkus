@@ -113,8 +113,8 @@ public class HttpRateLimitMetrics implements MeterBinder, RateLimitOutcomeListen
             // a rule on another store holds keys in this replica only in its local fallback; no gauge for those
             if (evaluator.store() == local) {
                 String id = evaluator.configuration().id();
-                // a gauge holds the object it reads weakly: it must be the store, which lives as long as the
-                // application, and not the id, a string that nothing else refers to
+                // a gauge holds the object it reads weakly, so that object must be the store, which lives as long as
+                // the application, and not the id, which is a string that nothing else refers to
                 Gauge.builder(KEYS, local, new ToDoubleFunction<>() {
                     @Override
                     public double applyAsDouble(LocalRateLimitStore store) {

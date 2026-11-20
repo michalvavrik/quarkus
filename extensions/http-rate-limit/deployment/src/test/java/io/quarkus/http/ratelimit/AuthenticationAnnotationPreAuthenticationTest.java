@@ -37,9 +37,9 @@ import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpResponse;
 
 /**
- * A pre-authentication rule authenticates nothing, so it can limit an endpoint whose mechanism is selected by an
- * annotation: the endpoint is still authenticated with that mechanism, even when another one, tried first, accepts the
- * request too.
+ * A pre-authentication rule does not authenticate the request, so it can limit an endpoint whose authentication
+ * mechanism is selected by an annotation. The request is still authenticated with that mechanism, even when a mechanism
+ * with a higher priority accepts the request too.
  */
 public class AuthenticationAnnotationPreAuthenticationTest {
 
@@ -80,7 +80,7 @@ public class AuthenticationAnnotationPreAuthenticationTest {
         assertThat(served.statusCode()).isEqualTo(200);
         assertThat(served.bodyAsString()).isEqualTo("alice");
 
-        // the challenge of the selected mechanism; a request that fails authentication spends a permit too
+        // the selected mechanism sends the challenge, and a request that fails authentication spends a permit too
         HttpResponse<Buffer> challenged = http.get("/admin");
         assertThat(challenged.statusCode()).isEqualTo(401);
         assertThat(challenged.getHeader("WWW-Authenticate")).startsWithIgnoringCase("basic");

@@ -266,8 +266,7 @@ public class RateLimitFilter {
     }
 
     /**
-     * @return the identity of the request, which authentication stores on it once resolved; empty when nothing
-     *         authenticates requests
+     * @return the identity that authentication stored on the request, or empty when nothing authenticates requests
      */
     private static Optional<SecurityIdentity> identity(RoutingContext ctx) {
         if (ctx.user() instanceof QuarkusHttpUser user) {

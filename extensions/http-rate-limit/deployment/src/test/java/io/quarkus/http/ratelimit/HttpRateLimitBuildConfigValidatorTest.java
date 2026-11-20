@@ -152,9 +152,9 @@ public class HttpRateLimitBuildConfigValidatorTest {
 
     @Test
     void postAuthenticationRuleOnEveryPathNeedsProactiveAuthentication() {
-        String error = "Rate limit rule 'api' has phase=post-authentication and matches every path, so every request is"
-                + " authenticated when it arrives and quarkus.http.auth.proactive=false has no effect: set"
-                + " quarkus.http.auth.proactive=true, or restrict the paths or methods of the rule";
+        String error = "Rate limit rule 'api' has phase=post-authentication and matches every path, so it authenticates"
+                + " every request and quarkus.http.auth.proactive=false has no effect. Set"
+                + " quarkus.http.auth.proactive=true, or restrict the paths or methods of the rule.";
         String phase = g("phase");
         String paths = g("paths");
         assertThat(disabledProactiveAuth("/", phase, "post-authentication", paths, "/*")).containsExactly(error);
@@ -189,23 +189,24 @@ public class HttpRateLimitBuildConfigValidatorTest {
         String phase = g("phase");
         Set<String> annotated = Set.of("org.acme.AdminResource#list");
         assertThat(HttpRateLimitBuildConfigValidator.validateAuthentication(config(phase, "post-authentication"), false,
-                "/", annotated)).containsExactly("Rate limit rule 'api' has phase=post-authentication, which cannot be used"
-                        + " in an application that selects how a request is authenticated with annotations such as"
-                        + " @BasicAuthentication or @Tenant (found on org.acme.AdminResource#list): the rule"
-                        + " authenticates a request before its endpoint, and with it the annotation, is known. Use"
-                        + " phase=pre-authentication, or select the mechanism or tenant by path instead");
+                "/", annotated)).containsExactly("Rate limit rule 'api' has phase=post-authentication, but the application"
+                        + " uses annotations such as @BasicAuthentication or @Tenant (found on"
+                        + " org.acme.AdminResource#list). These annotations can select the authentication mechanism or"
+                        + " resolve the OIDC tenant only after the endpoint has been matched, and the rule authenticates"
+                        + " the request before that. Use phase=pre-authentication, or select the authentication"
+                        + " mechanism or the tenant by path.");
         // the first three endpoints in alphabetical order
         assertThat(HttpRateLimitBuildConfigValidator.validateAuthentication(config(phase, "post-authentication"), false,
                 "/", Set.of("org.acme.D", "org.acme.B#b", "org.acme.E#e", "org.acme.A#a", "org.acme.C")))
                 .singleElement().asString().contains("(found on org.acme.A#a, org.acme.B#b, org.acme.C and 2 more)");
-        // a rule on every path fails for the annotations only: proactive authentication is not possible with them
+        // a rule on every path fails for the annotations only, because they do not allow proactive authentication
         assertThat(HttpRateLimitBuildConfigValidator.validateAuthentication(
                 config(phase, "post-authentication", g("paths"), "/*"), false, "/", annotated))
-                .singleElement().asString().contains("with annotations such as");
+                .singleElement().asString().contains("uses annotations such as");
         // the phase may be the global one
         assertThat(HttpRateLimitBuildConfigValidator.validateAuthentication(
                 config(phase, null, P + "phase", "post-authentication"), false, "/", annotated))
-                .singleElement().asString().contains("with annotations such as");
+                .singleElement().asString().contains("uses annotations such as");
 
         // a pre-authentication rule authenticates nothing
         assertThat(HttpRateLimitBuildConfigValidator.validateAuthentication(config(), false, "/", annotated)).isEmpty();

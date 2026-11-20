@@ -116,8 +116,7 @@ public class HttpRateLimitProcessor {
         validateSelections(config, validationPhase.getBeanResolver(), index.getComputingIndex(), errors);
         errors.addAll(HttpRateLimitBuildConfigValidator.validateRootPath(config, httpConfig.rootPath(),
                 httpConfig.nonApplicationRootPath()));
-        // the endpoints with a security interceptor that must run before authentication: it selects the mechanism or
-        // the OIDC tenant that authenticates their requests
+        // the endpoints with an annotation that selects the authentication mechanism or resolves the OIDC tenant
         Set<String> annotatedEndpoints = new HashSet<>(
                 EagerSecurityInterceptorClassesBuildItem.collectInterceptedClasses(interceptedClasses));
         // an authentication mechanism annotation is also allowed on classes that are not endpoints, such as an OIDC
