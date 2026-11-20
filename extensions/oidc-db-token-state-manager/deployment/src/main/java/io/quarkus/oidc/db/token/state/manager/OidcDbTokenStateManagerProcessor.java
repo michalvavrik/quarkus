@@ -19,6 +19,7 @@ import io.quarkus.datasource.common.runtime.DataSourceUtil;
 import io.quarkus.deployment.Capabilities;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.BuildSteps;
+import io.quarkus.deployment.builditem.InitTaskCompletedBuildItem;
 import io.quarkus.deployment.builditem.ServiceStartBuildItem;
 import io.quarkus.oidc.TokenStateManager;
 import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManager;
@@ -26,6 +27,7 @@ import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManagerIni
 import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManagerInitializer.SupportedReactiveSqlClient;
 import io.quarkus.oidc.db.token.state.manager.runtime.OidcDbTokenStateManagerRunTimeConfig;
 import io.quarkus.runtime.configuration.ConfigurationException;
+import io.quarkus.vertx.http.deployment.PreRouterFinalizationBuildItem;
 import io.vertx.core.Vertx;
 import io.vertx.sqlclient.Pool;
 
@@ -107,7 +109,8 @@ public class OidcDbTokenStateManagerProcessor {
     }
 
     @BuildStep
-    void createDbTokenStateInitializerProps(ReactiveSqlClientBuildItem sqlClientBuildItem, ServiceRegistrar reg) {
+    ServiceStartBuildItem createDbTokenStateInitializerProps(ReactiveSqlClientBuildItem sqlClientBuildItem,
+            ServiceRegistrar reg) {
         var supportedReactiveSqlClient = switch (sqlClientBuildItem.reactiveClient) {
             case REACTIVE_PG_CLIENT -> SupportedReactiveSqlClient.POSTGRESQL;
             case REACTIVE_MYSQL_CLIENT -> SupportedReactiveSqlClient.MYSQL;
@@ -118,12 +121,12 @@ public class OidcDbTokenStateManagerProcessor {
         };
         reg
                 .forService("io.quarkus.oidc.db.token.state.manager.initializer")
-                // TODO: this is imperfect but still better than what we had before, this task needs to be performed
-                //      before HTTP server socker is opened so that when a first incoming request arrives, we are
-                //      ready to serve it, we should tweak these "require" and "after..." once router finalization
-                //      is migrated fo the new service registrar;
-                .afterBuildItem(ServiceStartBuildItem.class)
-                .before("io.quarkus.arc.startup-event")
+                // start after the schema migrations of other extensions, like Flyway and Liquibase
+                .afterBuildItem(InitTaskCompletedBuildItem.class)
+                // start after OIDC and HTTP Security are initialized
+                // TODO: nothing orders this after the OpenTelemetry Vert.x tracer setup, it only happens to run later;
+                //      queries run before it are not traced, see https://github.com/quarkusio/quarkus/issues/39644
+                .afterBuildItem(PreRouterFinalizationBuildItem.class)
                 .require(OidcDbTokenStateManagerRunTimeConfig.class)
                 .require(Vertx.class)
                 .request(Pool.class, DataSourceUtil.DEFAULT_DATASOURCE_NAME)
@@ -132,6 +135,9 @@ public class OidcDbTokenStateManagerProcessor {
                             OidcDbTokenStateManagerInitializer.requireDefaultPool(pool));
                     ctx.onStop(() -> vertx.cancelTimer(taskId));
                 });
+        // the HTTP socket is bound and the startup event is fired after the build steps that produce this build item,
+        // therefore the database table exists before the first request is served
+        return new ServiceStartBuildItem("oidc-db-token-state-manager");
     }
 
     static final class OidcDbTokenStateManagerEnabled implements BooleanSupplier {
