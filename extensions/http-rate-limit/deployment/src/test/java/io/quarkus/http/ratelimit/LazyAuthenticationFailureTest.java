@@ -26,11 +26,11 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.client.HttpResponse;
 
 /**
- * When proactive authentication is disabled, the deferred identity hands a failure to the authentication failure handler
- * itself; the limiter must neither fail the request a second time nor shape the response. {@code /api} is served by
- * REST, {@code /route} by a plain Vert.x route.
+ * Under lazy authentication the deferred identity hands a failure to the authentication failure handler itself; the
+ * limiter must neither fail the request a second time nor shape the response. {@code /api} is served by REST,
+ * {@code /route} by a plain Vert.x route.
  */
-public class DisabledProactiveAuthFailureTest {
+public class LazyAuthenticationFailureTest {
 
     private static final String PREFIX = "quarkus.http.rate-limit.rules.api.";
 

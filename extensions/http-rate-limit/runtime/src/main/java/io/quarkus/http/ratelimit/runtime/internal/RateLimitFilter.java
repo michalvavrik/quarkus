@@ -270,15 +270,15 @@ public class RateLimitFilter {
      */
     private static Optional<SecurityIdentity> identity(RoutingContext ctx) {
         if (ctx.user() instanceof QuarkusHttpUser user) {
-            return Optional.of(user.getSecurityIdentity());
+            return Optional.ofNullable(user.getSecurityIdentity());
         }
         return Optional.empty();
     }
 
     /**
-     * Follows {@code AbstractHttpAuthorizer}: when proactive authentication is disabled, the deferred identity has
-     * already handed an authentication failure to the authentication failure handler, which either ended the response
-     * with a challenge or failed the request itself. Failing it again would process the failure twice.
+     * Follows {@code AbstractHttpAuthorizer}: under lazy authentication, the deferred identity has already handed an
+     * authentication failure to the authentication failure handler, which either ended the response with a challenge
+     * or failed the request itself. Failing it again would process the failure twice.
      */
     private static void failed(RoutingContext ctx, Throwable failure) {
         ctx.put(SKIP_SAMPLE_KEY, true);
