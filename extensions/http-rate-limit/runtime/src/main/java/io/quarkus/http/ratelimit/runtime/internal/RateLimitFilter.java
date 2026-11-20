@@ -241,7 +241,6 @@ public class RateLimitFilter {
         // is marked beforehand: load shedding must never take the latency of that response as a sample
         boolean skipSample = Boolean.TRUE.equals(ctx.get(SKIP_SAMPLE_KEY));
         ctx.put(SKIP_SAMPLE_KEY, true);
-        AtomicReference<Optional<SecurityIdentity>> identity = new AtomicReference<>(Optional.empty());
         subscription.set(QuarkusHttpUser.getSecurityIdentity(ctx, null)
                 .emitOn(onContext)
                 .onItem().transformToUni(new Function<SecurityIdentity, Uni<? extends List<Outcome>>>() {
@@ -250,14 +249,13 @@ public class RateLimitFilter {
                         if (!skipSample) {
                             ctx.remove(SKIP_SAMPLE_KEY);
                         }
-                        identity.set(Optional.ofNullable(resolved));
-                        return evaluate(ctx, identity.get(), onContext, evaluators, 0, new ArrayList<>());
+                        return evaluate(ctx, Optional.ofNullable(resolved), onContext, evaluators, 0, new ArrayList<>());
                     }
                 })
                 .subscribe().with(new Consumer<>() {
                     @Override
                     public void accept(List<Outcome> outcomes) {
-                        respond(ctx, identity.get(), outcomes);
+                        respond(ctx, identity(ctx), outcomes);
                     }
                 }, new Consumer<>() {
                     @Override
@@ -268,9 +266,20 @@ public class RateLimitFilter {
     }
 
     /**
-     * Follows {@code AbstractHttpAuthorizer}: under lazy authentication, the deferred identity has already handed an
-     * authentication failure to the authentication failure handler, which either ended the response with a challenge
-     * or failed the request itself. Failing it again would process the failure twice.
+     * @return the identity of the request, which authentication stores on it once resolved; empty when nothing
+     *         authenticates requests
+     */
+    private static Optional<SecurityIdentity> identity(RoutingContext ctx) {
+        if (ctx.user() instanceof QuarkusHttpUser user) {
+            return Optional.of(user.getSecurityIdentity());
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Follows {@code AbstractHttpAuthorizer}: when proactive authentication is disabled, the deferred identity has
+     * already handed an authentication failure to the authentication failure handler, which either ended the response
+     * with a challenge or failed the request itself. Failing it again would process the failure twice.
      */
     private static void failed(RoutingContext ctx, Throwable failure) {
         ctx.put(SKIP_SAMPLE_KEY, true);

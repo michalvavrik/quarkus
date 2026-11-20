@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import jakarta.enterprise.inject.AmbiguousResolutionException;
 
@@ -13,6 +14,7 @@ import org.jboss.jandex.AnnotationTarget;
 import org.jboss.jandex.ClassType;
 import org.jboss.jandex.DotName;
 import org.jboss.jandex.IndexView;
+import org.jboss.jandex.MethodInfo;
 import org.jboss.logging.Logger;
 
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
@@ -41,6 +43,10 @@ import io.quarkus.http.ratelimit.runtime.internal.config.RateLimitRuleConfig;
 import io.quarkus.http.ratelimit.runtime.internal.telemetry.DevModeRejectionLog;
 import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.configuration.ConfigurationException;
+import io.quarkus.vertx.http.deployment.EagerSecurityInterceptorBindingBuildItem;
+import io.quarkus.vertx.http.deployment.EagerSecurityInterceptorClassesBuildItem;
+import io.quarkus.vertx.http.deployment.EagerSecurityInterceptorMethodsBuildItem;
+import io.quarkus.vertx.http.deployment.HttpAuthMechanismAnnotationBuildItem;
 import io.quarkus.vertx.http.deployment.spi.ControlPlanePathBuildItem;
 import io.quarkus.vertx.http.runtime.VertxHttpBuildTimeConfig;
 import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;
@@ -73,12 +79,16 @@ public class HttpRateLimitProcessor {
     }
 
     /**
-     * Fails the build when the rules are invalid, name a store, key resolver or limit resolver that does not exist, or have a
-     * path outside the root path; warns of rules that are valid but probably not what was intended.
+     * Fails the build when the rules are invalid, name a store, key resolver or limit resolver that does not exist, have a
+     * path outside the root path, or conflict with the authentication of the application; warns of rules that are valid
+     * but probably not what was intended.
      */
     @BuildStep
     void validateConfig(HttpRateLimitBuildTimeConfig config, VertxHttpBuildTimeConfig httpConfig,
             ValidationPhaseBuildItem validationPhase, CombinedIndexBuildItem index,
+            List<EagerSecurityInterceptorMethodsBuildItem> interceptedMethods,
+            List<EagerSecurityInterceptorClassesBuildItem> interceptedClasses,
+            List<HttpAuthMechanismAnnotationBuildItem> authMechanismAnnotations,
             BuildProducer<ValidationErrorBuildItem> validationErrors) {
         Set<String> stores = new HashSet<>();
         Set<String> keyResolvers = new HashSet<>();
@@ -106,8 +116,23 @@ public class HttpRateLimitProcessor {
         validateSelections(config, validationPhase.getBeanResolver(), index.getComputingIndex(), errors);
         errors.addAll(HttpRateLimitBuildConfigValidator.validateRootPath(config, httpConfig.rootPath(),
                 httpConfig.nonApplicationRootPath()));
-        for (String warning : HttpRateLimitBuildConfigValidator.warnings(config, httpConfig.auth().proactive(),
-                mechanisms)) {
+        // the endpoints with a security interceptor that must run before authentication: it selects the mechanism or
+        // the OIDC tenant that authenticates their requests
+        Set<String> annotatedEndpoints = new HashSet<>(
+                EagerSecurityInterceptorClassesBuildItem.collectInterceptedClasses(interceptedClasses));
+        // an authentication mechanism annotation is also allowed on classes that are not endpoints, such as an OIDC
+        // request filter, and their methods are collected all the same
+        Predicate<AnnotationTarget> notAnEndpoint = HttpAuthMechanismAnnotationBuildItem
+                .isExcludedAnnotationTarget(authMechanismAnnotations);
+        for (MethodInfo method : EagerSecurityInterceptorMethodsBuildItem.collectInterceptedMethods(interceptedMethods)
+                .keySet()) {
+            if (!notAnEndpoint.test(method)) {
+                annotatedEndpoints.add(EagerSecurityInterceptorBindingBuildItem.toTargetName(method));
+            }
+        }
+        errors.addAll(HttpRateLimitBuildConfigValidator.validateAuthentication(config, httpConfig.auth().proactive(),
+                httpConfig.rootPath(), annotatedEndpoints));
+        for (String warning : HttpRateLimitBuildConfigValidator.warnings(config, mechanisms)) {
             LOG.warn(warning);
         }
         if (!errors.isEmpty()) {

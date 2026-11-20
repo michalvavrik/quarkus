@@ -19,9 +19,9 @@ import io.vertx.core.Vertx;
 import io.vertx.ext.web.client.WebClient;
 
 /**
- * The post-authentication hook marks its own rejections like the pre-authentication one, and, under lazy
- * authentication, also the 401 Quarkus answers when the identity it forces fails to resolve; a served request stays
- * sampled.
+ * The post-authentication hook marks its own rejections like the pre-authentication one, and, when proactive
+ * authentication is disabled, also the 401 Quarkus answers when the identity it forces fails to resolve; a served
+ * request stays sampled.
  */
 public class LoadSheddingInteractionPostAuthenticationTest {
 
@@ -70,7 +70,7 @@ public class LoadSheddingInteractionPostAuthenticationTest {
     }
 
     @Test
-    void lazyAuthenticationFailureIsMarkedAndAServedRequestIsNot() throws Exception {
+    void forcedAuthenticationFailureIsMarkedAndAServedRequestIsNot() throws Exception {
         WebClient client = LoadSheddingInteractionApp.client(vertx);
         try {
             assertThat(LoadSheddingInteractionApp.get(vertx, client, url, "/auth/x",

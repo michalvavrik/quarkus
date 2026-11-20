@@ -1027,8 +1027,13 @@ The same paths are exempt from load shedding.
 [[authentication]]
 === Authentication and permissions
 
-With lazy authentication (`quarkus.http.auth.proactive=false`), a `post-authentication` rule authenticates the request for all of its paths, using the mechanisms configured for those paths with `quarkus.http.auth.permission.*`; mechanisms selected by annotations on REST methods are not known yet.
-The build logs a warning for such a rule, and for a `principal` key when the application has no `HttpAuthenticationMechanism` bean, since every request would then be anonymous.
+When proactive authentication is disabled (`quarkus.http.auth.proactive=false`), a `post-authentication` rule authenticates the request for all of its paths, using the mechanisms configured for those paths with xref:security-authorize-web-endpoints-reference.adoc#authorization-using-configuration[HTTP permissions].
+The build fails when such a rule matches every path, whatever the method: disabling proactive authentication would then have no effect, so enable it, or restrict the paths or methods of the rule.
+The build logs a warning for a `principal` key when the application has no `HttpAuthenticationMechanism` bean, since every request would then be anonymous.
+
+A `post-authentication` rule authenticates a request before its endpoint is known.
+An application therefore cannot combine such a rule with the annotations that select how the requests of an endpoint are authenticated, such as `@BasicAuthentication` or the `@Tenant` annotation of OIDC: the build fails, whatever the paths of the rule.
+Select the mechanism xref:security-authentication-mechanisms.adoc#path-based-authentication[by path] instead, and the OIDC tenant with xref:security-openid-connect-multitenancy.adoc#configure-tenant-paths[`quarkus.oidc.tenant-paths`].
 
 A custom resolver in the `post-authentication` phase is called for anonymous requests too: `RateLimitContext.identity()` tells whether the request is anonymous.
 

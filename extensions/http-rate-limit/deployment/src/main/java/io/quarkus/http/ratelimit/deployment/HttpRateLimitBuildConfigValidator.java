@@ -1,10 +1,12 @@
 package io.quarkus.http.ratelimit.deployment;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 import io.quarkus.http.ratelimit.RateLimitPhase;
@@ -69,24 +71,15 @@ public final class HttpRateLimitBuildConfigValidator {
     }
 
     /**
-     * @param proactive {@code quarkus.http.auth.proactive}
      * @param mechanisms whether there is an {@code HttpAuthenticationMechanism} bean
      * @return one message per rule that is valid but probably not what was intended
      */
-    public static List<String> warnings(HttpRateLimitBuildTimeConfig config, boolean proactive, boolean mechanisms) {
+    public static List<String> warnings(HttpRateLimitBuildTimeConfig config, boolean mechanisms) {
         List<String> warnings = new ArrayList<>();
         for (Map.Entry<String, Rule> entry : config.rules().entrySet()) {
             Rule rule = entry.getValue();
             if (RateLimitRuleConfig.phase(config, rule) != RateLimitPhase.POST_AUTHENTICATION) {
                 continue;
-            }
-            if (!proactive) {
-                // HttpAuthenticator.getPathSpecificMechanism reads routing context data that only the REST layer sets
-                warnings.add("Rate limit rule '" + entry.getKey()
-                        + "' runs after authentication but quarkus.http.auth.proactive=false:"
-                        + " authentication is now forced for every request to its paths, using the mechanisms selected"
-                        + " by path; mechanisms selected by REST annotations are not known at this point and are not"
-                        + " applied");
             }
             if ("principal".equals(RateLimitRuleConfig.key(config, rule)) && !mechanisms) {
                 warnings.add("Rate limit rule '" + entry.getKey()
@@ -95,6 +88,75 @@ public final class HttpRateLimitBuildConfigValidator {
             }
         }
         return warnings;
+    }
+
+    /**
+     * When proactive authentication is disabled, a post-authentication rule still authenticates a request when it
+     * arrives, before its endpoint is known. That rules out the annotations that select how the requests of an endpoint
+     * are authenticated, and, when the rule matches every path, leaves disabling proactive authentication without effect.
+     *
+     * @param proactive {@code quarkus.http.auth.proactive}
+     * @param rootPath {@code quarkus.http.root-path}
+     * @param annotatedEndpoints the endpoint classes and methods with an annotation that selects how their requests are
+     *        authenticated, such as {@code @BasicAuthentication} or the {@code @Tenant} of OIDC
+     * @return one message per post-authentication rule that conflicts with the authentication of the application
+     */
+    public static List<String> validateAuthentication(HttpRateLimitBuildTimeConfig config, boolean proactive,
+            String rootPath, Collection<String> annotatedEndpoints) {
+        List<String> errors = new ArrayList<>();
+        if (proactive) {
+            // every request is authenticated when it arrives anyway, and no annotation selects how: that requires
+            // proactive authentication to be disabled
+            return errors;
+        }
+        for (Map.Entry<String, Rule> entry : config.rules().entrySet()) {
+            Rule rule = entry.getValue();
+            if (RateLimitRuleConfig.phase(config, rule) != RateLimitPhase.POST_AUTHENTICATION) {
+                continue;
+            }
+            String prefix = "Rate limit rule '" + entry.getKey() + "' has phase=post-authentication";
+            if (!annotatedEndpoints.isEmpty()) {
+                // HttpAuthenticator.getPathSpecificMechanism reads routing context data that only the REST layer sets
+                errors.add(prefix + ", which cannot be used in an application that selects how a request is authenticated"
+                        + " with annotations such as @BasicAuthentication or @Tenant (found on "
+                        + summary(annotatedEndpoints) + "): the rule authenticates a request before its endpoint, and"
+                        + " with it the annotation, is known. Use phase=pre-authentication, or select the mechanism or"
+                        + " tenant by path instead");
+            } else if (matchesEveryPath(rule, rootPath)) {
+                errors.add(prefix + " and matches every path, so every request is authenticated when it arrives and"
+                        + " quarkus.http.auth.proactive=false has no effect: set quarkus.http.auth.proactive=true, or"
+                        + " restrict the paths or methods of the rule");
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * @return whether the rule matches every request under {@code quarkus.http.root-path}, whatever its method
+     */
+    private static boolean matchesEveryPath(Rule rule, String rootPath) {
+        if (rule.methods().isPresent()) {
+            return false;
+        }
+        String root = directory(rootPath);
+        for (String path : rule.paths()) {
+            // like RateLimitRules, a path without a leading slash is relative to the root path
+            String absolute = path.startsWith("/") ? path : root + path;
+            if (absolute.equals("/*") || absolute.equals(root + "*")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return the first names in alphabetical order, and how many more there are
+     */
+    private static String summary(Collection<String> names) {
+        List<String> sorted = new ArrayList<>(new TreeSet<>(names));
+        int shown = Math.min(sorted.size(), 3);
+        String summary = String.join(", ", sorted.subList(0, shown));
+        return sorted.size() == shown ? summary : summary + " and " + (sorted.size() - shown) + " more";
     }
 
     /**

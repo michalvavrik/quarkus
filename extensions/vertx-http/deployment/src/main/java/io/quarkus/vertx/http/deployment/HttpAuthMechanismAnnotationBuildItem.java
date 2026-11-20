@@ -49,7 +49,12 @@ public final class HttpAuthMechanismAnnotationBuildItem extends MultiBuildItem {
         this.excludedTargetInterfaces = Set.of(Objects.requireNonNull(excludedTargetInterfaces));
     }
 
-    static Predicate<AnnotationTarget> isExcludedAnnotationTarget(List<HttpAuthMechanismAnnotationBuildItem> items) {
+    /**
+     * @return whether the target carries an authentication mechanism annotation without being an endpoint whose
+     *         authentication the annotation selects: a class that implements an excluded interface, a method of such a
+     *         class, or a registered annotation itself
+     */
+    public static Predicate<AnnotationTarget> isExcludedAnnotationTarget(List<HttpAuthMechanismAnnotationBuildItem> items) {
         final Set<DotName> excludedInterfaceNames = items.stream().map(i -> i.excludedTargetInterfaces)
                 .flatMap(Collection::stream).collect(Collectors.toSet());
         // exclude self (the mechanism defining annotation) as we are part of the index and don't want to
