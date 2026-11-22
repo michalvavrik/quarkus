@@ -2089,7 +2089,7 @@ Set the `quarkus.oidc-client.token-cache-max-size` property of the `OidcClient` 
 
 * The `@AccessToken` annotation is only supported on the `@GraphQLClientApi` interface, not on its methods or parent interfaces.
 * The access token is only propagated with the operations executed over HTTP, not over WebSocket, so a GraphQL client which propagates it cannot have subscriptions.
-* GraphQL clients which share a configuration key also share the access token propagation.
+* GraphQL clients which share a configuration key, including dynamic clients, also share the access token propagation.
 A GraphQL client which needs a different setup must use a different `configKey`.
 ifndef::no-quarkus-oidc-client-graphql[]
 * If the <<quarkus-oidc-client-graphql,`quarkus-oidc-client-graphql`>> extension is present, the GraphQL clients annotated with the `@AccessToken` annotation propagate the access token and all other GraphQL clients use the `OidcClient` to acquire a new access token.

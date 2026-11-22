@@ -44,19 +44,16 @@ public final class GraphQLAccessTokenProvider extends AbstractUni<String> {
     private static final String AUTHORIZATION = "Authorization";
     private static final String BEARER_SCHEME_WITH_SPACE = "Bearer ";
 
-    private final ArcContainer container;
     private final Supplier<InstanceHandle<TokenCredential>> tokenCredentials;
     private final String graphQLClientKey;
-    // null if the access token is propagated without being exchanged, empty for the default OIDC client
-    private final String tokenExchangeOidcClient;
-    private volatile TokenExchange tokenExchange;
+    // null if the access token is propagated without being exchanged
+    private final TokenExchange tokenExchange;
 
-    private GraphQLAccessTokenProvider(ArcContainer container, Supplier<InstanceHandle<TokenCredential>> tokenCredentials,
-            String graphQLClientKey, String tokenExchangeOidcClient) {
-        this.container = container;
+    private GraphQLAccessTokenProvider(Supplier<InstanceHandle<TokenCredential>> tokenCredentials, String graphQLClientKey,
+            TokenExchange tokenExchange) {
         this.tokenCredentials = tokenCredentials;
         this.graphQLClientKey = graphQLClientKey;
-        this.tokenExchangeOidcClient = tokenExchangeOidcClient;
+        this.tokenExchange = tokenExchange;
     }
 
     /**
@@ -106,10 +103,47 @@ public final class GraphQLAccessTokenProvider extends AbstractUni<String> {
                                 configuration property is enabled. The access token can only be propagated over HTTP."""
                                 .formatted(graphQLClientKey));
             }
-            GraphQLAccessTokenProvider provider = new GraphQLAccessTokenProvider(container, tokenCredentials,
-                    graphQLClientKey, tokenExchangeOidcClients.get(graphQLClientKey));
+            validateNoConfiguredAuthorizationHeader(graphQLClientKey, clientConfiguration);
+            String tokenExchangeOidcClient = tokenExchangeOidcClients.get(graphQLClientKey);
+            TokenExchange tokenExchange = tokenExchangeOidcClient == null ? null
+                    : createTokenExchange(container, graphQLClientKey, tokenExchangeOidcClient);
+            GraphQLAccessTokenProvider provider = new GraphQLAccessTokenProvider(tokenCredentials, graphQLClientKey,
+                    tokenExchange);
             clientConfiguration.getDynamicHeaders().put(AUTHORIZATION, provider);
             providers.put(graphQLClientKey, provider);
+        }
+    }
+
+    /**
+     * The GraphQL clients send the propagated access token together with the {@code Authorization} header they already have.
+     */
+    private static void validateNoConfiguredAuthorizationHeader(String graphQLClientKey,
+            GraphQLClientConfiguration clientConfiguration) {
+        Map<String, String> headers = clientConfiguration.getHeaders();
+        if (headers != null) {
+            for (String headerName : headers.keySet()) {
+                if (AUTHORIZATION.equalsIgnoreCase(headerName)) {
+                    throw new ConfigurationException(
+                            """
+                                    GraphQL client '%1$s' is annotated with the @AccessToken annotation, but the \
+                                    'quarkus.smallrye-graphql-client."%1$s".header."%2$s"' configuration property also sets \
+                                    the 'Authorization' header. Only one of them can be used on the same GraphQL client."""
+                                    .formatted(graphQLClientKey, headerName));
+                }
+            }
+        }
+        // the GraphQL clients use these properties for the HTTP Basic authentication
+        String usernameProperty = graphQLClientKey + "/mp-graphql/username";
+        String passwordProperty = graphQLClientKey + "/mp-graphql/password";
+        Config config = Config.get();
+        if (config.getOptionalValue(usernameProperty, String.class).isPresent()
+                && config.getOptionalValue(passwordProperty, String.class).isPresent()) {
+            throw new ConfigurationException(
+                    """
+                            GraphQL client '%s' is annotated with the @AccessToken annotation, but the '%s' and '%s' \
+                            configuration properties also set the 'Authorization' header. \
+                            Only one of them can be used on the same GraphQL client."""
+                            .formatted(graphQLClientKey, usernameProperty, passwordProperty));
         }
     }
 
@@ -118,7 +152,7 @@ public final class GraphQLAccessTokenProvider extends AbstractUni<String> {
         Uni<String> authorizationHeader;
         try {
             String accessToken = getAccessToken();
-            if (tokenExchangeOidcClient == null) {
+            if (tokenExchange == null) {
                 authorizationHeader = Uni.createFrom().item(BEARER_SCHEME_WITH_SPACE + accessToken);
             } else {
                 authorizationHeader = exchangeToken(accessToken);
@@ -154,52 +188,40 @@ public final class GraphQLAccessTokenProvider extends AbstractUni<String> {
     }
 
     private Uni<String> exchangeToken(String accessToken) {
-        TokenExchange tokenExchange = getTokenExchange();
         // the exchanged tokens are cached for each access token
         return tokenExchange.tokensHelper()
                 .getTokens(tokenExchange.oidcClient(), Map.of(tokenExchange.tokenProperty(), accessToken), false)
-                .map(tokens -> toAuthorizationHeader(tokens, graphQLClientKey, tokenExchangeOidcClient));
+                .map(tokens -> toAuthorizationHeader(tokens, graphQLClientKey, tokenExchange.oidcClientName()));
     }
 
-    private static String toAuthorizationHeader(Tokens exchangedTokens, String graphQLClientKey,
-            String tokenExchangeOidcClient) {
+    private static String toAuthorizationHeader(Tokens exchangedTokens, String graphQLClientKey, String oidcClientName) {
         if (exchangedTokens.getAccessToken() == null) {
             throw new IllegalStateException(
                     "GraphQL client '%s' cannot propagate the exchanged access token: the %s OIDC client did not return it"
-                            .formatted(graphQLClientKey, oidcClientDescription(tokenExchangeOidcClient)));
+                            .formatted(graphQLClientKey, oidcClientDescription(oidcClientName)));
         }
         return BEARER_SCHEME_WITH_SPACE + exchangedTokens.getAccessToken();
     }
 
-    private TokenExchange getTokenExchange() {
-        TokenExchange tokenExchange = this.tokenExchange;
-        if (tokenExchange == null) {
-            synchronized (this) {
-                tokenExchange = this.tokenExchange;
-                if (tokenExchange == null) {
-                    tokenExchange = createTokenExchange();
-                    this.tokenExchange = tokenExchange;
-                }
-            }
-        }
-        return tokenExchange;
-    }
-
-    private TokenExchange createTokenExchange() {
-        boolean defaultOidcClient = tokenExchangeOidcClient.isEmpty();
+    /**
+     * @param oidcClientName name of the OIDC client which exchanges the access token, empty for the default OIDC client
+     */
+    private static TokenExchange createTokenExchange(ArcContainer container, String graphQLClientKey,
+            String oidcClientName) {
+        boolean defaultOidcClient = oidcClientName.isEmpty();
         OidcClients oidcClients = container.instance(OidcClients.class).get();
         OidcClient oidcClient = null;
         if (oidcClients != null) {
-            oidcClient = defaultOidcClient ? oidcClients.getClient() : oidcClients.getClient(tokenExchangeOidcClient);
+            oidcClient = defaultOidcClient ? oidcClients.getClient() : oidcClients.getClient(oidcClientName);
         }
         if (oidcClient == null) {
             throw new ConfigurationException(
                     "GraphQL client '%s' requires the %s OIDC client to exchange the access token, but there is no such OIDC client"
-                            .formatted(graphQLClientKey, oidcClientDescription(tokenExchangeOidcClient)));
+                            .formatted(graphQLClientKey, oidcClientDescription(oidcClientName)));
         }
         OidcClientsConfig oidcClientsConfig = Config.get().getConfigMapping(OidcClientsConfig.class);
         OidcClientConfig oidcClientConfig = defaultOidcClient ? OidcClientsConfig.getDefaultClient(oidcClientsConfig)
-                : oidcClientsConfig.namedClients().get(tokenExchangeOidcClient);
+                : oidcClientsConfig.namedClients().get(oidcClientName);
         Grant.Type grantType = oidcClientConfig.grant().type();
         final String tokenProperty;
         if (grantType == Grant.Type.EXCHANGE) {
@@ -209,16 +231,18 @@ public final class GraphQLAccessTokenProvider extends AbstractUni<String> {
         } else {
             throw new ConfigurationException(
                     "GraphQL client '%s' requires the %s OIDC client to exchange the access token, but this OIDC client is configured to use the %s grant type, only the token exchange and JWT bearer grant types can exchange tokens"
-                            .formatted(graphQLClientKey, oidcClientDescription(tokenExchangeOidcClient),
+                            .formatted(graphQLClientKey, oidcClientDescription(oidcClientName),
                                     grantType.getGrantType()));
         }
-        return new TokenExchange(oidcClient, tokenProperty, new TokensHelper(oidcClientConfig.tokenCacheMaxSize()));
+        return new TokenExchange(oidcClient, oidcClientName, tokenProperty,
+                new TokensHelper(oidcClientConfig.tokenCacheMaxSize()));
     }
 
     private static String oidcClientDescription(String oidcClientName) {
         return oidcClientName.isEmpty() ? "default" : "'" + oidcClientName + "'";
     }
 
-    private record TokenExchange(OidcClient oidcClient, String tokenProperty, TokensHelper tokensHelper) {
+    private record TokenExchange(OidcClient oidcClient, String oidcClientName, String tokenProperty,
+            TokensHelper tokensHelper) {
     }
 }

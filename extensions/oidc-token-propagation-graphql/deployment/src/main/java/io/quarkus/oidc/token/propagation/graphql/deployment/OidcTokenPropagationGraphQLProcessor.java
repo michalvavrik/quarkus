@@ -1,6 +1,7 @@
 package io.quarkus.oidc.token.propagation.graphql.deployment;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,13 +33,22 @@ import io.quarkus.oidc.token.propagation.graphql.deployment.spi.GraphQLClientTok
 import io.quarkus.oidc.token.propagation.graphql.runtime.internal.GraphQLAccessTokenProvider;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.smallrye.graphql.client.deployment.GraphQLClientConfigInitializedBuildItem;
+import io.smallrye.graphql.client.typesafe.api.AuthorizationHeader;
 import io.smallrye.graphql.client.typesafe.api.GraphQLClientApi;
+import io.smallrye.graphql.client.typesafe.api.Header;
+import io.smallrye.graphql.client.typesafe.api.Headers;
 
 class OidcTokenPropagationGraphQLProcessor {
 
     private static final DotName GRAPHQL_CLIENT_API = DotName.createSimple(GraphQLClientApi.class);
 
     private static final DotName OIDC_CLIENT_FILTER = DotName.createSimple(OidcClientFilter.class);
+
+    private static final DotName AUTHORIZATION_HEADER = DotName.createSimple(AuthorizationHeader.class);
+
+    private static final DotName HEADER = DotName.createSimple(Header.class);
+
+    private static final DotName HEADERS = DotName.createSimple(Headers.class);
 
     @BuildStep
     FeatureBuildItem feature() {
@@ -78,6 +88,8 @@ class OidcTokenPropagationGraphQLProcessor {
         serviceRegistrar.forService("io.quarkus.oidc-token-propagation-graphql.propagate-access-tokens")
                 .require(ArcContainer.class)
                 .afterBuildItem(GraphQLClientConfigInitializedBuildItem.class)
+                // the OIDC clients which exchange the access tokens must be created first
+                .after("io.quarkus.oidc-client.init-clients")
                 // GraphQL clients must propagate access tokens before the application starts using them
                 .before("io.quarkus.arc.startup-event")
                 .onStart((ctx, container) -> GraphQLAccessTokenProvider.propagateAccessTokens(ctx, container,
@@ -114,7 +126,7 @@ class OidcTokenPropagationGraphQLProcessor {
                                 + "annotate the client interface instead.",
                                 annotationTarget.asMethod().name(), instance.targetClass()));
             }
-            if (graphQLClientApi.hasDeclaredAnnotation(OIDC_CLIENT_FILTER)) {
+            if (graphQLClientApi.hasAnnotation(OIDC_CLIENT_FILTER)) {
                 throw new ConfigurationException(
                         String.format("GraphQL client '%s' is annotated with both @AccessToken and @OidcClientFilter; "
                                 + "both mechanisms set the Authorization header, so only one of them can be used "
@@ -147,7 +159,10 @@ class OidcTokenPropagationGraphQLProcessor {
                                 + "the same @AccessToken annotation or use different configuration keys.",
                                 expectedAccessToken.targetClass(), graphQLClientApi.name(), configKey));
             }
-            MethodInfo subscription = findSubscription(graphQLClientApi, index);
+            // GraphQL typesafe clients also have the methods and the headers of their parent interfaces
+            List<ClassInfo> interfaces = collectInterfaces(graphQLClientApi, index);
+            validateNoAuthorizationHeader(graphQLClientApi, interfaces);
+            MethodInfo subscription = findSubscription(interfaces);
             if (subscription != null) {
                 throw new ConfigurationException(
                         String.format("GraphQL client '%s' is annotated with @AccessToken, but its method '%s' is "
@@ -166,30 +181,67 @@ class OidcTokenPropagationGraphQLProcessor {
     }
 
     /**
+     * GraphQL clients send the propagated access token together with the {@code Authorization} header they already have.
+     */
+    private static void validateNoAuthorizationHeader(ClassInfo graphQLClientApi, List<ClassInfo> interfaces) {
+        for (ClassInfo currentInterface : interfaces) {
+            String annotation = null;
+            if (currentInterface.hasAnnotation(AUTHORIZATION_HEADER)) {
+                annotation = "@AuthorizationHeader";
+            } else {
+                for (AnnotationInstance header : currentInterface.annotationsWithRepeatable(HEADER, HEADERS)) {
+                    AnnotationValue name = header.value("name");
+                    if (name != null && "Authorization".equalsIgnoreCase(name.asString())) {
+                        annotation = "@Header";
+                    }
+                }
+            }
+            if (annotation != null) {
+                throw new ConfigurationException(
+                        String.format("GraphQL client '%s' is annotated with @AccessToken, but the %s annotation declared "
+                                + "in '%s' also sets the Authorization header; both mechanisms set the Authorization header, "
+                                + "so only one of them can be used on the same client.",
+                                graphQLClientApi.name(), annotation, currentInterface.name()));
+            }
+        }
+    }
+
+    /**
      * @return a method of the GraphQL client, or of one of its parent interfaces, which is always executed over WebSocket
      */
-    private static MethodInfo findSubscription(ClassInfo graphQLClientApi, IndexView index) {
-        Set<DotName> visitedInterfaces = new HashSet<>();
-        Deque<ClassInfo> interfaces = new ArrayDeque<>();
-        interfaces.add(graphQLClientApi);
-        while (!interfaces.isEmpty()) {
-            ClassInfo currentInterface = interfaces.poll();
-            if (!visitedInterfaces.add(currentInterface.name())) {
-                continue;
-            }
+    private static MethodInfo findSubscription(List<ClassInfo> interfaces) {
+        for (ClassInfo currentInterface : interfaces) {
             for (MethodInfo method : currentInterface.methods()) {
                 if (DotNames.MULTI.equals(method.returnType().name())) {
                     return method;
                 }
             }
+        }
+        return null;
+    }
+
+    /**
+     * @return the GraphQL client interface and its parent interfaces
+     */
+    private static List<ClassInfo> collectInterfaces(ClassInfo graphQLClientApi, IndexView index) {
+        List<ClassInfo> interfaces = new ArrayList<>();
+        Set<DotName> visitedInterfaces = new HashSet<>();
+        Deque<ClassInfo> remainingInterfaces = new ArrayDeque<>();
+        remainingInterfaces.add(graphQLClientApi);
+        while (!remainingInterfaces.isEmpty()) {
+            ClassInfo currentInterface = remainingInterfaces.poll();
+            if (!visitedInterfaces.add(currentInterface.name())) {
+                continue;
+            }
+            interfaces.add(currentInterface);
             for (DotName parentInterfaceName : currentInterface.interfaceNames()) {
                 ClassInfo parentInterface = index.getClassByName(parentInterfaceName);
                 if (parentInterface != null) {
-                    interfaces.add(parentInterface);
+                    remainingInterfaces.add(parentInterface);
                 }
             }
         }
-        return null;
+        return interfaces;
     }
 
     static class IsEnabled implements BooleanSupplier {
