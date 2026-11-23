@@ -17,6 +17,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import io.quarkus.oidc.AuthenticationContext;
 import io.quarkus.oidc.BearerTokenAuthentication;
 import io.quarkus.oidc.Tenant;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.test.QuarkusExtensionTest;
 import io.smallrye.jwt.build.Jwt;
 import io.vertx.ext.web.RoutingContext;
@@ -39,7 +40,7 @@ class AnnotationBasedSecurityOnBridgeMethodsTest {
                             AuthenticationContextOnClassResource.class, GenericJaxRsEndpoint.class,
                             GenericJaxRsEndpointResource.class, GenericParameterEndpoint.class,
                             GenericParameterEndpointResource.class, PackagePrivateResource.class,
-                            PublicSubclassResource.class)
+                            PublicSubclassResource.class, WithoutMechanismAnnotationResource.class)
                     // the test methods sign tokens with this key, and they run with the application class loader
                     .addAsResource("privateKey.pem"))
             .withConfiguration("""
@@ -164,6 +165,9 @@ class AnnotationBasedSecurityOnBridgeMethodsTest {
     }
 
     private static void assertBasicAuthenticationRejected(String path) {
+        // the credentials are valid, so only the @BearerTokenAuthentication annotation can reject them at the path
+        given().auth().preemptive().basic("alice", "alice").get("/without-mechanism-annotation")
+                .then().statusCode(200).body(is("alice"));
         // preemptive, because RestAssured otherwise only sends the credentials after a basic authentication challenge
         given().auth().preemptive().basic("alice", "alice").get(path).then().statusCode(401);
     }
@@ -330,5 +334,22 @@ class AnnotationBasedSecurityOnBridgeMethodsTest {
      */
     @Path("/public-subclass")
     public static class PublicSubclassResource extends PackagePrivateResource {
+    }
+
+    /**
+     * Has the same annotations as the other endpoints, except the {@code @BearerTokenAuthentication} annotation.
+     */
+    @Tenant("hr")
+    @AuthenticationContext("gold")
+    @Path("/without-mechanism-annotation")
+    public static class WithoutMechanismAnnotationResource {
+
+        @Inject
+        SecurityIdentity identity;
+
+        @GET
+        public String principalName() {
+            return identity.getPrincipal().getName();
+        }
     }
 }
