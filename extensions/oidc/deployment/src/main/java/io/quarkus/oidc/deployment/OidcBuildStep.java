@@ -421,7 +421,7 @@ public class OidcBuildStep {
     SyntheticBeanBuildItem registerTenantConfigBeanAsCdiBean() {
         return SyntheticBeanBuildItem.configure(TenantConfigBean.class).unremovable().types(TenantConfigBean.class)
                 .serviceValue(TenantConfigBean.class)
-                .scope(Singleton.class) // this should have been @ApplicationScoped but fails for some reason
+                .scope(Singleton.class)
                 .setRuntimeInit()
                 .done();
     }
