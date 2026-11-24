@@ -11,12 +11,12 @@ import java.util.Objects;
 import io.quarkus.oidc.Oidc;
 import io.quarkus.oidc.OidcTenantConfig;
 
-final class OidcImpl implements Oidc {
+public final class OidcImpl implements Oidc {
 
     private final Map<String, OidcTenantConfig> staticTenantConfigs;
     private OidcTenantConfig defaultTenantConfig;
 
-    OidcImpl(OidcConfig config) {
+    public OidcImpl(OidcConfig config) {
         this.defaultTenantConfig = OidcTenantConfig.of(OidcConfig.getDefaultTenant(config));
         this.staticTenantConfigs = getStaticTenants(config);
     }
