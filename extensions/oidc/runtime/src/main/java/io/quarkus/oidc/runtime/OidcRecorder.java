@@ -3,6 +3,8 @@ package io.quarkus.oidc.runtime;
 import static io.quarkus.runtime.configuration.DurationConverter.parseDuration;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -10,17 +12,23 @@ import jakarta.enterprise.util.TypeLiteral;
 
 import org.jboss.logging.Logger;
 
+import io.quarkus.arc.ArcContainer;
 import io.quarkus.arc.BeanCreator;
 import io.quarkus.arc.InjectableInstance;
 import io.quarkus.arc.SyntheticCreationalContext;
 import io.quarkus.arc.runtime.BeanContainer;
 import io.quarkus.oidc.DPoPNonceProvider;
+import io.quarkus.oidc.Oidc;
 import io.quarkus.oidc.OidcTenantConfig;
 import io.quarkus.oidc.TenantIdentityProvider;
+import io.quarkus.proxy.ProxyConfigurationRegistry;
 import io.quarkus.runtime.annotations.Recorder;
 import io.quarkus.security.AuthenticationFailedException;
+import io.quarkus.security.runtime.SecurityConfig;
 import io.quarkus.security.spi.runtime.BlockingSecurityExecutor;
+import io.quarkus.tls.TlsConfigurationRegistry;
 import io.vertx.core.Handler;
+import io.vertx.core.Vertx;
 import io.vertx.ext.web.RoutingContext;
 
 @Recorder
@@ -28,6 +36,15 @@ public class OidcRecorder {
     public static final String ACR_VALUES_TO_MAX_AGE_SEPARATOR = "@#$%@";
 
     static final Logger LOG = Logger.getLogger(OidcRecorder.class);
+
+    public static TenantConfigBean createTenantConfigBean(Vertx vertx, TlsConfigurationRegistry tlsConfigurationRegistry,
+            ProxyConfigurationRegistry proxyConfigurationRegistry, OidcConfig oidcConfig, SecurityConfig securityConfig,
+            ArcContainer container, List<OidcRoute> allowedRoutes, boolean userInfoInjectionPointDetected) {
+        final OidcImpl oidc = new OidcImpl(oidcConfig);
+        container.beanManager().getEvent().select(Oidc.class).fire(oidc);
+        return new TenantConfigBean(vertx, tlsConfigurationRegistry, oidc, securityConfig.events().enabled(),
+                proxyConfigurationRegistry, Set.copyOf(allowedRoutes), userInfoInjectionPointDetected);
+    }
 
     public static Function<String, Consumer<RoutingContext>> tenantResolverInterceptorCreator() {
         return new Function<String, Consumer<RoutingContext>>() {

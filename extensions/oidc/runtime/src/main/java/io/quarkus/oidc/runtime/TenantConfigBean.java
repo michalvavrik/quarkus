@@ -26,7 +26,7 @@ public final class TenantConfigBean {
     private final TenantConfigContext defaultTenant;
     private final TenantContextFactory tenantContextFactory;
 
-    public TenantConfigBean(Vertx vertx, TlsConfigurationRegistry tlsConfigurationRegistry, OidcImpl oidc,
+    TenantConfigBean(Vertx vertx, TlsConfigurationRegistry tlsConfigurationRegistry, OidcImpl oidc,
             boolean securityEventsEnabled, ProxyConfigurationRegistry proxyConfigurationRegistry,
             Set<OidcRoute> allowedRoutes, boolean userInfoInjectionPointDetected) {
         this.tenantContextFactory = new TenantContextFactory(vertx, tlsConfigurationRegistry, securityEventsEnabled,
