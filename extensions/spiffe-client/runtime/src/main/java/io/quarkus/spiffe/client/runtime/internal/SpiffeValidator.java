@@ -7,7 +7,7 @@ import java.util.List;
 
 import io.quarkus.spiffe.client.SpiffeConnectionException;
 
-final class SpiffeValidator {
+public final class SpiffeValidator {
 
     private static final String SPIFFE_URI_PREFIX = "spiffe://";
     private static final int URI_SAN_TYPE = 6;
@@ -17,7 +17,7 @@ final class SpiffeValidator {
     private SpiffeValidator() {
     }
 
-    static String validateLeaf(X509Certificate leaf) throws SpiffeConnectionException {
+    public static String validateLeaf(X509Certificate leaf) throws SpiffeConnectionException {
         if (leaf.getBasicConstraints() != -1) {
             throw new SpiffeConnectionException("Leaf certificate must not have CA flag set to true");
         }
@@ -63,7 +63,7 @@ final class SpiffeValidator {
         }
     }
 
-    static void validateSpiffeId(String spiffeId) throws SpiffeConnectionException {
+    public static void validateSpiffeId(String spiffeId) throws SpiffeConnectionException {
         if (spiffeId == null || spiffeId.isEmpty()) {
             throw new SpiffeConnectionException("SPIFFE ID must not be empty");
         }
