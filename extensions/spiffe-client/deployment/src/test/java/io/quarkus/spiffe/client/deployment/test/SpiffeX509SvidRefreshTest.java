@@ -7,7 +7,6 @@ import java.net.URI;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.LogRecord;
 
 import jakarta.inject.Inject;
@@ -49,6 +48,10 @@ public class SpiffeX509SvidRefreshTest {
             .overrideRuntimeConfigKey("quarkus.spiffe-client.endpoint-socket",
                     "${x509.quarkus.spiffe-client.endpoint-socket}")
             .overrideRuntimeConfigKey("quarkus.spiffe-client.x509-svid.refresh-period", "1s")
+            // the unchanged SVID is only visible in the trace log
+            .overrideConfigKey("quarkus.log.category.\"io.quarkus.spiffe.client.runtime.internal.tls\".min-level", "TRACE")
+            .overrideRuntimeConfigKey("quarkus.log.category.\"io.quarkus.spiffe.client.runtime.internal.tls\".level",
+                    "TRACE")
             .setLogRecordPredicate(record -> record.getLoggerName().startsWith("io.quarkus.spiffe.client.runtime"))
             .assertLogRecords(records -> {
                 List<String> messages = records.stream().map(LogRecord::getMessage).toList();
@@ -56,6 +59,7 @@ public class SpiffeX509SvidRefreshTest {
                 assertThat(messages).anyMatch(m -> m.contains("expired at"));
                 assertThat(messages).anyMatch(m -> m.contains("no longer issues an X.509-SVID"));
                 assertThat(messages).anyMatch(m -> m.contains("works again"));
+                assertThat(messages).anyMatch(m -> m.contains("is unchanged"));
             });
 
     @X509Svid(tls = "spiffe-refresh")
@@ -83,16 +87,17 @@ public class SpiffeX509SvidRefreshTest {
                 .setTrustOptions(configuration.getTrustStoreOptions())
                 .setClientAuth(ClientAuth.REQUIRED))
                 .requestHandler(request -> request.response().end());
-        server.listen(0, "localhost").toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        server.listen(0, "localhost").await(TIMEOUT);
     }
 
     @AfterEach
     void healthyAgentAgain() throws Exception {
         admin(SpiffeX509TestResource.X509_SVID_TTL_PATH, "P1D");
+        admin(SpiffeX509TestResource.X509_SVID_REUSE_PATH, "false");
         admin(SpiffeX509TestResource.MODE_PATH, "HEALTHY");
         await().atMost(TIMEOUT).ignoreExceptions()
                 .untilAsserted(() -> assertThat(lifetime(presentedCertificate())).isGreaterThan(TIMEOUT));
-        server.close().toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        server.close().await(TIMEOUT);
     }
 
     @Test
@@ -101,6 +106,16 @@ public class SpiffeX509SvidRefreshTest {
         X509Certificate first = presentedCertificate();
         await().atMost(TIMEOUT).ignoreExceptions()
                 .untilAsserted(() -> assertThat(presentedCertificate()).isNotEqualTo(first));
+    }
+
+    @Test
+    void unchangedSvidIsKept() throws Exception {
+        admin(SpiffeX509TestResource.X509_SVID_REUSE_PATH, "true");
+        // once the reused SVID is current, the refreshes keep presenting it
+        await().pollDelay(Duration.ofMillis(1500)).atMost(TIMEOUT).until(() -> true);
+        X509Certificate reused = presentedCertificate();
+        await().during(Duration.ofMillis(2500)).atMost(TIMEOUT).ignoreExceptions()
+                .until(() -> presentedCertificate().equals(reused));
     }
 
     @Test
@@ -136,14 +151,14 @@ public class SpiffeX509SvidRefreshTest {
                 .setTrustOptions(configuration.getTrustStoreOptions()));
         try {
             NetSocket socket = client.connect(server.actualPort(), "localhost")
-                    .toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+                    .await(TIMEOUT);
             try {
                 return (X509Certificate) socket.peerCertificates().getFirst();
             } finally {
                 socket.close();
             }
         } finally {
-            client.close().toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+            client.close().await(TIMEOUT);
         }
     }
 
@@ -166,11 +181,11 @@ public class SpiffeX509SvidRefreshTest {
         try {
             int status = client.request(HttpMethod.POST, uri.getPort(), uri.getHost(), path)
                     .compose(request -> request.send(Buffer.buffer(body)))
-                    .toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS)
+                    .await(TIMEOUT)
                     .statusCode();
             assertThat(status).isEqualTo(200);
         } finally {
-            client.close().toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+            client.close().await(TIMEOUT);
         }
     }
 }

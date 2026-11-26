@@ -68,6 +68,7 @@ public final class SpiffeX509TestResource implements QuarkusTestResourceLifecycl
     static final String SECONDARY_SPIFFE_ID = TEST_TRUST_DOMAIN + "/secondary-workload";
     static final String MODE_PATH = "/api/mode";
     static final String X509_SVID_TTL_PATH = "/api/x509-svid-ttl";
+    static final String X509_SVID_REUSE_PATH = "/api/x509-svid-reuse";
     private static final Duration DEFAULT_X509_SVID_TTL = Duration.ofDays(1);
 
     private static final ServiceName SERVICE_NAME = ServiceName.create("SpiffeWorkloadAPI");
@@ -81,6 +82,8 @@ public final class SpiffeX509TestResource implements QuarkusTestResourceLifecycl
     private volatile SocketAddress grpcAddress;
     private volatile X509Mode mode = X509Mode.HEALTHY;
     private volatile Duration x509SvidTtl = DEFAULT_X509_SVID_TTL;
+    private volatile boolean reuseX509Svid;
+    private volatile WorkloadSvid reusedX509Svid;
 
     private enum X509Mode {
         HEALTHY,
@@ -239,7 +242,7 @@ public final class SpiffeX509TestResource implements QuarkusTestResourceLifecycl
                     responseBuilder.addSvids(buildProtoSvid(certMaterial.chainDepth2Svid()));
                     break;
                 case MULTI_SVID:
-                    responseBuilder.addSvids(buildProtoSvid(certMaterial.defaultSvid(x509SvidTtl)));
+                    responseBuilder.addSvids(buildProtoSvid(defaultSvid()));
                     responseBuilder.addSvids(buildProtoSvid(certMaterial.secondarySvid(x509SvidTtl)));
                     break;
                 case EMPTY_SVIDS:
@@ -253,7 +256,7 @@ public final class SpiffeX509TestResource implements QuarkusTestResourceLifecycl
                             .build());
                     break;
                 default:
-                    responseBuilder.addSvids(buildProtoSvid(certMaterial.defaultSvid(x509SvidTtl)));
+                    responseBuilder.addSvids(buildProtoSvid(defaultSvid()));
                     break;
             }
         } catch (Exception e) {
@@ -299,6 +302,8 @@ public final class SpiffeX509TestResource implements QuarkusTestResourceLifecycl
             handleModeRequest(request);
         } else if (X509_SVID_TTL_PATH.equals(request.path())) {
             handleX509SvidTtlRequest(request);
+        } else if (X509_SVID_REUSE_PATH.equals(request.path())) {
+            handleX509SvidReuseRequest(request);
         } else {
             request.response().setStatusCode(404).end();
         }
@@ -321,6 +326,32 @@ public final class SpiffeX509TestResource implements QuarkusTestResourceLifecycl
         } else {
             request.response().setStatusCode(405).end();
         }
+    }
+
+    private void handleX509SvidReuseRequest(HttpServerRequest request) {
+        if (GET.equals(request.method())) {
+            request.response().putHeader("content-type", "text/plain").end(Boolean.toString(reuseX509Svid));
+        } else if (POST.equals(request.method())) {
+            request.body().onSuccess(body -> {
+                reuseX509Svid = Boolean.parseBoolean(body.toString().trim());
+                reusedX509Svid = null;
+                request.response().setStatusCode(200).end(Boolean.toString(reuseX509Svid));
+            });
+        } else {
+            request.response().setStatusCode(405).end();
+        }
+    }
+
+    private WorkloadSvid defaultSvid() {
+        if (!reuseX509Svid) {
+            return certMaterial.defaultSvid(x509SvidTtl);
+        }
+        WorkloadSvid svid = reusedX509Svid;
+        if (svid == null) {
+            svid = certMaterial.defaultSvid(x509SvidTtl);
+            reusedX509Svid = svid;
+        }
+        return svid;
     }
 
     private void handleModeRequest(HttpServerRequest request) {

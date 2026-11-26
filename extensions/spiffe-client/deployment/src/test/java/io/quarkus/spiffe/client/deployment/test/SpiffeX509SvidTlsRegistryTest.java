@@ -89,7 +89,7 @@ class SpiffeX509SvidTlsRegistryTest {
                         request.response().setStatusCode(500).end(e.toString());
                     }
                 });
-        server.listen(0, "localhost").toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        server.listen(0, "localhost").await(TIMEOUT);
         try {
             // the client authorizes the server SPIFFE ID, the server authorizes any workload of the trust domain;
             // the SVID carries no DNS name, so this also shows that hostname verification does not get in the way
@@ -105,7 +105,7 @@ class SpiffeX509SvidTlsRegistryTest {
             assertThatThrownBy(() -> get(unauthorized, server.actualPort()))
                     .hasStackTraceContaining("is not authorized by the TLS configuration 'spiffe-other'");
         } finally {
-            server.close().toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+            server.close().await(TIMEOUT);
         }
     }
 
@@ -122,10 +122,10 @@ class SpiffeX509SvidTlsRegistryTest {
             return client.request(HttpMethod.GET, port, "localhost", "/")
                     .compose(request -> request.send())
                     .compose(response -> response.body())
-                    .toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS)
+                    .await(TIMEOUT)
                     .toString();
         } finally {
-            client.close().toCompletionStage().toCompletableFuture().get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+            client.close().await(TIMEOUT);
         }
     }
 }
