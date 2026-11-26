@@ -48,4 +48,21 @@ public interface SpiffeClientConfig {
      */
     @WithDefault("10s")
     Duration requestTimeout();
+
+    /**
+     * Configuration of the X.509-SVID that backs the TLS configurations declared with {@code @X509Svid}.
+     */
+    X509SvidConfig x509Svid();
+
+    interface X509SvidConfig {
+
+        /**
+         * How often the X.509-SVID and the trust bundle are fetched from the SPIFFE Workload API.
+         * <p>
+         * The SPIRE agent rotates the X.509-SVID after about half of its lifetime, so the period must stay well below
+         * the SVID TTL. A period above a quarter of the lifetime of the fetched SVID is reported with a warning.
+         */
+        @WithDefault("5m")
+        Duration refreshPeriod();
+    }
 }

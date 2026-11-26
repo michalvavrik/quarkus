@@ -112,7 +112,8 @@ final class SpiffeKeyManager extends X509ExtendedKeyManager implements KeyCertOp
     private String chooseAlias(String... keyTypes) {
         WorkloadCertificateDocument document = manager.getWorkloadCertificateDocument();
         if (document == null) {
-            LOG.warnf("No X.509-SVID is available, the TLS configuration '%s' cannot present a certificate",
+            // the caching client already warned about the missing, expired or revoked SVID
+            LOG.debugf("No X.509-SVID is available, the TLS configuration '%s' cannot present a certificate",
                     tlsConfigurationName);
             return null;
         }

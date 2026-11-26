@@ -43,6 +43,7 @@ import io.quarkus.gizmo2.Gizmo;
 import io.quarkus.gizmo2.desc.ConstructorDesc;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.spiffe.client.SpiffeConnectionException;
+import io.quarkus.spiffe.client.runtime.internal.SpiffeClientConfig;
 import io.quarkus.spiffe.client.runtime.internal.SpiffeValidator;
 import io.quarkus.spiffe.client.runtime.internal.tls.SpiffeTlsConfigurationManager;
 import io.quarkus.spiffe.client.runtime.internal.tls.SpiffeTlsStoreProvider;
@@ -50,6 +51,7 @@ import io.quarkus.spiffe.svid.x509.X509Svid;
 import io.quarkus.spiffe.svid.x509.X509SvidClient;
 import io.quarkus.tls.TlsConfigurationRegistry;
 import io.smallrye.common.annotation.Identifier;
+import io.vertx.core.Vertx;
 
 final class SpiffeClientProcessor {
 
@@ -137,11 +139,14 @@ final class SpiffeClientProcessor {
                 .forService("io.quarkus.spiffe.client.initialize-tls-configurations")
                 .atPhase(Phase.DATA)
                 .require(SpiffeTlsConfigurationManager.class)
+                .require(Vertx.class)
+                .require(SpiffeClientConfig.class)
                 .after(TlsConfigurationRegistry.class)
                 // the first fetch instantiates the SpiffeClientImpl bean, which injects the runtime-init Vertx bean
                 .afterBuildItem(SyntheticBeansRuntimeInitBuildItem.class)
                 .before("io.quarkus.arc.startup-event")
-                .onStartAsync((ctx, provider) -> provider.initialize(ctx::startComplete, ctx::startFailed));
+                .onStartAsync((ctx, manager, vertx, config) -> manager.initialize(vertx,
+                        config.x509Svid().refreshPeriod(), ctx::startComplete, ctx::startFailed));
         return new ServiceStartBuildItem(FEATURE);
     }
 
