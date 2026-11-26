@@ -59,8 +59,10 @@ public interface SpiffeClientConfig {
         /**
          * How often the X.509-SVID and the trust bundle are fetched from the SPIFFE Workload API.
          * <p>
-         * The SPIRE agent rotates the X.509-SVID after about half of its lifetime, so the period must stay well below
-         * the SVID TTL. A period above a quarter of the lifetime of the fetched SVID is reported with a warning.
+         * The SPIRE agent issues a new X.509-SVID once about half of the lifetime of the current one has passed, and
+         * the workload has to fetch it before the current one expires. The period must therefore stay well below the
+         * SVID lifetime, one hour by default in SPIRE. A quarter of the lifetime still guarantees a fetch after the
+         * rotation, so a period above a quarter of the lifetime of the fetched SVID is reported with a warning.
          */
         @WithDefault("5m")
         Duration refreshPeriod();
