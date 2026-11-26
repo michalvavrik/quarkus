@@ -10,7 +10,6 @@ import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -38,9 +37,7 @@ final class SpiffeKeyManager extends X509ExtendedKeyManager implements KeyCertOp
 
     SpiffeKeyManager(String tlsConfigurationName, SpiffeTlsConfigurationManager manager) {
         this.tlsConfigurationName = tlsConfigurationName;
-        this.manager = Objects.requireNonNull(manager,
-                "The SPIFFE TLS configuration manager must be initialized before the TLS configuration '"
-                        + tlsConfigurationName + "' is created");
+        this.manager = manager;
     }
 
     @Override

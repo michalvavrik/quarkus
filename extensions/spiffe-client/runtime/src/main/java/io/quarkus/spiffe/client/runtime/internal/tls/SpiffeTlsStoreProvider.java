@@ -1,0 +1,68 @@
+package io.quarkus.spiffe.client.runtime.internal.tls;
+
+import static io.smallrye.common.expression.Expression.Flag.LENIENT_SYNTAX;
+import static io.smallrye.common.expression.Expression.Flag.NO_TRIM;
+
+import java.util.Optional;
+import java.util.Set;
+
+import org.jboss.logging.Logger;
+
+import io.quarkus.runtime.configuration.ConfigurationException;
+import io.quarkus.tls.KeyStoreAndKeyCertOptions;
+import io.quarkus.tls.KeyStoreProvider;
+import io.quarkus.tls.TrustStoreAndTrustOptions;
+import io.quarkus.tls.TrustStoreProvider;
+import io.smallrye.common.expression.Expression;
+import io.smallrye.config.Config;
+import io.vertx.core.Vertx;
+
+public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvider {
+
+    private static final Logger LOG = Logger.getLogger(SpiffeTlsStoreProvider.class);
+
+    private final SpiffeKeyManager keyManager;
+    private final SpiffeTrustManager trustManager;
+
+    // instantiated by the TLS registry on its start; the static-init manager and the runtime configuration exist by then
+    protected SpiffeTlsStoreProvider(String tlsConfigurationName, String spiffeId) {
+        SpiffeTlsConfigurationManager manager = SpiffeTlsConfigurationManager.get(tlsConfigurationName);
+        this.keyManager = new SpiffeKeyManager(tlsConfigurationName, manager);
+        this.trustManager = new SpiffeTrustManager(tlsConfigurationName, resolveSpiffeId(tlsConfigurationName, spiffeId),
+                manager);
+    }
+
+    @Override
+    public KeyStoreAndKeyCertOptions getKeyStore(Vertx vertx) {
+        // no raw store on purpose, the key manager reads the current X.509-SVID on every handshake
+        return new KeyStoreAndKeyCertOptions(null, keyManager);
+    }
+
+    @Override
+    public TrustStoreAndTrustOptions getTrustStore(Vertx vertx) {
+        // no raw store on purpose, a raw trust store cannot enforce the SPIFFE ID authorization
+        return new TrustStoreAndTrustOptions(null, trustManager);
+    }
+
+    private static String resolveSpiffeId(String tlsConfigurationName, String spiffeId) {
+        if (spiffeId == null || !spiffeId.contains("${")) {
+            return spiffeId;
+        }
+        Config config = Config.get();
+        String resolved = Expression.compile(spiffeId, LENIENT_SYNTAX, NO_TRIM).evaluate((context, builder) -> {
+            Optional<String> value = config.getOptionalValue(context.getKey(), String.class);
+            if (value.isPresent()) {
+                builder.append(value.get());
+            } else if (context.hasDefault()) {
+                context.expandDefault();
+            } else {
+                throw new ConfigurationException("Could not expand '" + context.getKey() + "' in the SPIFFE ID '"
+                        + spiffeId + "' of the TLS configuration '" + tlsConfigurationName + "'",
+                        Set.of(context.getKey()));
+            }
+        });
+        LOG.debugf("The SPIFFE ID '%s' of the TLS configuration '%s' resolved to '%s'", spiffeId, tlsConfigurationName,
+                resolved);
+        return resolved;
+    }
+}
