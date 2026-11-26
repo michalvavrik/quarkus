@@ -9,6 +9,9 @@ import java.util.Set;
 import org.jboss.logging.Logger;
 
 import io.quarkus.runtime.configuration.ConfigurationException;
+import io.quarkus.spiffe.client.SpiffeConnectionException;
+import io.quarkus.spiffe.client.runtime.internal.SpiffeValidator;
+import io.quarkus.spiffe.svid.x509.X509Svid;
 import io.quarkus.tls.KeyStoreAndKeyCertOptions;
 import io.quarkus.tls.KeyStoreProvider;
 import io.quarkus.tls.TrustStoreAndTrustOptions;
@@ -63,6 +66,15 @@ public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvi
         });
         LOG.debugf("The SPIFFE ID '%s' of the TLS configuration '%s' resolved to '%s'", spiffeId, tlsConfigurationName,
                 resolved);
+        // literals were validated by the SPIFFE client processor at build time, an expanded value only exists now
+        if (!X509Svid.SAME_TRUST_DOMAIN.equals(resolved)) {
+            try {
+                SpiffeValidator.validateSpiffeId(resolved);
+            } catch (SpiffeConnectionException e) {
+                throw new ConfigurationException("Invalid peer SPIFFE ID '" + resolved + "' of the TLS configuration '"
+                        + tlsConfigurationName + "': " + e.getMessage(), e);
+            }
+        }
         return resolved;
     }
 }

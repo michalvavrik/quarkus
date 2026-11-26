@@ -99,6 +99,7 @@ public final class SpiffeValidator {
             throw new SpiffeConnectionException("SPIFFE ID must not contain a fragment: " + spiffeId);
         }
 
+        // SPIFFE-ID 2.1 allows '_' in a trust domain, for now we do not: URI.getHost() is null for it
         String trustDomain = uri.getHost();
         if (trustDomain == null || trustDomain.isEmpty()) {
             throw new SpiffeConnectionException("SPIFFE ID must have a non-empty trust domain: " + spiffeId);
