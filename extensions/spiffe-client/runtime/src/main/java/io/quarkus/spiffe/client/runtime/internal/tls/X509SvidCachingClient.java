@@ -51,7 +51,7 @@ final class X509SvidCachingClient {
         this.refreshPeriod = refreshPeriod;
         instance = this;
         fetch()
-                .onFailure(failure -> !closed && retryable(failure)).retry()
+                .onFailure(X509SvidCachingClient::retryable).retry()
                 .withBackOff(timing.startupBackoff(), timing.startupMaxBackoff())
                 .expireIn(timing.startupTimeout().toMillis())
                 .onFailure().transform(failure -> new SpiffeConnectionException(retryable(failure)

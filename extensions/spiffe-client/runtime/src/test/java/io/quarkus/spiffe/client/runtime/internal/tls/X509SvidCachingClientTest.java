@@ -122,7 +122,7 @@ class X509SvidCachingClientTest {
                 .isInstanceOf(CompletionException.class)
                 .cause().isInstanceOf(SpiffeConnectionException.class)
                 .hasMessageContaining("rejected the X.509-SVID request")
-                .isSameAs(agent.failure);
+                .cause().isSameAs(agent.failure);
         assertThat(agent.fetches).hasValue(1);
     }
 
