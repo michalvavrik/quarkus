@@ -63,6 +63,9 @@ public interface SpiffeClientConfig {
          * the workload has to fetch it before the current one expires. The period must therefore stay well below the
          * SVID lifetime, one hour by default in SPIRE. A quarter of the lifetime still guarantees a fetch after the
          * rotation, so a period above a quarter of the lifetime of the fetched SVID is reported with a warning.
+         * <p>
+         * A failed fetch is retried once after ten seconds when the period is a minute or longer, otherwise the next
+         * period is the retry. The current SVID stays in use until a fetch succeeds or the SVID expires.
          */
         @WithDefault("5m")
         Duration refreshPeriod();

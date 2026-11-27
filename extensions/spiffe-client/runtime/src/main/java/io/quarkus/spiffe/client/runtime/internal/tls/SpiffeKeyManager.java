@@ -30,14 +30,14 @@ final class SpiffeKeyManager extends X509ExtendedKeyManager implements KeyCertOp
     private static final String ALIAS_PREFIX = "spiffe-";
 
     private final String tlsConfigurationName;
-    private final SpiffeTlsConfigurationManager manager;
+    private final X509SvidCachingClient client;
     // the JSSE asks for the alias first and for the key and the chain afterwards; the alias names the document, so a
     // rotation in between never pairs a new key with an old chain
     private final AtomicReference<Chosen> chosen = new AtomicReference<>(new Chosen(null, null));
 
-    SpiffeKeyManager(String tlsConfigurationName, SpiffeTlsConfigurationManager manager) {
+    SpiffeKeyManager(String tlsConfigurationName, X509SvidCachingClient client) {
         this.tlsConfigurationName = tlsConfigurationName;
-        this.manager = manager;
+        this.client = client;
     }
 
     @Override
@@ -110,7 +110,7 @@ final class SpiffeKeyManager extends X509ExtendedKeyManager implements KeyCertOp
     }
 
     private String chooseAlias(String... keyTypes) {
-        WorkloadCertificateDocument document = manager.getWorkloadCertificateDocument();
+        WorkloadCertificateDocument document = client.getCurrentWorkloadCertificate();
         if (document == null) {
             // the caching client already warned about the missing, expired or revoked SVID
             LOG.debugf("No X.509-SVID is available, the TLS configuration '%s' cannot present a certificate",

@@ -53,12 +53,12 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
 
     private final String tlsConfigurationName;
     private final String spiffeId;
-    private final SpiffeTlsConfigurationManager manager;
+    private final X509SvidCachingClient client;
 
-    SpiffeTrustManager(String tlsConfigurationName, String spiffeId, SpiffeTlsConfigurationManager manager) {
+    SpiffeTrustManager(String tlsConfigurationName, String spiffeId, X509SvidCachingClient client) {
         this.tlsConfigurationName = tlsConfigurationName;
         this.spiffeId = spiffeId;
-        this.manager = manager;
+        this.client = client;
     }
 
     @Override
@@ -149,7 +149,7 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
                     + " authentication", null);
         }
 
-        WorkloadCertificateDocument document = manager.getWorkloadCertificateDocument();
+        WorkloadCertificateDocument document = client.getCurrentWorkloadCertificate();
         if (document == null) {
             throw reject(peer, "no X.509-SVID trust bundle is available", null);
         }

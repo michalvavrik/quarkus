@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 import org.jboss.jandex.AnnotationInstance;
@@ -25,7 +26,6 @@ import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.arc.deployment.GeneratedBeanBuildItem;
 import io.quarkus.arc.deployment.GeneratedBeanGizmo2Adaptor;
 import io.quarkus.arc.deployment.SyntheticBeansRuntimeInitBuildItem;
-import io.quarkus.arc.runtime.BeanContainer;
 import io.quarkus.builder.item.MultiBuildItem;
 import io.quarkus.core.Phase;
 import io.quarkus.core.deployment.service.ServiceRegistrar;
@@ -40,12 +40,12 @@ import io.quarkus.deployment.builditem.ServiceStartBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ConstantBootstrapBuildItem;
 import io.quarkus.gizmo2.Const;
 import io.quarkus.gizmo2.Gizmo;
+import io.quarkus.gizmo2.ParamVar;
 import io.quarkus.gizmo2.desc.ConstructorDesc;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.spiffe.client.SpiffeConnectionException;
 import io.quarkus.spiffe.client.runtime.internal.SpiffeClientConfig;
 import io.quarkus.spiffe.client.runtime.internal.SpiffeValidator;
-import io.quarkus.spiffe.client.runtime.internal.tls.SpiffeTlsConfigurationManager;
 import io.quarkus.spiffe.client.runtime.internal.tls.SpiffeTlsStoreProvider;
 import io.quarkus.spiffe.svid.x509.X509Svid;
 import io.quarkus.spiffe.svid.x509.X509SvidClient;
@@ -115,21 +115,6 @@ final class SpiffeClientProcessor {
     }
 
     @BuildStep(onlyIf = SpiffeClientEnabled.class)
-    void registerTlsConfigurationManager(List<X509SvidDeclarationBuildItem> declarations, ServiceRegistrar serviceRegistrar) {
-        if (declarations.isEmpty()) {
-            return;
-        }
-        // static init completes before any runtime service starts, so the manager exists when the TLS registry starts
-        // and the generated store providers bind to it
-        serviceRegistrar
-                .forService(SpiffeTlsConfigurationManager.class)
-                .atPhase(Phase.STATIC_INIT)
-                .require(BeanContainer.class)
-                .onStart((ctx, container) -> SpiffeTlsConfigurationManager.createFrom(ctx::onStop,
-                        container.beanInstance(X509SvidClient.class)));
-    }
-
-    @BuildStep(onlyIf = SpiffeClientEnabled.class)
     ServiceStartBuildItem initializeTlsConfigurations(List<X509SvidDeclarationBuildItem> declarations,
             ServiceRegistrar serviceRegistrar) {
         if (declarations.isEmpty()) {
@@ -138,15 +123,14 @@ final class SpiffeClientProcessor {
         serviceRegistrar
                 .forService("io.quarkus.spiffe.client.initialize-tls-configurations")
                 .atPhase(Phase.DATA)
-                .require(SpiffeTlsConfigurationManager.class)
                 .require(Vertx.class)
                 .require(SpiffeClientConfig.class)
                 .after(TlsConfigurationRegistry.class)
                 // the first fetch instantiates the SpiffeClientImpl bean, which injects the runtime-init Vertx bean
                 .afterBuildItem(SyntheticBeansRuntimeInitBuildItem.class)
                 .before("io.quarkus.arc.startup-event")
-                .onStartAsync((ctx, manager, vertx, config) -> manager.initialize(vertx,
-                        config.x509Svid().refreshPeriod(), ctx::startComplete, ctx::startFailed));
+                .onStartAsync((ctx, vertx, config) -> SpiffeTlsStoreProvider.start(vertx,
+                        config.x509Svid().refreshPeriod(), ctx::onStop, ctx::startComplete, ctx::startFailed));
         return new ServiceStartBuildItem(FEATURE);
     }
 
@@ -157,8 +141,9 @@ final class SpiffeClientProcessor {
      * &#64;Singleton
      * &#64;Identifier("keycloak")
      * final class SpiffeTlsStoreProvider_keycloak_1a2b3c4d extends SpiffeTlsStoreProvider {
-     *     public SpiffeTlsStoreProvider_keycloak_1a2b3c4d() {
-     *         super("keycloak", "spiffe://example.org/keycloak");
+     *     &#64;Inject
+     *     public SpiffeTlsStoreProvider_keycloak_1a2b3c4d(X509SvidClient spiffeClient) {
+     *         super("keycloak", "spiffe://example.org/keycloak", spiffeClient);
      *     }
      * }
      * </pre>
@@ -174,7 +159,8 @@ final class SpiffeClientProcessor {
             return;
         }
         Gizmo gizmo = Gizmo.create(new GeneratedBeanGizmo2Adaptor(generatedBeans, constantBootstraps));
-        ConstructorDesc providerConstructor = ConstructorDesc.of(SpiffeTlsStoreProvider.class, String.class, String.class);
+        ConstructorDesc providerConstructor = ConstructorDesc.of(SpiffeTlsStoreProvider.class, String.class, String.class,
+                X509SvidClient.class);
         for (X509SvidDeclarationBuildItem declaration : declarations) {
             gizmo.class_(providerBeanClassName(declaration.tlsConfigurationName), cc -> {
                 cc.final_();
@@ -183,9 +169,11 @@ final class SpiffeClientProcessor {
                 cc.addAnnotation(Identifier.class, ac -> ac.add("value", declaration.tlsConfigurationName));
                 cc.constructor(constructor -> {
                     constructor.public_();
+                    constructor.addAnnotation(Inject.class);
+                    ParamVar spiffeClient = constructor.parameter("spiffeClient", pc -> pc.setType(X509SvidClient.class));
                     constructor.body(bc -> {
                         bc.invokeSpecial(providerConstructor, cc.this_(), Const.of(declaration.tlsConfigurationName),
-                                Const.of(declaration.spiffeId));
+                                Const.of(declaration.spiffeId), spiffeClient);
                         bc.return_();
                     });
                 });
