@@ -7,6 +7,10 @@ import jakarta.ws.rs.Path;
 public interface MtlsServerClient {
 
     @GET
-    String getPrincipal();
+    String getSpiffeId();
+
+    @GET
+    @Path("/certificate")
+    String getCertificate();
 
 }
