@@ -3,15 +3,19 @@ package io.quarkus.spiffe.client.runtime.internal.tls;
 import static io.smallrye.common.expression.Expression.Flag.LENIENT_SYNTAX;
 import static io.smallrye.common.expression.Expression.Flag.NO_TRIM;
 
+import java.time.Duration;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.jboss.logging.Logger;
 
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.spiffe.client.SpiffeConnectionException;
 import io.quarkus.spiffe.client.runtime.internal.SpiffeValidator;
+import io.quarkus.spiffe.svid.x509.WorkloadCertificateDocument;
 import io.quarkus.spiffe.svid.x509.X509Svid;
+import io.quarkus.spiffe.svid.x509.X509SvidClient;
 import io.quarkus.tls.KeyStoreAndKeyCertOptions;
 import io.quarkus.tls.KeyStoreProvider;
 import io.quarkus.tls.TrustStoreAndTrustOptions;
@@ -23,16 +27,22 @@ import io.vertx.core.Vertx;
 public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvider {
 
     private static final Logger LOG = Logger.getLogger(SpiffeTlsStoreProvider.class);
+    private static volatile X509SvidCachingClient cachingClient;
 
     private final SpiffeKeyManager keyManager;
     private final SpiffeTrustManager trustManager;
 
-    // instantiated by the TLS registry on its start; the static-init manager and the runtime configuration exist by then
-    protected SpiffeTlsStoreProvider(String tlsConfigurationName, String spiffeId) {
-        SpiffeTlsConfigurationManager manager = SpiffeTlsConfigurationManager.get(tlsConfigurationName);
-        this.keyManager = new SpiffeKeyManager(tlsConfigurationName, manager);
+    protected SpiffeTlsStoreProvider(String tlsConfigurationName, String spiffeId, X509SvidClient spiffeClient) {
+        this.keyManager = new SpiffeKeyManager(tlsConfigurationName, cachingClient(spiffeClient));
         this.trustManager = new SpiffeTrustManager(tlsConfigurationName, resolveSpiffeId(tlsConfigurationName, spiffeId),
-                manager);
+                cachingClient(spiffeClient));
+    }
+
+    // the service started after the TLS registry: fetches the first X.509-SVID, keeps it refreshed, stops at shutdown
+    public static void start(Vertx vertx, Duration refreshPeriod, Consumer<Runnable> onStop,
+            Consumer<WorkloadCertificateDocument> onComplete,
+            Consumer<Throwable> onFailure, X509SvidClient x509SvidClient) {
+        cachingClient(x509SvidClient).initialize(vertx, refreshPeriod, onStop, onFailure, onComplete);
     }
 
     @Override
@@ -45,6 +55,17 @@ public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvi
     public TrustStoreAndTrustOptions getTrustStore(Vertx vertx) {
         // no raw store on purpose, a raw trust store cannot enforce the SPIFFE ID authorization
         return new TrustStoreAndTrustOptions(null, trustManager);
+    }
+
+    private static X509SvidCachingClient cachingClient(X509SvidClient spiffeClient) {
+        if (cachingClient == null) {
+            synchronized (SpiffeTlsStoreProvider.class) {
+                if (cachingClient == null) {
+                    cachingClient = new X509SvidCachingClient(spiffeClient);
+                }
+            }
+        }
+        return cachingClient;
     }
 
     private static String resolveSpiffeId(String tlsConfigurationName, String spiffeId) {

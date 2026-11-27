@@ -26,6 +26,7 @@ import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.arc.deployment.GeneratedBeanBuildItem;
 import io.quarkus.arc.deployment.GeneratedBeanGizmo2Adaptor;
 import io.quarkus.arc.deployment.SyntheticBeansRuntimeInitBuildItem;
+import io.quarkus.arc.runtime.BeanContainer;
 import io.quarkus.builder.item.MultiBuildItem;
 import io.quarkus.core.Phase;
 import io.quarkus.core.deployment.service.ServiceRegistrar;
@@ -125,12 +126,14 @@ final class SpiffeClientProcessor {
                 .atPhase(Phase.DATA)
                 .require(Vertx.class)
                 .require(SpiffeClientConfig.class)
+                .require(BeanContainer.class)
                 .after(TlsConfigurationRegistry.class)
                 // the first fetch instantiates the SpiffeClientImpl bean, which injects the runtime-init Vertx bean
                 .afterBuildItem(SyntheticBeansRuntimeInitBuildItem.class)
                 .before("io.quarkus.arc.startup-event")
-                .onStartAsync((ctx, vertx, config) -> SpiffeTlsStoreProvider.start(vertx,
-                        config.x509Svid().refreshPeriod(), ctx::onStop, ctx::startComplete, ctx::startFailed));
+                .onStartAsync((ctx, vertx, config, beanContainer) -> SpiffeTlsStoreProvider.start(vertx,
+                        config.x509Svid().refreshPeriod(), ctx::onStop, i -> ctx.startComplete(), ctx::startFailed,
+                        beanContainer.beanInstance(X509SvidClient.class)));
         return new ServiceStartBuildItem(FEATURE);
     }
 
