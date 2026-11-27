@@ -29,6 +29,8 @@ import io.vertx.core.net.ServerSSLOptions;
 
 public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvider {
 
+    // published by the SPIFFE Dev Service, which does not issue X.509-SVIDs
+    public static final String DEV_SERVICE_ENDPOINT_SOCKET = "dev-svc.quarkus.spiffe-client.devservices.endpoint-socket";
     private static final Logger LOG = Logger.getLogger(SpiffeTlsStoreProvider.class);
     // every start replaces it, and the managers read it on every handshake because a dev mode restart keeps the HTTP
     // server with the managers of the first start
@@ -56,9 +58,23 @@ public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvi
                         Set.of("quarkus.tls." + tlsConfigurationName + ".certificate-revocation-list"));
             }
         }
+        if (isDevServiceEndpoint()) {
+            LOG.warnf("The SPIFFE Dev Service does not issue X.509-SVIDs, so TLS handshakes with the configurations %s"
+                    + " declared with @X509Svid fail. Configure 'quarkus.spiffe-client.endpoint-socket' with a Workload API"
+                    + " that issues X.509-SVIDs.", tlsConfigurationNames);
+            onComplete.accept(null);
+            return;
+        }
         X509SvidCachingClientImpl client = new X509SvidCachingClientImpl(x509SvidClient);
         cachingClient = client;
         client.initialize(vertx, refreshPeriod, onStop, onFailure, onComplete);
+    }
+
+    private static boolean isDevServiceEndpoint() {
+        Config config = Config.get();
+        Optional<String> devServiceEndpoint = config.getOptionalValue(DEV_SERVICE_ENDPOINT_SOCKET, String.class);
+        return devServiceEndpoint.isPresent()
+                && devServiceEndpoint.equals(config.getOptionalValue("quarkus.spiffe-client.endpoint-socket", String.class));
     }
 
     private static WorkloadCertificateDocument currentWorkloadCertificate() {
