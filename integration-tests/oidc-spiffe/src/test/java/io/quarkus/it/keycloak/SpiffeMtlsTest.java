@@ -1,20 +1,22 @@
 package io.quarkus.it.keycloak;
 
-import static org.hamcrest.Matchers.emptyString;
+import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.not;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.net.URL;
+import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.RestAssured;
+import io.restassured.response.ValidatableResponse;
 
-// POC for SPIFFE X.509-SVID mTLS — will evolve with #55412 (TLS registry integration) and #55338 (SPIFFE cert verification)
 @QuarkusTest
 @QuarkusTestResource(value = SpiffeX509MtlsTestResource.class, restrictToAnnotatedClass = true)
 class SpiffeMtlsTest {
@@ -22,45 +24,43 @@ class SpiffeMtlsTest {
     @TestHTTPResource(value = "/", tls = true)
     URL httpsBaseUrl;
 
-    @Test
-    void webclientAuthenticated() {
-        var result = RestAssured.given()
-                .queryParam("port", httpsBaseUrl.getPort())
-                .get("/spiffe/mtls/client/webclient/authenticated")
-                .then().statusCode(200)
-                .body("actualPrincipal", not(emptyString()))
-                .body("expectedPrincipal", not(emptyString()))
-                .extract().as(SpiffeMtlsResource.MtlsResult.class);
-        assertEquals(result.expectedPrincipal(), result.actualPrincipal());
+    @ParameterizedTest
+    @ValueSource(strings = { "rest", "webclient" })
+    void serverAuthenticatesClientSpiffeId(String client) {
+        call(client, "spiffe-client").statusCode(200).body(equalTo("spiffe://test.quarkus.io/test-workload"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "rest", "webclient" })
+    void clientRejectsServerWithOtherSpiffeId(String client) {
+        call(client, "spiffe-other-peer").statusCode(500)
+                .body(containsString("is not authorized by the TLS configuration 'spiffe-other-peer'"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "rest", "webclient" })
+    void serverRejectsClientWithoutCertificate(String client) {
+        call(client, "anonymous").statusCode(500);
     }
 
     @Test
-    void webclientUnauthorized() {
-        RestAssured.given()
-                .queryParam("port", httpsBaseUrl.getPort())
-                .get("/spiffe/mtls/client/webclient/unauthorized")
-                .then().statusCode(200)
-                .body(equalTo("401"));
+    void serverPresentsRotatedSvid() {
+        String first = serverCertificate();
+        await().atMost(Duration.ofSeconds(10)).until(() -> !serverCertificate().equals(first));
     }
 
-    @Test
-    void restAuthenticated() {
-        var result = RestAssured.given()
+    private ValidatableResponse call(String client, String tlsConfigurationName) {
+        return RestAssured.given()
                 .queryParam("port", httpsBaseUrl.getPort())
-                .get("/spiffe/mtls/client/rest/authenticated")
-                .then().statusCode(200)
-                .body("actualPrincipal", not(emptyString()))
-                .body("expectedPrincipal", not(emptyString()))
-                .extract().as(SpiffeMtlsResource.MtlsResult.class);
-        assertEquals(result.expectedPrincipal(), result.actualPrincipal());
+                .get("/spiffe/mtls/client/" + client + "/" + tlsConfigurationName)
+                .then();
     }
 
-    @Test
-    void restUnauthorized() {
-        RestAssured.given()
+    private String serverCertificate() {
+        return RestAssured.given()
                 .queryParam("port", httpsBaseUrl.getPort())
-                .get("/spiffe/mtls/client/rest/unauthorized")
+                .get("/spiffe/mtls/client/rest/server-certificate")
                 .then().statusCode(200)
-                .body(equalTo("401"));
+                .extract().asString();
     }
 }
