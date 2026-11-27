@@ -4,7 +4,6 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 
-import java.net.URL;
 import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
@@ -12,7 +11,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import io.quarkus.test.common.QuarkusTestResource;
-import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.RestAssured;
 import io.restassured.response.ValidatableResponse;
@@ -20,9 +18,6 @@ import io.restassured.response.ValidatableResponse;
 @QuarkusTest
 @QuarkusTestResource(value = SpiffeX509MtlsTestResource.class, restrictToAnnotatedClass = true)
 class SpiffeMtlsTest {
-
-    @TestHTTPResource(value = "/", tls = true)
-    URL httpsBaseUrl;
 
     @ParameterizedTest
     @ValueSource(strings = { "rest", "webclient" })
@@ -44,23 +39,22 @@ class SpiffeMtlsTest {
     }
 
     @Test
+    void configuredRestClientUsesTlsConfigurationByName() {
+        RestAssured.get("/spiffe/mtls/client/configured-rest")
+                .then().statusCode(200).body(equalTo("spiffe://test.quarkus.io/test-workload"));
+    }
+
+    @Test
     void serverPresentsRotatedSvid() {
         String first = serverCertificate();
         await().atMost(Duration.ofSeconds(10)).until(() -> !serverCertificate().equals(first));
     }
 
     private ValidatableResponse call(String client, String tlsConfigurationName) {
-        return RestAssured.given()
-                .queryParam("port", httpsBaseUrl.getPort())
-                .get("/spiffe/mtls/client/" + client + "/" + tlsConfigurationName)
-                .then();
+        return RestAssured.get("/spiffe/mtls/client/" + client + "/" + tlsConfigurationName).then();
     }
 
     private String serverCertificate() {
-        return RestAssured.given()
-                .queryParam("port", httpsBaseUrl.getPort())
-                .get("/spiffe/mtls/client/rest/server-certificate")
-                .then().statusCode(200)
-                .extract().asString();
+        return RestAssured.get("/spiffe/mtls/client/rest/server-certificate").then().statusCode(200).extract().asString();
     }
 }

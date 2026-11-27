@@ -19,12 +19,14 @@ import io.quarkus.spiffe.svid.x509.X509Svid;
 import io.quarkus.spiffe.svid.x509.X509SvidClient;
 import io.quarkus.tls.KeyStoreAndKeyCertOptions;
 import io.quarkus.tls.KeyStoreProvider;
+import io.quarkus.tls.TlsConfiguration;
 import io.quarkus.tls.TlsConfigurationRegistry;
 import io.quarkus.tls.TrustStoreAndTrustOptions;
 import io.quarkus.tls.TrustStoreProvider;
 import io.smallrye.common.expression.Expression;
 import io.smallrye.config.Config;
 import io.vertx.core.Vertx;
+import io.vertx.core.net.OpenSSLEngineOptions;
 import io.vertx.core.net.ServerSSLOptions;
 
 public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvider {
@@ -50,12 +52,18 @@ public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvi
             Consumer<WorkloadCertificateDocument> onComplete, Consumer<Throwable> onFailure, X509SvidClient x509SvidClient,
             TlsConfigurationRegistry registry, Set<String> tlsConfigurationNames) {
         for (String tlsConfigurationName : tlsConfigurationNames) {
+            TlsConfiguration configuration = registry.get(tlsConfigurationName).orElseThrow();
             // Vert.x wraps a trust manager with a CRL into a plain X509TrustManager, the JDK then verifies host names
-            ServerSSLOptions options = registry.get(tlsConfigurationName).orElseThrow().getServerSSLOptions();
+            ServerSSLOptions options = configuration.getServerSSLOptions();
             if (!options.getCrlValues().isEmpty() || !options.getCrlPaths().isEmpty()) {
                 throw new ConfigurationException("The TLS configuration '" + tlsConfigurationName
                         + "' is backed by the X.509-SVID and does not support a certificate revocation list",
                         Set.of("quarkus.tls." + tlsConfigurationName + ".certificate-revocation-list"));
+            }
+            if (configuration.getSslEngineOptions().orElse(null) instanceof OpenSSLEngineOptions) {
+                throw new ConfigurationException("The TLS configuration '" + tlsConfigurationName
+                        + "' is backed by the X.509-SVID and does not support the OpenSSL engine",
+                        Set.of("quarkus.tls." + tlsConfigurationName + ".ssl-engine"));
             }
         }
         if (isDevServiceEndpoint()) {

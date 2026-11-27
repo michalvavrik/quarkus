@@ -13,11 +13,13 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.Response;
 
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+
 import io.quarkus.rest.client.reactive.QuarkusRestClientBuilder;
+import io.quarkus.runtime.AddressResolver;
 import io.quarkus.security.credential.CertificateCredential;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.tls.BaseTlsConfiguration;
@@ -46,6 +48,10 @@ public class SpiffeMtlsResource {
     @Inject
     Vertx vertx;
 
+    @Inject
+    @RestClient
+    MtlsServerClient configuredClient;
+
     @GET
     @Path("/server")
     public String server() throws CertificateParsingException {
@@ -68,8 +74,8 @@ public class SpiffeMtlsResource {
     @Blocking
     @GET
     @Path("/client/rest/{tls}")
-    public Response rest(@PathParam("tls") String tlsConfigurationName, @QueryParam("port") int port) throws IOException {
-        MtlsServerClient client = restClient(tlsConfigurationName, port);
+    public Response rest(@PathParam("tls") String tlsConfigurationName) throws IOException {
+        MtlsServerClient client = restClient(tlsConfigurationName);
         try {
             return Response.ok(client.getSpiffeId()).build();
         } catch (RuntimeException e) {
@@ -79,12 +85,19 @@ public class SpiffeMtlsResource {
         }
     }
 
+    @Blocking
+    @GET
+    @Path("/client/configured-rest")
+    public String configuredRest() {
+        return configuredClient.getSpiffeId();
+    }
+
     // a new client per call, so that no TLS session is resumed and the server presents its current certificate
     @Blocking
     @GET
     @Path("/client/rest/server-certificate")
-    public String restServerCertificate(@QueryParam("port") int port) throws IOException {
-        MtlsServerClient client = restClient(SpiffeMtlsSetup.CLIENT, port);
+    public String restServerCertificate() throws IOException {
+        MtlsServerClient client = restClient(SpiffeMtlsSetup.CLIENT);
         try {
             return client.getCertificate();
         } finally {
@@ -94,23 +107,24 @@ public class SpiffeMtlsResource {
 
     @GET
     @Path("/client/webclient/{tls}")
-    public Uni<Response> webclient(@PathParam("tls") String tlsConfigurationName, @QueryParam("port") int port) {
+    public Uni<Response> webclient(@PathParam("tls") String tlsConfigurationName) {
         TlsConfiguration configuration = tlsConfiguration(tlsConfigurationName);
         WebClient client = WebClient.create(vertx, new WebClientOptions()
                 .setSsl(true)
                 .setKeyCertOptions(configuration.getKeyStoreOptions())
                 .setTrustOptions(configuration.getTrustStoreOptions()));
+        URI server = AddressResolver.resolve("quarkus://vertx-https/spiffe/mtls/server");
         return Uni.createFrom().completionStage(
-                client.get(port, "localhost", "/spiffe/mtls/server").send().toCompletionStage())
+                client.get(server.getPort(), server.getHost(), server.getPath()).send().toCompletionStage())
                 .map(HttpResponse::bodyAsString)
                 .map(spiffeId -> Response.ok(spiffeId).build())
                 .onFailure().recoverWithItem(SpiffeMtlsResource::failure)
                 .eventually(client::close);
     }
 
-    private MtlsServerClient restClient(String tlsConfigurationName, int port) {
+    private MtlsServerClient restClient(String tlsConfigurationName) {
         return QuarkusRestClientBuilder.newBuilder()
-                .baseUri(URI.create("https://localhost:" + port))
+                .baseUri(AddressResolver.resolve("quarkus://vertx-https"))
                 .tlsConfiguration(tlsConfiguration(tlsConfigurationName))
                 .build(MtlsServerClient.class);
     }

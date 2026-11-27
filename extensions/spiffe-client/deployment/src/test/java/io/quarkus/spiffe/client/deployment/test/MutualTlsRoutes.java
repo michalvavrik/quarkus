@@ -1,11 +1,11 @@
 package io.quarkus.spiffe.client.deployment.test;
 
+import java.net.URI;
 import java.security.cert.X509Certificate;
 
 import jakarta.enterprise.event.Observes;
 
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-
+import io.quarkus.runtime.AddressResolver;
 import io.quarkus.spiffe.svid.x509.X509Svid;
 import io.quarkus.tls.TlsConfiguration;
 import io.quarkus.tls.TlsConfigurationRegistry;
@@ -20,8 +20,7 @@ import io.vertx.ext.web.Router;
 @X509Svid(tls = "spiffe-client", spiffeId = "spiffe://test.quarkus.io/test-workload")
 class MutualTlsRoutes {
 
-    void routes(@Observes Router router, TlsConfigurationRegistry registry, Vertx vertx,
-            @ConfigProperty(name = "quarkus.http.ssl-port") int sslPort) {
+    void routes(@Observes Router router, TlsConfigurationRegistry registry, Vertx vertx) {
         router.get("/peer").handler(rc -> {
             try {
                 X509Certificate client = (X509Certificate) rc.request().connection().peerCertificates().getFirst();
@@ -36,7 +35,8 @@ class MutualTlsRoutes {
                     .setSsl(true)
                     .setKeyCertOptions(configuration.getKeyStoreOptions())
                     .setTrustOptions(configuration.getTrustStoreOptions()));
-            client.request(HttpMethod.GET, sslPort, "localhost", "/peer")
+            URI peer = AddressResolver.resolve("quarkus://vertx-https/peer");
+            client.request(HttpMethod.GET, peer.getPort(), peer.getHost(), peer.getPath())
                     .compose(request -> request.send())
                     .compose(HttpClientResponse::body)
                     .andThen(ignored -> client.close())
