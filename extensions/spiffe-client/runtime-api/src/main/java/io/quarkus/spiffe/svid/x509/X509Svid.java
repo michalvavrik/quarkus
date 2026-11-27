@@ -21,9 +21,9 @@ import io.smallrye.common.annotation.Experimental;
  * Using this annotation requires the Quarkus TLS registry extension ({@code quarkus-tls-registry}) to be present; the
  * build fails otherwise.
  * <p>
- * The generated TLS configuration enforces the {@link #spiffeId()} authorization through the TLS registry options.
- * Extensions that consume its raw key store or trust store directly are unsupported and fail fast, since a raw store
- * cannot carry that authorization.
+ * The generated TLS configuration enforces the {@link #spiffeId()} authorization through the TLS registry options. It
+ * has no raw key store or trust store, so extensions that read {@code TlsConfiguration#getKeyStore()} or
+ * {@code getTrustStore()} are not supported.
  */
 @Experimental("This API is currently experimental and might get changed")
 @Retention(RUNTIME)
@@ -55,8 +55,8 @@ public @interface X509Svid {
      * <p>
      * All {@code @X509Svid} declarations provision the same X.509-SVID and trust bundle, so they differ only in the peer
      * they authorize. Each {@code spiffeId}, including {@link #SAME_TRUST_DOMAIN}, must therefore be unique across
-     * declarations; an explicit SPIFFE ID must also be valid. The SPIFFE client validates both and fails application
-     * startup otherwise.
+     * declarations. An invalid or duplicate SPIFFE ID fails the build. A SPIFFE ID from a property expression is
+     * validated at application startup and is not checked for duplicates.
      */
     String spiffeId() default SAME_TRUST_DOMAIN;
 

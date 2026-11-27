@@ -27,23 +27,20 @@ import io.vertx.core.Vertx;
 public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvider {
 
     private static final Logger LOG = Logger.getLogger(SpiffeTlsStoreProvider.class);
-    private static volatile X509SvidCachingClient cachingClient;
 
     private final SpiffeKeyManager keyManager;
     private final SpiffeTrustManager trustManager;
 
-    protected SpiffeTlsStoreProvider(String tlsConfigurationName, String spiffeId, X509SvidClient spiffeClient) {
-        this.keyManager = new SpiffeKeyManager(tlsConfigurationName, cachingClient(spiffeClient));
-        this.trustManager = new SpiffeTrustManager(tlsConfigurationName, resolveSpiffeId(tlsConfigurationName, spiffeId),
-                cachingClient(spiffeClient));
+    protected SpiffeTlsStoreProvider(String tlsConfigurationName, String spiffeId) {
+        this.keyManager = new SpiffeKeyManager(tlsConfigurationName);
+        this.trustManager = new SpiffeTrustManager(tlsConfigurationName, resolveSpiffeId(tlsConfigurationName, spiffeId));
     }
 
     // the service started after the TLS registry: fetches the first X.509-SVID, keeps it refreshed, stops at shutdown
     public static void start(Vertx vertx, Duration refreshPeriod, Consumer<Runnable> onStop,
             Consumer<WorkloadCertificateDocument> onComplete,
             Consumer<Throwable> onFailure, X509SvidClient x509SvidClient) {
-        cachingClient(x509SvidClient).initialize(vertx, refreshPeriod, onStop, onFailure, onComplete);
-        onStop.accept(() -> cachingClient = null);
+        new X509SvidCachingClient(x509SvidClient).initialize(vertx, refreshPeriod, onStop, onFailure, onComplete);
     }
 
     @Override
@@ -56,18 +53,6 @@ public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvi
     public TrustStoreAndTrustOptions getTrustStore(Vertx vertx) {
         // no raw store on purpose, a raw trust store cannot enforce the SPIFFE ID authorization
         return new TrustStoreAndTrustOptions(null, trustManager);
-    }
-
-    private static X509SvidCachingClient cachingClient(X509SvidClient spiffeClient) {
-        var current = cachingClient;
-        if (current == null) {
-            synchronized (SpiffeTlsStoreProvider.class) {
-                if (cachingClient == null) {
-                    current = cachingClient = new X509SvidCachingClient(spiffeClient);
-                }
-            }
-        }
-        return current;
     }
 
     private static String resolveSpiffeId(String tlsConfigurationName, String spiffeId) {

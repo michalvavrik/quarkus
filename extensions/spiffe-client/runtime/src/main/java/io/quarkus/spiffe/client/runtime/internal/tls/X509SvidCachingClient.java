@@ -15,10 +15,14 @@ import io.quarkus.spiffe.svid.x509.WorkloadCertificateDocument;
 import io.quarkus.spiffe.svid.x509.X509SvidClient;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.Vertx;
+import io.vertx.grpc.client.InvalidStatusException;
+import io.vertx.grpc.common.GrpcStatus;
 
 final class X509SvidCachingClient {
 
     private static final Logger LOG = Logger.getLogger(X509SvidCachingClient.class);
+    // the client of the running application, initialize() replaces it because a dev mode restart keeps this class
+    private static volatile X509SvidCachingClient instance;
 
     private final X509SvidClient delegate;
     private final Timing timing;
@@ -45,11 +49,16 @@ final class X509SvidCachingClient {
             throw new ConfigurationException("The X.509-SVID refresh period must be positive, got " + refreshPeriod);
         }
         this.refreshPeriod = refreshPeriod;
+        instance = this;
         fetch()
-                .onFailure(failure -> !closed).retry().withBackOff(timing.startupBackoff(), timing.startupMaxBackoff())
+                .onFailure(failure -> !closed && retryable(failure)).retry()
+                .withBackOff(timing.startupBackoff(), timing.startupMaxBackoff())
                 .expireIn(timing.startupTimeout().toMillis())
-                .onFailure().transform(failure -> new SpiffeConnectionException(
-                        "No X.509-SVID was obtained from the Workload API within " + timing.startupTimeout(), failure))
+                .onFailure().transform(failure -> new SpiffeConnectionException(retryable(failure)
+                        ? "No X.509-SVID was obtained from the Workload API within " + timing.startupTimeout()
+                        : "The Workload API at 'quarkus.spiffe-client.endpoint-socket' rejected the X.509-SVID request,"
+                                + " retrying cannot fix it",
+                        failure))
                 .invoke(() -> {
                     long timer = vertx.setPeriodic(refreshPeriod.toMillis(), ignored -> refresh());
                     onStop.accept(() -> {
@@ -59,6 +68,11 @@ final class X509SvidCachingClient {
                 })
                 .subscribe()
                 .with(onComplete, onFailure);
+    }
+
+    static WorkloadCertificateDocument currentWorkloadCertificate() {
+        X509SvidCachingClient instance = X509SvidCachingClient.instance;
+        return instance == null ? null : instance.getCurrentWorkloadCertificate();
     }
 
     WorkloadCertificateDocument getCurrentWorkloadCertificate() {
@@ -88,7 +102,7 @@ final class X509SvidCachingClient {
         }
         Uni<WorkloadCertificateDocument> fetch = fetch();
         if (refreshPeriod.compareTo(timing.tickRetryMinPeriod()) >= 0) {
-            fetch = fetch.onFailure(failure -> !closed).retry()
+            fetch = fetch.onFailure(failure -> !closed && retryable(failure)).retry()
                     .withBackOff(timing.tickRetryDelay(), timing.tickRetryDelay()).atMost(1);
         }
         fetch.subscribe().with(document -> fetching.set(false), failure -> fetching.set(false));
@@ -122,7 +136,7 @@ final class X509SvidCachingClient {
             return;
         }
         if (failure instanceof SpiffeAuthorizationException && current != null) {
-            // Workload API 5.2.1: a workload the agent no longer authorizes must stop using its SVID
+            // Workload API 5.2.1: a workload the agent no longer authorizes should stop using its SVID
             current = null;
             LOG.warnf("The Workload API no longer issues an X.509-SVID to this workload (%s); the TLS configurations"
                     + " present no certificate and trust no peer until it does", failure.getMessage());
@@ -133,6 +147,13 @@ final class X509SvidCachingClient {
         } else {
             LOG.debugf(failure, "Fetching the X.509-SVID from the Workload API keeps failing");
         }
+    }
+
+    // SPIFFE Workload Endpoint 6: INVALID_ARGUMENT is a client error that retrying cannot fix, UNIMPLEMENTED means the
+    // endpoint has no FetchX509SVID
+    private static boolean retryable(Throwable failure) {
+        return !(failure.getCause() instanceof InvalidStatusException e
+                && (e.actualStatus() == GrpcStatus.INVALID_ARGUMENT || e.actualStatus() == GrpcStatus.UNIMPLEMENTED));
     }
 
     private void warnAboutRefreshPeriod(X509Certificate leaf) {

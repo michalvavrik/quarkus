@@ -32,6 +32,8 @@ import io.smallrye.certs.KeyAlgorithm;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.UniEmitter;
 import io.vertx.core.Vertx;
+import io.vertx.grpc.client.InvalidStatusException;
+import io.vertx.grpc.common.GrpcStatus;
 
 class X509SvidCachingClientTest {
 
@@ -107,6 +109,21 @@ class X509SvidCachingClientTest {
                 .hasCauseInstanceOf(SpiffeConnectionException.class);
         assertThat(agent.fetches.get()).isGreaterThan(3);
         assertThat(client.getCurrentWorkloadCertificate()).isNull();
+    }
+
+    @Test
+    void unimplementedMethodIsNotRetried() {
+        StubClient agent = new StubClient(document(leaf));
+        agent.failure = new SpiffeConnectionException("UNIMPLEMENTED",
+                new InvalidStatusException(GrpcStatus.OK, GrpcStatus.UNIMPLEMENTED));
+        agent.failuresLeft = Integer.MAX_VALUE;
+        client = new X509SvidCachingClient(agent, FAST);
+        assertThatThrownBy(() -> initialize(client, Duration.ofMinutes(5)).await().atMost(TIMEOUT))
+                .isInstanceOf(CompletionException.class)
+                .cause().isInstanceOf(SpiffeConnectionException.class)
+                .hasMessageContaining("rejected the X.509-SVID request")
+                .isSameAs(agent.failure);
+        assertThat(agent.fetches).hasValue(1);
     }
 
     @Test

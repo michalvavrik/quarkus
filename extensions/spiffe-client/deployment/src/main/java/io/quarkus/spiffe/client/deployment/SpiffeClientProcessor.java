@@ -16,7 +16,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
-import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 import org.jboss.jandex.AnnotationInstance;
@@ -41,7 +40,6 @@ import io.quarkus.deployment.builditem.ServiceStartBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ConstantBootstrapBuildItem;
 import io.quarkus.gizmo2.Const;
 import io.quarkus.gizmo2.Gizmo;
-import io.quarkus.gizmo2.ParamVar;
 import io.quarkus.gizmo2.desc.ConstructorDesc;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.spiffe.client.SpiffeConnectionException;
@@ -144,9 +142,8 @@ final class SpiffeClientProcessor {
      * &#64;Singleton
      * &#64;Identifier("keycloak")
      * final class SpiffeTlsStoreProvider_keycloak_1a2b3c4d extends SpiffeTlsStoreProvider {
-     *     &#64;Inject
-     *     public SpiffeTlsStoreProvider_keycloak_1a2b3c4d(X509SvidClient spiffeClient) {
-     *         super("keycloak", "spiffe://example.org/keycloak", spiffeClient);
+     *     public SpiffeTlsStoreProvider_keycloak_1a2b3c4d() {
+     *         super("keycloak", "spiffe://example.org/keycloak");
      *     }
      * }
      * </pre>
@@ -162,8 +159,7 @@ final class SpiffeClientProcessor {
             return;
         }
         Gizmo gizmo = Gizmo.create(new GeneratedBeanGizmo2Adaptor(generatedBeans, constantBootstraps));
-        ConstructorDesc providerConstructor = ConstructorDesc.of(SpiffeTlsStoreProvider.class, String.class, String.class,
-                X509SvidClient.class);
+        ConstructorDesc providerConstructor = ConstructorDesc.of(SpiffeTlsStoreProvider.class, String.class, String.class);
         for (X509SvidDeclarationBuildItem declaration : declarations) {
             gizmo.class_(providerBeanClassName(declaration.tlsConfigurationName), cc -> {
                 cc.final_();
@@ -172,11 +168,9 @@ final class SpiffeClientProcessor {
                 cc.addAnnotation(Identifier.class, ac -> ac.add("value", declaration.tlsConfigurationName));
                 cc.constructor(constructor -> {
                     constructor.public_();
-                    constructor.addAnnotation(Inject.class);
-                    ParamVar spiffeClient = constructor.parameter("spiffeClient", pc -> pc.setType(X509SvidClient.class));
                     constructor.body(bc -> {
                         bc.invokeSpecial(providerConstructor, cc.this_(), Const.of(declaration.tlsConfigurationName),
-                                Const.of(declaration.spiffeId), spiffeClient);
+                                Const.of(declaration.spiffeId));
                         bc.return_();
                     });
                 });

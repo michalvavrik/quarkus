@@ -24,6 +24,7 @@ import javax.net.ssl.X509ExtendedTrustManager;
 
 import org.jboss.logging.Logger;
 
+import io.netty.handler.ssl.ResumableX509ExtendedTrustManager;
 import io.quarkus.spiffe.client.SpiffeConnectionException;
 import io.quarkus.spiffe.client.runtime.internal.SpiffeValidator;
 import io.quarkus.spiffe.svid.x509.WorkloadCertificateDocument;
@@ -33,7 +34,7 @@ import io.vertx.core.net.TrustOptions;
 
 // X509ExtendedTrustManager on purpose: the JSSE wraps a plain X509TrustManager with its own hostname verification,
 // which no X.509-SVID passes
-final class SpiffeTrustManager extends X509ExtendedTrustManager implements TrustOptions {
+final class SpiffeTrustManager extends X509ExtendedTrustManager implements TrustOptions, ResumableX509ExtendedTrustManager {
 
     private static final Logger LOG = Logger.getLogger(SpiffeTrustManager.class);
     private static final String ANY_EXTENDED_KEY_USAGE = "2.5.29.37.0";
@@ -53,12 +54,10 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
 
     private final String tlsConfigurationName;
     private final String spiffeId;
-    private final X509SvidCachingClient client;
 
-    SpiffeTrustManager(String tlsConfigurationName, String spiffeId, X509SvidCachingClient client) {
+    SpiffeTrustManager(String tlsConfigurationName, String spiffeId) {
         this.tlsConfigurationName = tlsConfigurationName;
         this.spiffeId = spiffeId;
-        this.client = client;
     }
 
     @Override
@@ -97,6 +96,16 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
             throws CertificateException {
         requireTls13(engine.getHandshakeSession(), Peer.SERVER);
         validate(chain, Peer.SERVER);
+    }
+
+    @Override
+    public void resumeClientTrusted(X509Certificate[] chain, SSLEngine engine) throws CertificateException {
+        requireWorkloadCertificate(engine, Peer.CLIENT);
+    }
+
+    @Override
+    public void resumeServerTrusted(X509Certificate[] chain, SSLEngine engine) throws CertificateException {
+        requireWorkloadCertificate(engine, Peer.SERVER);
     }
 
     @Override
@@ -149,7 +158,7 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
                     + " authentication", null);
         }
 
-        WorkloadCertificateDocument document = client.getCurrentWorkloadCertificate();
+        WorkloadCertificateDocument document = X509SvidCachingClient.currentWorkloadCertificate();
         if (document == null) {
             throw reject(peer, "no X.509-SVID trust bundle is available", null);
         }
@@ -172,6 +181,15 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
         }
         LOG.debugf("The TLS configuration '%s' authorized the %s with the SPIFFE ID '%s'", tlsConfigurationName,
                 peer.description, peerSpiffeId);
+    }
+
+    // a resumed handshake calls no manager, Netty calls the resume methods instead
+    // the peer chain is not validated again, a JSSE client would offer a refused session again until it times out
+    private void requireWorkloadCertificate(SSLEngine engine, Peer peer) throws CertificateException {
+        if (X509SvidCachingClient.currentWorkloadCertificate() == null) {
+            engine.getSession().invalidate(); // the next handshake is a full one
+            throw reject(peer, "no X.509-SVID is available, the session is not resumed", null);
+        }
     }
 
     private void validatePath(X509Certificate[] chain, List<X509Certificate> trustBundle, Peer peer)
