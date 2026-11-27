@@ -147,7 +147,6 @@ class X509SvidCachingClientTest {
         StubClient agent = new StubClient(document(expiredLeaf));
         client = start(agent, FAST, Duration.ofMinutes(5));
         assertThat(client.getCurrentWorkloadCertificate()).isNull();
-        assertThat(client.getWorkloadCertificate().await().atMost(TIMEOUT)).isSameAs(agent.document);
     }
 
     @Test

@@ -16,7 +16,7 @@ import io.quarkus.spiffe.svid.x509.X509SvidClient;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.Vertx;
 
-final class X509SvidCachingClient implements X509SvidClient {
+final class X509SvidCachingClient {
 
     private static final Logger LOG = Logger.getLogger(X509SvidCachingClient.class);
 
@@ -36,12 +36,6 @@ final class X509SvidCachingClient implements X509SvidClient {
     X509SvidCachingClient(X509SvidClient delegate, Timing timing) {
         this.delegate = delegate;
         this.timing = timing;
-    }
-
-    @Override
-    public Uni<WorkloadCertificateDocument> getWorkloadCertificate() {
-        WorkloadCertificateDocument document = getCurrentWorkloadCertificate();
-        return document != null ? Uni.createFrom().item(document) : delegate.getWorkloadCertificate();
     }
 
     // completes once the first document is in place, fails when none was obtained within the startup timeout

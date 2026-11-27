@@ -43,6 +43,7 @@ public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvi
             Consumer<WorkloadCertificateDocument> onComplete,
             Consumer<Throwable> onFailure, X509SvidClient x509SvidClient) {
         cachingClient(x509SvidClient).initialize(vertx, refreshPeriod, onStop, onFailure, onComplete);
+        onStop.accept(() -> cachingClient = null);
     }
 
     @Override
@@ -58,14 +59,15 @@ public class SpiffeTlsStoreProvider implements KeyStoreProvider, TrustStoreProvi
     }
 
     private static X509SvidCachingClient cachingClient(X509SvidClient spiffeClient) {
-        if (cachingClient == null) {
+        var current = cachingClient;
+        if (current == null) {
             synchronized (SpiffeTlsStoreProvider.class) {
                 if (cachingClient == null) {
-                    cachingClient = new X509SvidCachingClient(spiffeClient);
+                    current = cachingClient = new X509SvidCachingClient(spiffeClient);
                 }
             }
         }
-        return cachingClient;
+        return current;
     }
 
     private static String resolveSpiffeId(String tlsConfigurationName, String spiffeId) {
