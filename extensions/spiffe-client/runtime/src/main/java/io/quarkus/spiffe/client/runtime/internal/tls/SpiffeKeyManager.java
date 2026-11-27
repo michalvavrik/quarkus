@@ -16,7 +16,6 @@ import java.util.function.Function;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.X509ExtendedKeyManager;
-import javax.net.ssl.X509KeyManager;
 
 import org.jboss.logging.Logger;
 
@@ -29,12 +28,14 @@ final class SpiffeKeyManager extends X509ExtendedKeyManager implements KeyCertOp
     private static final Logger LOG = Logger.getLogger(SpiffeKeyManager.class);
     private static final String ALIAS_PREFIX = "spiffe-";
 
+    private final X509SvidCachingClient x509SvidCachingClient;
     private final String tlsConfigurationName;
     // the JSSE asks for the alias first and for the key and the chain afterwards; the alias names the document, so a
     // rotation in between never pairs a new key with an old chain
     private final AtomicReference<Chosen> chosen = new AtomicReference<>(new Chosen(null, null));
 
-    SpiffeKeyManager(String tlsConfigurationName) {
+    SpiffeKeyManager(X509SvidCachingClient x509SvidCachingClient, String tlsConfigurationName) {
+        this.x509SvidCachingClient = x509SvidCachingClient;
         this.tlsConfigurationName = tlsConfigurationName;
     }
 
@@ -88,7 +89,7 @@ final class SpiffeKeyManager extends X509ExtendedKeyManager implements KeyCertOp
 
     @Override
     public KeyManagerFactory getKeyManagerFactory(Vertx vertx) throws Exception {
-        return KeyCertOptions.wrap((X509KeyManager) this).getKeyManagerFactory(vertx);
+        return KeyCertOptions.wrap(this).getKeyManagerFactory(vertx);
     }
 
     @Override
@@ -108,7 +109,7 @@ final class SpiffeKeyManager extends X509ExtendedKeyManager implements KeyCertOp
     }
 
     private String chooseAlias(String... keyTypes) {
-        WorkloadCertificateDocument document = X509SvidCachingClient.currentWorkloadCertificate();
+        WorkloadCertificateDocument document = x509SvidCachingClient.getCurrentWorkloadCertificate();
         if (document == null) {
             // the caching client already warned about the missing, expired or revoked SVID
             LOG.debugf("No X.509-SVID is available, the TLS configuration '%s' cannot present a certificate",

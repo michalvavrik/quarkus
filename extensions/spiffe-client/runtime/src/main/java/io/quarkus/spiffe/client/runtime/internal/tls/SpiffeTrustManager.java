@@ -52,10 +52,12 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
         }
     }
 
+    private final X509SvidCachingClient x509SvidCachingClient;
     private final String tlsConfigurationName;
     private final String spiffeId;
 
-    SpiffeTrustManager(String tlsConfigurationName, String spiffeId) {
+    SpiffeTrustManager(X509SvidCachingClient x509SvidCachingClient, String tlsConfigurationName, String spiffeId) {
+        this.x509SvidCachingClient = x509SvidCachingClient;
         this.tlsConfigurationName = tlsConfigurationName;
         this.spiffeId = spiffeId;
     }
@@ -158,7 +160,7 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
                     + " authentication", null);
         }
 
-        WorkloadCertificateDocument document = X509SvidCachingClient.currentWorkloadCertificate();
+        WorkloadCertificateDocument document = x509SvidCachingClient.getCurrentWorkloadCertificate();
         if (document == null) {
             throw reject(peer, "no X.509-SVID trust bundle is available", null);
         }
@@ -186,7 +188,7 @@ final class SpiffeTrustManager extends X509ExtendedTrustManager implements Trust
     // a resumed handshake calls no manager, Netty calls the resume methods instead
     // the peer chain is not validated again, a JSSE client would offer a refused session again until it times out
     private void requireWorkloadCertificate(SSLEngine engine, Peer peer) throws CertificateException {
-        if (X509SvidCachingClient.currentWorkloadCertificate() == null) {
+        if (x509SvidCachingClient.getCurrentWorkloadCertificate() == null) {
             engine.getSession().invalidate(); // the next handshake is a full one
             throw reject(peer, "no X.509-SVID is available, the session is not resumed", null);
         }

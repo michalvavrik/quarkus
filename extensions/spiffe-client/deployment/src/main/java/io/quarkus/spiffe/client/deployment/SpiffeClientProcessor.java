@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Collectors;
 
 import jakarta.inject.Singleton;
 
@@ -55,6 +56,8 @@ import io.vertx.core.Vertx;
 final class SpiffeClientProcessor {
 
     private static final String CLIENT_IMPL_CLASS = "io.quarkus.spiffe.client.runtime.internal.SpiffeClientImpl";
+    // TlsConfig.DEFAULT_NAME and TlsConfig.JAVA_NET_SSL_TLS_CONFIGURATION_NAME of the TLS registry runtime
+    private static final Set<String> RESERVED_TLS_CONFIGURATION_NAMES = Set.of("<default>", "javax.net.ssl");
     static final String FEATURE = "spiffe-client";
 
     @BuildStep
@@ -99,6 +102,11 @@ final class SpiffeClientProcessor {
                 throw new ConfigurationException("The 'tls' attribute of the @" + X509Svid.class.getSimpleName()
                         + " annotation on " + annotationInstance.target() + " must not be blank");
             }
+            if (RESERVED_TLS_CONFIGURATION_NAMES.contains(tlsConfigurationName)) {
+                throw new ConfigurationException("The TLS configuration name '" + tlsConfigurationName + "' of the @"
+                        + X509Svid.class.getSimpleName() + " annotation on " + annotationInstance.target()
+                        + " is reserved by the TLS registry");
+            }
             if (!tlsConfigurationNames.add(tlsConfigurationName)) {
                 throw new ConfigurationException("The TLS configuration '" + tlsConfigurationName + "' is declared by more"
                         + " than one @" + X509Svid.class.getSimpleName() + " annotation, the names must be unique");
@@ -119,19 +127,21 @@ final class SpiffeClientProcessor {
         if (declarations.isEmpty()) {
             return null;
         }
+        Set<String> tlsConfigurationNames = declarations.stream().map(declaration -> declaration.tlsConfigurationName)
+                .collect(Collectors.toUnmodifiableSet());
         serviceRegistrar
                 .forService("io.quarkus.spiffe.client.initialize-tls-configurations")
                 .atPhase(Phase.DATA)
                 .require(Vertx.class)
                 .require(SpiffeClientConfig.class)
                 .require(BeanContainer.class)
-                .after(TlsConfigurationRegistry.class)
+                .require(TlsConfigurationRegistry.class)
                 // the first fetch instantiates the SpiffeClientImpl bean, which injects the runtime-init Vertx bean
                 .afterBuildItem(SyntheticBeansRuntimeInitBuildItem.class)
                 .before("io.quarkus.arc.startup-event")
-                .onStartAsync((ctx, vertx, config, beanContainer) -> SpiffeTlsStoreProvider.start(vertx,
+                .onStartAsync((ctx, vertx, config, beanContainer, registry) -> SpiffeTlsStoreProvider.start(vertx,
                         config.x509Svid().refreshPeriod(), ctx::onStop, i -> ctx.startComplete(), ctx::startFailed,
-                        beanContainer.beanInstance(X509SvidClient.class)));
+                        beanContainer.beanInstance(X509SvidClient.class), registry, tlsConfigurationNames));
         return new ServiceStartBuildItem(FEATURE);
     }
 

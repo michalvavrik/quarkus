@@ -22,7 +22,8 @@ import org.junit.jupiter.api.Test;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.quarkus.spiffe.client.SpiffeAuthorizationException;
 import io.quarkus.spiffe.client.SpiffeConnectionException;
-import io.quarkus.spiffe.client.runtime.internal.tls.X509SvidCachingClient.Timing;
+import io.quarkus.spiffe.client.runtime.internal.tls.X509SvidCachingClient.X509SvidCachingClientImpl;
+import io.quarkus.spiffe.client.runtime.internal.tls.X509SvidCachingClient.X509SvidCachingClientImpl.Timing;
 import io.quarkus.spiffe.svid.x509.WorkloadCertificateChain;
 import io.quarkus.spiffe.svid.x509.WorkloadCertificateDocument;
 import io.quarkus.spiffe.svid.x509.WorkloadTrustBundle;
@@ -49,7 +50,7 @@ class X509SvidCachingClientTest {
     private static X509Certificate rotatedLeaf;
     private static X509Certificate expiredLeaf;
 
-    private X509SvidCachingClient client;
+    private X509SvidCachingClientImpl client;
     private final List<Runnable> stops = new ArrayList<>();
 
     @BeforeAll
@@ -101,7 +102,7 @@ class X509SvidCachingClientTest {
     void startupGivesUpAfterTheTimeout() {
         StubClient agent = new StubClient(document(leaf));
         agent.failuresLeft = Integer.MAX_VALUE;
-        client = new X509SvidCachingClient(agent, FAST);
+        client = new X509SvidCachingClientImpl(agent, FAST);
         assertThatThrownBy(() -> initialize(client, Duration.ofMinutes(5)).await().atMost(TIMEOUT))
                 .isInstanceOf(CompletionException.class)
                 .cause().isInstanceOf(SpiffeConnectionException.class)
@@ -117,7 +118,7 @@ class X509SvidCachingClientTest {
         agent.failure = new SpiffeConnectionException("UNIMPLEMENTED",
                 new InvalidStatusException(GrpcStatus.OK, GrpcStatus.UNIMPLEMENTED));
         agent.failuresLeft = Integer.MAX_VALUE;
-        client = new X509SvidCachingClient(agent, FAST);
+        client = new X509SvidCachingClientImpl(agent, FAST);
         assertThatThrownBy(() -> initialize(client, Duration.ofMinutes(5)).await().atMost(TIMEOUT))
                 .isInstanceOf(CompletionException.class)
                 .cause().isInstanceOf(SpiffeConnectionException.class)
@@ -190,18 +191,18 @@ class X509SvidCachingClientTest {
 
     @Test
     void refreshPeriodMustBePositive() {
-        client = new X509SvidCachingClient(new StubClient(document(leaf)), FAST);
+        client = new X509SvidCachingClientImpl(new StubClient(document(leaf)), FAST);
         assertThatThrownBy(() -> initialize(client, Duration.ZERO).await().atMost(TIMEOUT))
                 .isInstanceOf(ConfigurationException.class);
     }
 
-    private X509SvidCachingClient start(StubClient agent, Timing timing, Duration refreshPeriod) {
-        X509SvidCachingClient client = new X509SvidCachingClient(agent, timing);
+    private X509SvidCachingClientImpl start(StubClient agent, Timing timing, Duration refreshPeriod) {
+        X509SvidCachingClientImpl client = new X509SvidCachingClientImpl(agent, timing);
         initialize(client, refreshPeriod).await().atMost(TIMEOUT);
         return client;
     }
 
-    private Uni<WorkloadCertificateDocument> initialize(X509SvidCachingClient client, Duration refreshPeriod) {
+    private Uni<WorkloadCertificateDocument> initialize(X509SvidCachingClientImpl client, Duration refreshPeriod) {
         return Uni.createFrom().emitter(
                 emitter -> client.initialize(vertx, refreshPeriod, stops::add, emitter::fail, emitter::complete));
     }
