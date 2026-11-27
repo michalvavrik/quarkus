@@ -1,6 +1,7 @@
 package io.quarkus.spiffe.client.deployment.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import java.net.URI;
@@ -28,6 +29,8 @@ import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.ClientAuth;
 import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientOptions;
+import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
@@ -140,6 +143,31 @@ public class SpiffeX509SvidRefreshTest {
         await().atMost(TIMEOUT).until(() -> !handshakeWorks());
         admin(SpiffeX509TestResource.MODE_PATH, "HEALTHY");
         await().atMost(TIMEOUT).until(this::handshakeWorks);
+    }
+
+    @Test
+    void deniedWorkloadCannotResumeASession() throws Exception {
+        // without keep-alive every request opens a connection, the second one resumes the session of the first
+        HttpClient client = vertx.createHttpClient(new HttpClientOptions()
+                .setSsl(true)
+                .setKeepAlive(false)
+                .setKeyCertOptions(configuration.getKeyStoreOptions())
+                .setTrustOptions(configuration.getTrustStoreOptions()));
+        try {
+            assertThat(get(client)).isEqualTo(200);
+            admin(SpiffeX509TestResource.MODE_PATH, "PERMISSION_DENIED");
+            await().atMost(TIMEOUT).until(() -> !handshakeWorks());
+            assertThatThrownBy(() -> get(client)).hasStackTraceContaining("no X.509-SVID is available");
+        } finally {
+            client.close().await(TIMEOUT);
+        }
+    }
+
+    private int get(HttpClient client) throws Exception {
+        return client.request(HttpMethod.GET, server.actualPort(), "localhost", "/")
+                .compose(HttpClientRequest::send)
+                .await(TIMEOUT)
+                .statusCode();
     }
 
     // a fresh client per handshake, so no TLS session is resumed and the server has to present its current certificate
