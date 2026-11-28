@@ -239,31 +239,26 @@ The application waits for the first X.509-SVID at startup and fails to start whe
 When the X.509-SVID expires before a new one is fetched, or when the Workload API stops issuing an X.509-SVID to the workload, new TLS handshakes fail until a new X.509-SVID arrives.
 Connections that are already established stay open.
 
-=== Hardening
+=== TLS configuration properties
 
-The TLS registry options that do not concern the certificates still apply.
-The following example requires post-quantum key exchange and shortens the TLS handshake timeout.
+You can also set the `+quarkus.tls.<name>.*+` properties of a TLS configuration declared with `@X509Svid` when you need to adjust it.
+For example, the following configuration allows only the AES-256 cipher suite for the `inventory` TLS configuration.
 
 [source,properties]
 ----
-quarkus.tls.inventory.pqc-enforcement-policy=strict
-quarkus.tls.inventory.ssl-engine=jdkssl
-quarkus.tls.inventory.handshake-timeout=5s
+quarkus.tls.inventory.cipher-suites=TLS_AES_256_GCM_SHA384
 ----
 
-Set `ssl-engine` to `jdkssl`, because these TLS configurations do not support the OpenSSL engine.
-Otherwise, on a JDK without post-quantum key exchange, Quarkus falls back to OpenSSL instead of failing.
-See the xref:tls-registry-reference.adoc#pqc-availability-summary[PQC availability summary] for the JDK versions that support post-quantum key exchange.
+The following settings are known to be unsupported.
 
-=== Limitations
-
-Some TLS registry options do not apply to these TLS configurations.
-
-* `key-store`, `trust-store` and `trust-all` fail the application startup, because the X.509-SVID provides the key and trust material.
-* `certificate-revocation-list` and `ssl-engine=openssl` are not supported and fail the application startup.
-* `reload-period` has no effect, because every handshake uses the current X.509-SVID.
-* `hostname-verification-algorithm` is ignored, because the SPIFFE ID identifies the peer.
-* `protocols` cannot enable a version older than TLS 1.3, because older versions send the certificates and their SPIFFE IDs unencrypted.
+* `+quarkus.tls.<name>.key-store.*+` and `+quarkus.tls.<name>.trust-store.*+`
+* `quarkus.tls.<name>.trust-all`
+* `quarkus.tls.<name>.certificate-revocation-list`
+* `quarkus.tls.<name>.reload-period`
+* `quarkus.tls.<name>.hostname-verification-algorithm`
+* `quarkus.tls.<name>.protocols` with a version older than TLS 1.3
+* SSL engines other than the JDK SSL engine.
+Quarkus selects the OpenSSL engine when `quarkus.tls.<name>.ssl-engine` is `openssl`, and also when `quarkus.tls.<name>.pqc-enforcement-policy` is `strict` or `client-negotiated` on a JDK without post-quantum key exchange.
 
 These TLS configurations have no raw key store or trust store, so extensions that read them are not supported.
 The Pulsar client is currently not supported either.
